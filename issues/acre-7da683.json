@@ -3,20 +3,20 @@
   "title": "Scene model: domain objects, tracks, and lowering to primitives",
   "body": "",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/89ec73b0",
-  "lease_expires": "2026-10-01T19:09:02.302217136Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T06:56:17.197326319Z",
-  "updated_at": "2026-10-01T18:59:01.994083321Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-01T18:59:02.002110751Z",
+  "closed_at": "2026-10-01T18:59:02.002110751Z",
+  "close_reason": "Scene model, tracks, grid, plot and lowering to primitives written with 22 tests.",
+  "resolution": "done",
   "notes": [
     {
       "at": "2026-10-01T06:56:17.208439944Z",
@@ -38,6 +38,9 @@
       "commit": "11c3dcd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "11c3dcd",
+      "branch": "dev"
+    }
   }
 }
