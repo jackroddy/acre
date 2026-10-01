@@ -1,0 +1,28 @@
+{
+  "id": "acre-4518a5",
+  "title": "Design the animation language",
+  "body": "What an .acre file looks like: how it declares the canvas, the objects on it, and how each object changes over time. Settle the syntax here before any of it goes into src/lang. Pin down: the top-level shape of a file, how time is written (seconds, frames, or both), how a property is animated between two values, and what the first example file is.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-01T00:56:28.378409085Z",
+  "updated_at": "2026-10-01T00:56:28.378409085Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "91cf90c",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
