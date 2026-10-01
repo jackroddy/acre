@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-01T19:09:02.302217136Z",
   "defer_until": null,
   "created_at": "2026-10-01T06:56:17.197326319Z",
-  "updated_at": "2026-10-01T18:54:02.302217136Z",
+  "updated_at": "2026-10-01T18:59:01.994083321Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -22,6 +22,13 @@
       "at": "2026-10-01T06:56:17.208439944Z",
       "author": "Jack Roddy/89ec73b0",
       "text": "A scene is a canvas (width, height in pixels, fps, duration in seconds, background) plus objects in paint order. Objects are domain objects, grid and plot first, not bare shapes. Every animatable property is a Track<T>: Constant(T) or Keyframes of (time, value, easing) with easings linear, ease-in, ease-out, ease-in-out and hold; discrete values such as cell text only step. Sampling an object at time t lowers it to primitives (rect, ellipse, line, polyline, path, text), and the renderer draws primitives only, so lowering is unit-testable without pixels. Grid: rows x cols, cell size, origin; per cell a value, fill, text color and an offset track for swaps. Plot: x and y range, ticks and labels; series of line, scatter or bars; a reveal fraction to draw a line over time. Each object has an optional lifetime [start, end). Out of the first version: groups and nested transforms, path morphing, expressions linking properties, audio.",
+      "commit": "11c3dcd",
+      "branch": "dev"
+    },
+    {
+      "at": "2026-10-01T18:59:01.994082781Z",
+      "author": "Jack Roddy/89ec73b0",
+      "text": "Landed in src/scene as a library module (src/lib.rs). Track<T> is an enum, Constant or Keyframes, with a Lerp trait over f64, Point, Color, Range and String (String steps). The easing on a keyframe is the easing into it. Object carries opacity and lifetime; Kind is Grid or Plot. Primitives: Rect, Ellipse, Line, Polyline, Text with alignment. Path was dropped from the first version because neither example needs it. tests/scene_examples.rs builds the array swap and the self-drawing plot by hand; the render task can reuse those for the first PNGs.",
       "commit": "11c3dcd",
       "branch": "dev"
     }
