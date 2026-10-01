@@ -1,0 +1,30 @@
+{
+  "id": "acre-f374ae",
+  "title": "Render primitives to PNG frames with tiny-skia",
+  "body": "",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [
+    "acre-7da683"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-01T06:56:17.21504718Z",
+  "updated_at": "2026-10-01T06:56:17.21504718Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "11c3dcd",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
