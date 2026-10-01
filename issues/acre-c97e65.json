@@ -1,0 +1,30 @@
+{
+  "id": "acre-c97e65",
+  "title": "Build src/render against the chosen backend",
+  "body": "",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [
+    "acre-109857"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-01T00:56:28.396378343Z",
+  "updated_at": "2026-10-01T00:56:28.396378343Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "91cf90c",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
