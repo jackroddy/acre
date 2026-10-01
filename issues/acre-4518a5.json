@@ -13,11 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-10-01T00:56:28.378409085Z",
+  "updated_at": "2026-10-01T06:56:17.190585777Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-10-01T06:56:17.190585277Z",
+      "author": "Jack Roddy/89ec73b0",
+      "text": "Settled so far, syntax still open: canvas coordinates are pixels with the origin top-left. Time is seconds in the model; the frame index belongs to the renderer. The domain is arrays, matrices, grids and simple plots, so text in cells and on axes is in the first version. First examples to design the syntax against: an array of numbers being sorted (highlight the compared pair, swap them) and a line plot that draws itself with points appearing.",
+      "commit": "11c3dcd",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "91cf90c",
