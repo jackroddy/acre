@@ -13,11 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T06:56:17.197326319Z",
-  "updated_at": "2026-10-01T06:56:17.197326319Z",
+  "updated_at": "2026-10-01T06:56:17.208440504Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-10-01T06:56:17.208439944Z",
+      "author": "Jack Roddy/89ec73b0",
+      "text": "A scene is a canvas (width, height in pixels, fps, duration in seconds, background) plus objects in paint order. Objects are domain objects, grid and plot first, not bare shapes. Every animatable property is a Track<T>: Constant(T) or Keyframes of (time, value, easing) with easings linear, ease-in, ease-out, ease-in-out and hold; discrete values such as cell text only step. Sampling an object at time t lowers it to primitives (rect, ellipse, line, polyline, path, text), and the renderer draws primitives only, so lowering is unit-testable without pixels. Grid: rows x cols, cell size, origin; per cell a value, fill, text color and an offset track for swaps. Plot: x and y range, ticks and labels; series of line, scatter or bars; a reveal fraction to draw a line over time. Each object has an optional lifetime [start, end). Out of the first version: groups and nested transforms, path morphing, expressions linking properties, audio.",
+      "commit": "11c3dcd",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "11c3dcd",
