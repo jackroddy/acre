@@ -3,7 +3,7 @@
   "title": "Choose the render target and image backend",
   "body": "What acre render writes: a directory of PNG frames, a video, or both, and which crate draws the pixels. Depends on the language only so far as the language fixes what shapes exist.",
   "type": "decision",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.384788131Z",
-  "updated_at": "2026-10-01T06:56:17.176550155Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-01T06:56:17.183645869Z",
+  "closed_at": "2026-10-01T06:56:17.183645869Z",
+  "close_reason": "PNG frame directory, tiny-skia + png, text via ttf-parser outlines, embedded font. Details in the note.",
+  "resolution": "done",
   "notes": [
     {
       "at": "2026-10-01T06:56:17.176549505Z",
@@ -31,6 +31,9 @@
       "commit": "91cf90c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "11c3dcd",
+      "branch": "dev"
+    }
   }
 }
