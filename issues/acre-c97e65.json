@@ -15,11 +15,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.396378343Z",
-  "updated_at": "2026-10-01T00:56:28.396378343Z",
+  "updated_at": "2026-10-01T06:56:27.6636823Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-10-01T06:56:27.663681701Z",
+      "author": "Jack Roddy/89ec73b0",
+      "text": "Takes the primitive list for one instant from the scene model (acre-7da683) and draws it to a pixmap, then writes out/NNNN.png for every frame from duration x fps. Text: glyph outlines from ttf-parser into tiny-skia paths, one embedded OFL font (monospace suits arrays). Decision record is on acre-109857.",
+      "commit": "11c3dcd",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "91cf90c",
