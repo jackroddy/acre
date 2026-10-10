@@ -19,6 +19,7 @@
   "resolution": "done",
   "notes": [
     {
+      "id": "18ac3cb8",
       "at": "2026-10-01T06:56:17.176549505Z",
       "author": "Jack Roddy/89ec73b0",
       "text": "Decided: acre render writes one PNG per frame into the output directory, named by zero-padded frame index. tiny-skia (0.12) rasterizes and png (0.18) encodes. Text goes through the same rasterizer: ttf-parser (0.25) gives glyph outlines, which become tiny-skia paths and are filled. One OFL font is embedded in the binary so output does not depend on the machine. No video output for now; ffmpeg over the frame directory covers it. Rejected: image (no anti-aliased vector paths), raqote (same niche, less maintained), skia-safe (C++ build), vello (GPU), SVG frames (kept as a possible second renderer).",

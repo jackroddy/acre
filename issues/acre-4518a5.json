@@ -19,6 +19,7 @@
   "resolution": null,
   "notes": [
     {
+      "id": "23eeb281",
       "at": "2026-10-01T06:56:17.190585277Z",
       "author": "Jack Roddy/89ec73b0",
       "text": "Settled so far, syntax still open: canvas coordinates are pixels with the origin top-left. Time is seconds in the model; the frame index belongs to the renderer. The domain is arrays, matrices, grids and simple plots, so text in cells and on axes is in the first version. First examples to design the syntax against: an array of numbers being sorted (highlight the compared pair, swap them) and a line plot that draws itself with points appearing.",

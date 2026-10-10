@@ -21,6 +21,7 @@
   "resolution": "dropped",
   "notes": [
     {
+      "id": "3d59f0af",
       "at": "2026-10-01T06:56:17.225801993Z",
       "author": "Jack Roddy/89ec73b0",
       "text": "Takes the primitive list for one instant and draws it to a pixmap, then writes out/NNNN.png for every frame from duration x fps. Text: glyph outlines from ttf-parser into tiny-skia paths, one embedded OFL font (monospace suits arrays). Decision record is on acre-109857.",
