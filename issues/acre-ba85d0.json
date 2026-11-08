@@ -3,26 +3,29 @@
   "title": "Build src/lang: tokens, syntax tree, errors with line and column",
   "body": "",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/89ed765a",
-  "lease_expires": "2026-11-08T22:09:39.132692461Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.390593552Z",
-  "updated_at": "2026-11-08T21:54:39.132692461Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-08T22:02:20.928783771Z",
+  "closed_at": "2026-11-08T22:02:20.928783771Z",
+  "close_reason": "v0 of `src/lang` landed in f5a9de6: tokens, a node tree with spans, and errors with line and column. Syntax decisions stay on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "91cf90c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "f5a9de6",
+      "branch": "dev"
+    }
   }
 }
