@@ -1,0 +1,202 @@
+use super::{Error, Span};
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Tok {
+    Word(String),
+    Number(f64),
+    Str(String),
+    Color([u8; 4]),
+    Open,
+    Close,
+    Semi,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Token {
+    pub tok: Tok,
+    pub span: Span,
+}
+
+pub(super) fn tokens(src: &str) -> Result<Vec<Token>, Error> {
+    let bytes = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let start = i;
+        let b = bytes[i];
+        let tok = match b {
+            b' ' | b'\t' | b'\r' | b'\n' => {
+                i += 1;
+                continue;
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            b'{' => {
+                i += 1;
+                Tok::Open
+            }
+            b'}' => {
+                i += 1;
+                Tok::Close
+            }
+            b';' => {
+                i += 1;
+                Tok::Semi
+            }
+            b'"' => {
+                let (text, end) = string(src, start)?;
+                i = end;
+                Tok::Str(text)
+            }
+            b'#' => {
+                i += 1;
+                while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+                    i += 1;
+                }
+                Tok::Color(color(&src[start + 1..i], Span { start, end: i })?)
+            }
+            b'-' | b'0'..=b'9' => {
+                if b == b'-' {
+                    i += 1;
+                }
+                let digits = i;
+                while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                    i += 1;
+                }
+                let span = Span { start, end: i };
+                let text = &src[start..i];
+                if i == digits {
+                    return Err(Error::new(span, "expected a number after `-`"));
+                }
+                let value = text
+                    .parse()
+                    .map_err(|_| Error::new(span, format!("`{text}` is not a number")))?;
+                Tok::Number(value)
+            }
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                while i < bytes.len()
+                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+                {
+                    i += 1;
+                }
+                Tok::Word(src[start..i].to_string())
+            }
+            _ => {
+                let c = src[start..].chars().next().unwrap();
+                let span = Span {
+                    start,
+                    end: start + c.len_utf8(),
+                };
+                return Err(Error::new(span, format!("unexpected character `{c}`")));
+            }
+        };
+        out.push(Token {
+            tok,
+            span: Span { start, end: i },
+        });
+    }
+    Ok(out)
+}
+
+/// The text of the string literal opening at `start`, and the offset
+/// just past its closing quote.
+fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
+    let mut text = String::new();
+    let mut chars = src[start + 1..].char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '"' => return Ok((text, start + 1 + at + 1)),
+            '\\' => match chars.next() {
+                Some((_, '"')) => text.push('"'),
+                Some((_, '\\')) => text.push('\\'),
+                Some((_, 'n')) => text.push('\n'),
+                Some((esc, c)) => {
+                    let at = start + 1 + esc;
+                    let span = Span {
+                        start: at - 1,
+                        end: at + c.len_utf8(),
+                    };
+                    return Err(Error::new(span, format!("unknown escape `\\{c}`")));
+                }
+                None => break,
+            },
+            c => text.push(c),
+        }
+    }
+    let span = Span {
+        start,
+        end: start + 1,
+    };
+    Err(Error::new(span, "string is never closed"))
+}
+
+fn color(hex: &str, span: Span) -> Result<[u8; 4], Error> {
+    let bad = || Error::new(span, "a color is `#rrggbb` or `#rrggbbaa`");
+    if hex.len() != 6 && hex.len() != 8 {
+        return Err(bad());
+    }
+    let mut rgba = [255; 4];
+    for (k, channel) in rgba.iter_mut().enumerate().take(hex.len() / 2) {
+        *channel = u8::from_str_radix(&hex[2 * k..2 * k + 2], 16).map_err(|_| bad())?;
+    }
+    Ok(rgba)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn toks(src: &str) -> Vec<Tok> {
+        tokens(src).unwrap().into_iter().map(|t| t.tok).collect()
+    }
+
+    #[test]
+    fn every_token_kind_is_read() {
+        assert_eq!(
+            toks(r#"box a-1 { at -4 2.5; text "say \"hi\""; fill #ff8000; } // done"#),
+            vec![
+                Tok::Word("box".into()),
+                Tok::Word("a-1".into()),
+                Tok::Open,
+                Tok::Word("at".into()),
+                Tok::Number(-4.0),
+                Tok::Number(2.5),
+                Tok::Semi,
+                Tok::Word("text".into()),
+                Tok::Str("say \"hi\"".into()),
+                Tok::Semi,
+                Tok::Word("fill".into()),
+                Tok::Color([255, 128, 0, 255]),
+                Tok::Semi,
+                Tok::Close,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_token_span_covers_its_text() {
+        let src = "  box \"é\"";
+        let spans: Vec<&str> = tokens(src)
+            .unwrap()
+            .iter()
+            .map(|t| &src[t.span.start..t.span.end])
+            .collect();
+        assert_eq!(spans, ["box", "\"é\""]);
+    }
+
+    #[test]
+    fn an_unclosed_string_points_at_its_opening_quote() {
+        let err = tokens("text \"abc").unwrap_err();
+        assert_eq!(err.span, Span { start: 5, end: 6 });
+    }
+
+    #[test]
+    fn a_color_must_have_six_or_eight_digits() {
+        assert!(tokens("#fff").is_err());
+        assert_eq!(toks("#00000080"), vec![Tok::Color([0, 0, 0, 128])]);
+    }
+}

@@ -11,8 +11,17 @@ memories` for what earlier sessions found. This file holds the rules.
 
 An animation is one text file, `.acre`, that acre reads whole. The language is
 declarative: it says what is on the canvas and how each thing changes over
-time, and acre works out every frame from that. The syntax is not designed yet.
-Design it in a foam issue before putting it in code.
+time, and acre works out every frame from that.
+
+The syntax is not settled. Jack settles it by writing files and reacting to
+what they draw. Each version of the language stays small enough to build and
+run before the next is designed. Still images come first and animation after.
+The syntax uses braces and looks nothing like Python.
+
+A file is a tree of braced nodes. `scene` gives each node kind and property its
+meaning. The parser gives them none. A change of vocabulary then leaves the
+parser alone. Record each change of syntax and its reason on the language
+design issue in foam.
 
 ## Layers
 

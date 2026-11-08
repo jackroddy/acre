@@ -5,11 +5,15 @@
 //! to a list of [`Primitive`]s in paint order. Nothing here touches a
 //! file or a pixel.
 
+mod build;
+pub mod diagram;
 pub mod grid;
 pub mod plot;
 pub mod primitive;
 pub mod track;
 
+pub use build::build;
+pub use diagram::{Connector, Label, Shape, Text};
 pub use grid::{Cell, Grid};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
 pub use primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
@@ -60,6 +64,9 @@ pub struct Object {
 pub enum Kind {
     Grid(Grid),
     Plot(Plot),
+    Shape(Shape),
+    Connector(Connector),
+    Text(Text),
 }
 
 /// A half-open interval of seconds, `start..end`.
@@ -98,6 +105,9 @@ impl Object {
         match &self.kind {
             Kind::Grid(grid) => grid.draw(t, out),
             Kind::Plot(plot) => plot.draw(t, out),
+            Kind::Shape(shape) => shape.draw(out),
+            Kind::Connector(connector) => connector.draw(out),
+            Kind::Text(text) => text.draw(out),
         }
         if opacity < 1.0 {
             for prim in &mut out[start..] {

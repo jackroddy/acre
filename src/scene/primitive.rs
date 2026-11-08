@@ -116,6 +116,12 @@ pub enum Primitive {
         points: Vec<Point>,
         stroke: Stroke,
     },
+    /// A closed outline through `points`.
+    Polygon {
+        points: Vec<Point>,
+        fill: Option<Color>,
+        stroke: Option<Stroke>,
+    },
     Text {
         origin: Point,
         text: String,
@@ -135,7 +141,9 @@ impl Primitive {
             }
         };
         match self {
-            Primitive::Rect { fill, stroke, .. } | Primitive::Ellipse { fill, stroke, .. } => {
+            Primitive::Rect { fill, stroke, .. }
+            | Primitive::Ellipse { fill, stroke, .. }
+            | Primitive::Polygon { fill, stroke, .. } => {
                 if let Some(c) = fill {
                     *c = c.faded(opacity);
                 }

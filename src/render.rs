@@ -61,13 +61,22 @@ fn draw_primitives(pixmap: &mut sk::Pixmap, prims: &[Primitive]) {
                 }
             }
             Primitive::Line { from, to, stroke } => {
-                if let Some(path) = polyline(&[*from, *to]) {
+                if let Some(path) = path_through(&[*from, *to], false) {
                     paint_path(pixmap, &path, None, Some(*stroke));
                 }
             }
             Primitive::Polyline { points, stroke } => {
-                if let Some(path) = polyline(points) {
+                if let Some(path) = path_through(points, false) {
                     paint_path(pixmap, &path, None, Some(*stroke));
+                }
+            }
+            Primitive::Polygon {
+                points,
+                fill,
+                stroke,
+            } => {
+                if let Some(path) = path_through(points, true) {
+                    paint_path(pixmap, &path, *fill, *stroke);
                 }
             }
             Primitive::Text {
@@ -118,12 +127,15 @@ fn sk_color(c: Color) -> sk::Color {
     sk::Color::from_rgba(r, g, b, a).unwrap_or(sk::Color::TRANSPARENT)
 }
 
-fn polyline(points: &[Point]) -> Option<sk::Path> {
+fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
     let (first, rest) = points.split_first()?;
     let mut builder = sk::PathBuilder::new();
     builder.move_to(first.x as f32, first.y as f32);
     for p in rest {
         builder.line_to(p.x as f32, p.y as f32);
+    }
+    if closed {
+        builder.close();
     }
     builder.finish()
 }
