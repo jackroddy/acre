@@ -1,8 +1,8 @@
 # acre
 
 A Rust command-line tool that reads an animation written in its own small
-language and renders it to frames. Only the CLI exists so far: the language,
-the scene model and the renderer are all still to be written.
+language and renders it to frames. The CLI and the scene model exist; the
+language and the renderer are still to be written.
 
 Work and facts live in foam, not here: `foam ready` for what is open, `foam
 memories` for what earlier sessions found. This file holds the rules.
