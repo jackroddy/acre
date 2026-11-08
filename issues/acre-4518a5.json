@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-10-01T06:56:17.190585777Z",
+  "updated_at": "2026-11-08T21:32:48.876205907Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/89ec73b0",
       "text": "Settled so far, syntax still open: canvas coordinates are pixels with the origin top-left. Time is seconds in the model; the frame index belongs to the renderer. The domain is arrays, matrices, grids and simple plots, so text in cells and on axes is in the first version. First examples to design the syntax against: an array of numbers being sorted (highlight the compared pair, swap them) and a line plot that draws itself with points appearing.",
       "commit": "11c3dcd",
+      "branch": "dev"
+    },
+    {
+      "id": "bf0de3f7",
+      "at": "2026-11-08T21:32:48.876204957Z",
+      "author": "Jack Roddy/89ed765a",
+      "text": "Jack wants joined editing in the acre GUI. The GUI holds a text editor beside the render. Editing the text re-renders the scene. Dragging or stretching an object in the render rewrites the source text. To support that, `lang` and `scene` need four things:\n\n- a parser that keeps comments and whitespace, so acre can rewrite one literal and leave the rest of the file as typed\n- the source span of every value in the scene\n- an id on every scene object that carries through to the primitives it draws\n- a way for `scene` to say which object is under a point on the canvas\n\nA value computed from other values has no single literal to rewrite. A grid cell whose x comes from its index is one. The syntax design has to say what a drag does to such a value. Two options so far are to refuse the drag, or to rewrite the nearest literal that feeds it, such as the grid's origin. Neither is chosen.\n\nStatic images, diagrams and plots are the main use. Simple animations still matter.",
+      "commit": "b59c11e",
       "branch": "dev"
     }
   ],
