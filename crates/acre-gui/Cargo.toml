@@ -1,0 +1,17 @@
+[package]
+name = "acre-gui"
+version = "0.1.0"
+description = "an editor for acre drawings: the source beside its render, updated as you type"
+readme = "../../README.md"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+acre = { path = "../acre", version = "0.1.0" }
+clap = { version = "4", features = ["derive"] }
+eframe = "0.37"
+rfd = "0.18"
+serde = { version = "1", features = ["derive"] }
+toml = "1"

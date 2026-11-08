@@ -9,6 +9,7 @@ pub(super) enum Tok {
     Open,
     Close,
     Semi,
+    Comment,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,88 +19,101 @@ pub(super) struct Token {
 }
 
 pub(super) fn tokens(src: &str) -> Result<Vec<Token>, Error> {
-    let bytes = src.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
-    while i < bytes.len() {
-        let start = i;
-        let b = bytes[i];
-        let tok = match b {
-            b' ' | b'\t' | b'\r' | b'\n' => {
-                i += 1;
-                continue;
-            }
-            b'/' if bytes.get(i + 1) == Some(&b'/') => {
-                while i < bytes.len() && bytes[i] != b'\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            b'{' => {
-                i += 1;
-                Tok::Open
-            }
-            b'}' => {
-                i += 1;
-                Tok::Close
-            }
-            b';' => {
-                i += 1;
-                Tok::Semi
-            }
-            b'"' => {
-                let (text, end) = string(src, start)?;
-                i = end;
-                Tok::Str(text)
-            }
-            b'#' => {
-                i += 1;
-                while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
-                    i += 1;
-                }
-                Tok::Color(color(&src[start + 1..i], Span { start, end: i })?)
-            }
-            b'-' | b'0'..=b'9' => {
-                if b == b'-' {
-                    i += 1;
-                }
-                let digits = i;
-                while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
-                    i += 1;
-                }
-                let span = Span { start, end: i };
-                let text = &src[start..i];
-                if i == digits {
-                    return Err(Error::new(span, "expected a number after `-`"));
-                }
-                let value = text
-                    .parse()
-                    .map_err(|_| Error::new(span, format!("`{text}` is not a number")))?;
-                Tok::Number(value)
-            }
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
-                {
-                    i += 1;
-                }
-                Tok::Word(src[start..i].to_string())
-            }
-            _ => {
-                let c = src[start..].chars().next().unwrap();
-                let span = Span {
-                    start,
-                    end: start + c.len_utf8(),
-                };
-                return Err(Error::new(span, format!("unexpected character `{c}`")));
-            }
-        };
-        out.push(Token {
-            tok,
-            span: Span { start, end: i },
-        });
+    while let Some(token) = next_token(src, &mut i) {
+        let token = token?;
+        if token.tok != Tok::Comment {
+            out.push(token);
+        }
     }
     Ok(out)
+}
+
+/// The token starting at or after `*i`, with `*i` moved past it, or
+/// `None` at the end of the source.
+pub(super) fn next_token(src: &str, i: &mut usize) -> Option<Result<Token, Error>> {
+    let bytes = src.as_bytes();
+    while bytes.get(*i).is_some_and(|b| b.is_ascii_whitespace()) {
+        *i += 1;
+    }
+    let start = *i;
+    let &b = bytes.get(start)?;
+    let tok = match b {
+        b'/' if bytes.get(start + 1) == Some(&b'/') => {
+            while *i < bytes.len() && bytes[*i] != b'\n' {
+                *i += 1;
+            }
+            Tok::Comment
+        }
+        b'{' => {
+            *i += 1;
+            Tok::Open
+        }
+        b'}' => {
+            *i += 1;
+            Tok::Close
+        }
+        b';' => {
+            *i += 1;
+            Tok::Semi
+        }
+        b'"' => match string(src, start) {
+            Ok((text, end)) => {
+                *i = end;
+                Tok::Str(text)
+            }
+            Err(e) => return Some(Err(e)),
+        },
+        b'#' => {
+            *i += 1;
+            while *i < bytes.len() && bytes[*i].is_ascii_alphanumeric() {
+                *i += 1;
+            }
+            match color(&src[start + 1..*i], Span { start, end: *i }) {
+                Ok(c) => Tok::Color(c),
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        b'-' | b'0'..=b'9' => {
+            if b == b'-' {
+                *i += 1;
+            }
+            let digits = *i;
+            while *i < bytes.len() && (bytes[*i].is_ascii_digit() || bytes[*i] == b'.') {
+                *i += 1;
+            }
+            let span = Span { start, end: *i };
+            let text = &src[start..*i];
+            if *i == digits {
+                return Some(Err(Error::new(span, "expected a number after `-`")));
+            }
+            match text.parse() {
+                Ok(value) => Tok::Number(value),
+                Err(_) => return Some(Err(Error::new(span, format!("`{text}` is not a number")))),
+            }
+        }
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+            while *i < bytes.len()
+                && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == b'_' || bytes[*i] == b'-')
+            {
+                *i += 1;
+            }
+            Tok::Word(src[start..*i].to_string())
+        }
+        _ => {
+            let c = src[start..].chars().next().unwrap();
+            let span = Span {
+                start,
+                end: start + c.len_utf8(),
+            };
+            return Some(Err(Error::new(span, format!("unexpected character `{c}`"))));
+        }
+    };
+    Some(Ok(Token {
+        tok,
+        span: Span { start, end: *i },
+    }))
 }
 
 /// The text of the string literal opening at `start`, and the offset

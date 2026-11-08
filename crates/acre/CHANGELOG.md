@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nodes. `examples/layers.acre` uses each of them.
 - `lang::parse` reads source text into a tree of nodes. `scene::build` turns
   that tree into a `Scene`. `render::draw_frame` draws a scene into a pixmap.
+- `lang::highlight` returns every token in a source with a class, for coloring
+  it in an editor. Unlike `lang::parse`, it reads past errors.
 
 ### Removed
 

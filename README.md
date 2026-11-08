@@ -22,4 +22,4 @@ acre render drawing.acre --out drawing.png
 |---|---|
 | `acre` | the library: language, scene model and renderer |
 | `acre-cli` | the `acre` command |
-| `acre-gui` | the editor, not written yet |
+| `acre-gui` | the editor: source beside its render, redrawn as you type |

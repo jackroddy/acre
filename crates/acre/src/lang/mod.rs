@@ -118,6 +118,55 @@ pub fn parse(src: &str) -> Result<Program, Error> {
     Ok(Program { nodes })
 }
 
+/// What a span of source is, for coloring it in an editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Highlight {
+    /// The first word of a property or a node.
+    Key,
+    Word,
+    Number,
+    Str,
+    Color,
+    Punct,
+    Comment,
+    /// Text the lexer cannot read.
+    Invalid,
+}
+
+/// Every token in `src` with its class, in source order. Unlike
+/// [`parse`], this reads to the end past any error.
+pub fn highlight(src: &str) -> Vec<(Span, Highlight)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    let mut item_start = true;
+    while let Some(token) = lex::next_token(src, &mut i) {
+        let token = match token {
+            Ok(token) => token,
+            Err(e) => {
+                // every lexer error's span ends past where its
+                // token started, so this always moves forward
+                i = i.max(e.span.end);
+                out.push((e.span, Highlight::Invalid));
+                continue;
+            }
+        };
+        let class = match token.tok {
+            Tok::Word(_) if item_start => Highlight::Key,
+            Tok::Word(_) => Highlight::Word,
+            Tok::Number(_) => Highlight::Number,
+            Tok::Str(_) => Highlight::Str,
+            Tok::Color(_) => Highlight::Color,
+            Tok::Open | Tok::Close | Tok::Semi => Highlight::Punct,
+            Tok::Comment => Highlight::Comment,
+        };
+        if class != Highlight::Comment {
+            item_start = class == Highlight::Punct;
+        }
+        out.push((token.span, class));
+    }
+    out
+}
+
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
@@ -180,6 +229,7 @@ impl Parser<'_> {
             };
             self.pos += 1;
             let kind = match &token.tok {
+                Tok::Comment => continue,
                 Tok::Number(n) => ValueKind::Number(*n),
                 Tok::Str(s) => ValueKind::Str(s.clone()),
                 Tok::Color(c) => ValueKind::Color(*c),
@@ -254,6 +304,7 @@ fn describe(tok: &Tok) -> &'static str {
         Tok::Open => "`{`",
         Tok::Close => "`}`",
         Tok::Semi => "`;`",
+        Tok::Comment => "a comment",
     }
 }
 
@@ -312,6 +363,38 @@ mod tests {
         assert_eq!(
             err_at("box a b {}"),
             (1, 7, "a node takes at most one name before `{`".into())
+        );
+    }
+
+    #[test]
+    fn highlight_marks_the_first_word_of_each_item_as_a_key() {
+        let src = "box a { // note\n fill none; }";
+        let classes: Vec<(&str, Highlight)> = highlight(src)
+            .into_iter()
+            .map(|(span, class)| (&src[span.start..span.end], class))
+            .collect();
+        assert_eq!(
+            classes,
+            [
+                ("box", Highlight::Key),
+                ("a", Highlight::Word),
+                ("{", Highlight::Punct),
+                ("// note", Highlight::Comment),
+                ("fill", Highlight::Key),
+                ("none", Highlight::Word),
+                (";", Highlight::Punct),
+                ("}", Highlight::Punct),
+            ]
+        );
+    }
+
+    #[test]
+    fn highlight_reads_past_an_error() {
+        let src = "a @ b";
+        let classes: Vec<Highlight> = highlight(src).into_iter().map(|(_, c)| c).collect();
+        assert_eq!(
+            classes,
+            [Highlight::Key, Highlight::Invalid, Highlight::Word]
         );
     }
 
