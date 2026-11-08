@@ -3,7 +3,7 @@
   "title": "Build src/render against the chosen backend",
   "body": "",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,13 +13,13 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/89ed765a",
-  "lease_expires": "2026-11-08T21:47:48.883944803Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.396378343Z",
-  "updated_at": "2026-11-08T21:32:48.883944803Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-08T21:39:51.737647327Z",
+  "closed_at": "2026-11-08T21:39:51.737647327Z",
+  "close_reason": "`render::draw_frame` in `src/render.rs` landed in 4dfac0c. `acre render` stays a stub until `src/lang` can read a file.",
+  "resolution": "done",
   "notes": [
     {
       "id": "4b58c7a5",
@@ -35,6 +35,9 @@
       "commit": "91cf90c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "4dfac0c",
+      "branch": "dev"
+    }
   }
 }
