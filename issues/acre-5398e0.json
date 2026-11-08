@@ -1,7 +1,7 @@
 {
   "id": "acre-5398e0",
   "title": "Split acre into a library, a CLI and a GUI crate",
-  "body": "acre is one package today: the `acre` library and the `acre` binary share `Cargo.toml`, so a program that depends on the library compiles `clap` and `anyhow`, and would compile the GUI toolkit too. Jack chose a virtual workspace under `crates/`: `acre` the library, `acre-cli` with the `acre` binary for check and render, and `acre-gui` with the `acre-gui` binary. Each crate keeps its own version and changelog.",
+  "body": "`acre` was one package. The `acre` library and the `acre` binary shared one `Cargo.toml`. A program that depended on the library compiled `clap` and `anyhow`, and would have compiled the GUI toolkit too.\n\n## Proposal\n\nJack chose a virtual workspace under `crates/`, with one version and one changelog per crate.\n\n| crate | binary | holds |\n|---|---|---|\n| `acre` | none | `lang`, `scene`, `render`, the embedded font |\n| `acre-cli` | `acre` | `check` and `render` |\n| `acre-gui` | `acre-gui` | the editor, in its own issue |",
   "type": "task",
   "status": "in_progress",
   "priority": 1,
@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-08T22:33:40.398304663Z",
   "defer_until": null,
   "created_at": "2026-11-08T22:18:32.620903239Z",
-  "updated_at": "2026-11-08T22:18:40.398304663Z",
+  "updated_at": "2026-11-08T22:19:21.682518047Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
