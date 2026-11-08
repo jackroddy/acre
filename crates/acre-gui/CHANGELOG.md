@@ -17,5 +17,3 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   before it throws away unsaved changes.
 - `acre-gui FILE` opens a file. Without a file it reopens the last one.
 - `~/.config/acre/config.toml` sets `editor-font-size`.
-- `acre-gui --install-desktop-entry` writes a desktop entry, so app launchers
-  list acre.

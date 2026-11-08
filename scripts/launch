@@ -1,0 +1,43 @@
+#!/bin/sh
+# Build acre's CLI or GUI if its source changed, then run it. Run as acre
+# or acre-gui, it runs the release build. Run as acre-dev or acre-gui-dev,
+# it runs the debug build. The script reports a failed build with
+# notify-send, because a launch from the app menu has no terminal.
+#
+# The script stays in the caller's directory, so a relative path given to
+# acre render still names the caller's file.
+
+set -u
+
+PATH=$HOME/.cargo/bin:$PATH
+repo=$(dirname "$(dirname "$(readlink -f "$0")")")
+name=$(basename "$0")
+
+case $name in
+acre-gui*)
+    package=acre-gui
+    bin=acre-gui
+    ;;
+*)
+    package=acre-cli
+    bin=acre
+    ;;
+esac
+
+case $name in
+*-dev)
+    profile=debug
+    flags=
+    ;;
+*)
+    profile=release
+    flags=--release
+    ;;
+esac
+
+if ! log=$(cargo build -q $flags --manifest-path "$repo/Cargo.toml" -p "$package" 2>&1); then
+    printf '%s\n' "$log" >&2
+    notify-send -u critical "$name did not build" "$(printf '%s\n' "$log" | tail -n 8)"
+    exit 1
+fi
+exec "$repo/target/$profile/$bin" "$@"

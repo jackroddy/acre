@@ -46,6 +46,13 @@ a program crate, never in `acre`.
 The library has no GUI dependencies. A program that depends on `acre` to draw
 scenes gets no editor and no window.
 
+## Running acre
+
+`scripts/launch` builds acre if its source changed, then runs it.
+`~/.local/bin` holds four links to it. `acre` and `acre-gui` run the release
+builds. `acre-dev` and `acre-gui-dev` run the debug builds. The app menu
+entries `acre` and `acre (dev)` call the two GUI links.
+
 ## Branches
 
 All working changes go on `dev`. Do not open a feature branch unless I ask for
