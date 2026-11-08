@@ -1,0 +1,13 @@
+[package]
+name = "acre"
+version = "0.1.0"
+description = "animation creation and rendering engine: renders drawings written in its own small language"
+readme = "../../README.md"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+tiny-skia = "0.12"
+ttf-parser = "0.25"

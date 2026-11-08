@@ -12,13 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A first version of the acre language, for still drawings. A file holds one
   `canvas`, and the canvas holds `box`, `ellipse`, `line`, `arrow` and `text`
   nodes. `examples/layers.acre` uses each of them.
+- `lang::parse` reads source text into a tree of nodes. `scene::build` turns
+  that tree into a `Scene`. `render::draw_frame` draws a scene into a pixmap.
 
-### Changed
+### Removed
 
-- `acre check FILE` reports the first error in a file with its line and column.
-- `acre render FILE` draws the file and writes a PNG image. `--out` names the
-  image file, where it used to name a directory. Without `--out` the image goes
-  beside the source with a `.png` extension.
+- The `acre` command. It now comes from the `acre-cli` crate, and this crate is
+  a library only.
 
 ## [0.1.0] - 2026-09-30
 

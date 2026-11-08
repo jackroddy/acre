@@ -6,10 +6,17 @@ version = 4
 name = "acre"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "clap",
  "tiny-skia",
  "ttf-parser",
+]
+
+[[package]]
+name = "acre-cli"
+version = "0.1.0"
+dependencies = [
+ "acre",
+ "anyhow",
+ "clap",
 ]
 
 [[package]]

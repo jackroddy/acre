@@ -1,8 +1,10 @@
 # acre
 
-A Rust command-line tool that reads an animation written in its own small
-language and renders it to frames. The CLI and the scene model exist; the
-language and the renderer are still to be written.
+A Rust tool that reads a drawing written in its own small language and
+renders it. It is a cargo workspace of three crates under `crates/`. `acre` is
+the library. `acre-cli` builds the `acre` command, which checks and renders
+files. `acre-gui` builds `acre-gui`, the editor and the main way a person works
+with acre.
 
 Work and facts live in foam, not here: `foam ready` for what is open, `foam
 memories` for what earlier sessions found. This file holds the rules.
@@ -36,13 +38,13 @@ The planned shape. Only the renderer deals in pixels.
 `lang` and `scene` never touch a file or a screen, so they carry the unit tests,
 and a second output format is one renderer.
 
-acre is a library first. The `acre` binary is one program built on it. A later
-program will be a viewer that draws scenes. `lang`, `scene` and `render` take
-values and return values. Code that reads a file, writes to disk or opens a
-window goes in the binary.
+The `acre` crate is a library. `acre-cli` and `acre-gui` are programs built on
+it. A later viewer will be a third. `lang`, `scene` and `render` take values and
+return values. Code that reads a file, writes to disk or opens a window goes in
+a program crate, never in `acre`.
 
-The GUI sits on top of the library, never inside it. A program that depends on
-acre to draw scenes does not get the editor or a window with it.
+The library has no GUI dependencies. A program that depends on `acre` to draw
+scenes gets no editor and no window.
 
 ## Branches
 
@@ -54,21 +56,23 @@ and leave it alone the rest of the time.
 
 ## Releases
 
-acre follows [semantic versioning](https://semver.org/spec/v2.0.0.html). While
-the crate is below 1.0, a breaking change takes the minor number.
+Each crate follows [semantic versioning](https://semver.org/spec/v2.0.0.html)
+on its own. While a crate is below 1.0, a breaking change takes the minor
+number. A change moves only the version of the crate it changes.
 
-Tag every release, annotated, as `vMAJOR.MINOR.PATCH`, on the commit that was
-published.
+Tag every release, annotated, as `<crate>-vMAJOR.MINOR.PATCH`, on the commit
+that was published. The one release before the split is tagged `v0.1.0`.
 
 ## Formatting
 
-`rustfmt` is the format. Run `cargo fmt` before committing.
+`rustfmt` is the format. Run `cargo fmt --all` before committing.
 
 ## Changelog
 
-`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Anything that changes what someone running the tool sees goes under
-`[Unreleased]` in the commit that changes it.
+Each crate keeps a `CHANGELOG.md` in its own directory, following
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Anything that changes
+what a user of that crate sees goes under `[Unreleased]` in the commit that
+changes it.
 
 ## Temporary files
 

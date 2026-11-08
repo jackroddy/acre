@@ -1,0 +1,18 @@
+[package]
+name = "acre-cli"
+version = "0.1.0"
+description = "the acre command: checks and renders drawings written in acre's language"
+readme = "../../README.md"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "acre"
+path = "src/main.rs"
+
+[dependencies]
+acre = { path = "../acre", version = "0.1.0" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
