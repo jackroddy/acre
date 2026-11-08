@@ -164,3 +164,25 @@ fn plot_fades_in_then_draws_its_line() {
         .count();
     assert_eq!(dots, 5);
 }
+
+// set ACRE_FRAMES to a directory to keep the frames as
+// PNGs, one subdirectory per example
+#[test]
+fn both_examples_render_every_frame() {
+    let out = std::env::var_os("ACRE_FRAMES").map(std::path::PathBuf::from);
+    for (name, scene) in [("array_swap", array_swap()), ("plot", self_drawing_plot())] {
+        let count = scene.canvas.frame_count();
+        let width = count.to_string().len().max(4);
+        for frame in 0..count {
+            let pixmap = acre::render::draw_frame(&scene, scene.canvas.time_of(frame));
+            assert_eq!(pixmap.width(), scene.canvas.width);
+            if let Some(out) = &out {
+                let dir = out.join(name);
+                std::fs::create_dir_all(&dir).unwrap();
+                pixmap
+                    .save_png(dir.join(format!("{frame:0width$}.png")))
+                    .unwrap();
+            }
+        }
+    }
+}

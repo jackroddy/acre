@@ -27,9 +27,9 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    /// How many frames the animation renders to.
+    /// How many frames the animation renders to, and one for a still.
     pub fn frame_count(&self) -> usize {
-        (self.duration * self.fps as f64).ceil() as usize
+        ((self.duration * self.fps as f64).ceil() as usize).max(1)
     }
 
     /// The time in seconds at which `frame` is sampled.
@@ -150,6 +150,15 @@ mod tests {
         assert_eq!(canvas.frame_count(), 13);
         assert_eq!(canvas.time_of(0), 0.0);
         assert_eq!(canvas.time_of(5), 0.5);
+    }
+
+    #[test]
+    fn a_still_renders_one_frame() {
+        let canvas = Canvas {
+            duration: 0.0,
+            ..canvas()
+        };
+        assert_eq!(canvas.frame_count(), 1);
     }
 
     #[test]

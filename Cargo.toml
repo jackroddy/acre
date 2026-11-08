@@ -12,3 +12,5 @@ exclude = ["CLAUDE.md"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+tiny-skia = "0.12"
+ttf-parser = "0.25"

@@ -22,11 +22,18 @@ The planned shape. Only the renderer deals in pixels.
   errors that name a line and column.
 - `scene` turns a `Program` into a function of time: what every object is and
   where it is at any instant.
-- `render` draws the scene at an instant into an image, and writes a run of
-  them to disk.
+- `render` draws the scene at an instant into an image in memory.
 
 `lang` and `scene` never touch a file or a screen, so they carry the unit tests,
 and a second output format is one renderer.
+
+acre is a library first. The `acre` binary is one program built on it. A later
+program will be a viewer that draws scenes. `lang`, `scene` and `render` take
+values and return values. Code that reads a file, writes to disk or opens a
+window goes in the binary.
+
+The GUI sits on top of the library, never inside it. A program that depends on
+acre to draw scenes does not get the editor or a window with it.
 
 ## Branches
 
