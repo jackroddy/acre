@@ -1,0 +1,28 @@
+{
+  "id": "acre-5398e0",
+  "title": "Split acre into a library, a CLI and a GUI crate",
+  "body": "acre is one package today: the `acre` library and the `acre` binary share `Cargo.toml`, so a program that depends on the library compiles `clap` and `anyhow`, and would compile the GUI toolkit too. Jack chose a virtual workspace under `crates/`: `acre` the library, `acre-cli` with the `acre` binary for check and render, and `acre-gui` with the `acre-gui` binary. Each crate keeps its own version and changelog.",
+  "type": "task",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-08T22:18:32.620903239Z",
+  "updated_at": "2026-11-08T22:18:32.620903239Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f5a9de6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
