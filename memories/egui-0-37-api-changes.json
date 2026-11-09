@@ -1,0 +1,10 @@
+{
+  "slug": "egui-0-37-api-changes",
+  "text": "egui/eframe 0.37, used by crates/acre-gui, differs from 0.29-0.31. eframe::App requires `fn ui(&mut self, ui: &mut egui::Ui, frame)`, with an optional `logic(ctx, frame)`. `egui::Panel::left/top/bottom(id).show(ui, ..)` replaces SidePanel and TopBottomPanel. `MenuBar::new().ui(ui, ..)` replaces menu::bar, and `ui.close()` replaces close_menu. `LayoutSection::byte_range` is a Range<ByteIndex>. `Id::new` is deprecated for `Id::unique`. Found compiling crates/acre-gui/src/app.rs.",
+  "created_at": "2026-11-09T23:27:03.934904011Z",
+  "updated_at": "2026-11-09T23:27:03.934904011Z",
+  "stamp": {
+    "commit": "38a8b36",
+    "branch": "dev"
+  }
+}
