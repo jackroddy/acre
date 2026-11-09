@@ -1,0 +1,28 @@
+{
+  "id": "acre-51488b",
+  "title": "An arrow label overlaps a vertical arrow",
+  "body": "`Connector::draw` in `crates/acre/src/scene/diagram.rs` centres a label 6 px above the midpoint of its line. On a vertical arrow the text sits across the line. One fix offsets the label along the line's normal and picks the text alignment from the side it lands on.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-09T23:27:03.926414851Z",
+  "updated_at": "2026-11-09T23:27:03.926414851Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
