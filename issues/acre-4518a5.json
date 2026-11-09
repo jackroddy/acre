@@ -1,7 +1,7 @@
 {
   "id": "acre-4518a5",
-  "title": "Design the animation language",
-  "body": "What an .acre file looks like: how it declares the canvas, the objects on it, and how each object changes over time. Settle the syntax here before any of it goes into src/lang. Pin down: the top-level shape of a file, how time is written (seconds, frames, or both), how a property is animated between two values, and what the first example file is.",
+  "title": "Design the acre language",
+  "body": "What an `.acre` file looks like: how it declares the canvas and the objects on it, and later how each object changes over time. Jack settles the syntax by writing files in a working version and reacting to them. Each version goes into `crates/acre/src/lang` and `scene` once it is small enough to try. Over those versions, pin down the top-level shape of a file, how time is written (seconds, frames, or both), and how a property is animated between two values.",
   "type": "decision",
   "status": "open",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-08T21:54:39.117475164Z",
+  "updated_at": "2026-11-09T23:27:03.883554796Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
