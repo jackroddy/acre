@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-08T22:24:33.243769876Z",
-  "updated_at": "2026-11-09T23:27:03.858296956Z",
+  "updated_at": "2026-11-09T23:27:03.867297772Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "273dda71",
+      "at": "2026-11-09T23:27:03.867297262Z",
+      "author": "Jack Roddy/89ed765a",
+      "text": "v0 landed in ddf223c. 38a8b36 replaced `--install-desktop-entry` with `scripts/launch` and hand-written app menu entries in `~/.local/share/applications`.",
+      "commit": "38a8b36",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "735a43c",
