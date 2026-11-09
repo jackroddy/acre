@@ -1,7 +1,7 @@
 {
   "id": "acre-ca6566",
   "title": "Two swapped cells cover each other as they pass",
-  "body": "`swap` in `tests/scene_examples.rs` animates a swap by keyframing each cell's `offset` track along the row. The two cells travel the same straight line in opposite directions. At the midpoint they sit on the same slot, and the cell painted later hides the other. Frame 33 of the `array_swap` example shows four cells, `2`, `1`, `4` and `3`, with `5` hidden behind `1`.\n\nThe scene model has no swap of its own, and `swap` is a helper in the test. A swap written in the language will have the same problem unless the two cells move along different paths.\n\n## Open\n\n- Move the cells along arcs, one above the row and one below.\n- Lift the cells off the row by different amounts before they slide.\n- Accept the overlap.\n\nI lean to arcs, because they show which two cells traded places. A `Track<Point>` moves in a straight line between two keyframes, so an arc needs either many keyframes or a curved path in `Track`.",
+  "body": "`swap` in `crates/acre/tests/scene_examples.rs` animates a swap by keyframing each cell's `offset` track along the row. The two cells travel the same straight line in opposite directions. At the midpoint they sit on the same slot, and the cell painted later hides the other. Frame 33 of the `array_swap` example shows four cells, `2`, `1`, `4` and `3`, with `5` hidden behind `1`.\n\nThe scene model has no swap of its own, and `swap` is a helper in the test. A swap written in the language will have the same problem unless the two cells move along different paths.\n\n## Open\n\n- Move the cells along arcs, one above the row and one below.\n- Lift the cells off the row by different amounts before they slide.\n- Accept the overlap.\n\nI lean to arcs, because they show which two cells traded places. A `Track<Point>` moves in a straight line between two keyframes, so an arc needs either many keyframes or a curved path in `Track`.",
   "type": "bug",
   "status": "open",
   "priority": 3,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-08T21:39:51.729443319Z",
-  "updated_at": "2026-11-08T21:39:51.729443319Z",
+  "updated_at": "2026-11-09T23:27:03.900411286Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
