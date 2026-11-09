@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-09T23:27:03.883554796Z",
+  "updated_at": "2026-11-09T23:27:03.892417993Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -40,6 +40,14 @@
       "author": "Jack Roddy/89ed765a",
       "text": "Jack can't judge a syntax on paper. He wants a language he can run and react to, with still images settled before animation. The syntax uses braces and should look nothing like Python.\n\nv0 is the first version to play with. A file is a tree of nodes. A node is a kind, an optional name and a braced body of properties (`key values;`) and child nodes. The parser gives nothing a meaning. `scene` interprets each node kind, so a change of vocabulary leaves the parser alone. The node kinds in v0 are `canvas`, `box`, `ellipse`, `line`, `arrow` and `text`. v0 has no time.\n\nThree earlier candidates are set aside until still images work. They were objects plus a timeline, inline keyframes on every property, and sequenced steps.",
       "commit": "4dfac0c",
+      "branch": "dev"
+    },
+    {
+      "id": "688d23f6",
+      "at": "2026-11-09T23:27:03.892417453Z",
+      "author": "Jack Roddy/89ed765a",
+      "text": "v0 landed in f5a9de6. `crates/acre/examples/layers.acre` is its first example file.",
+      "commit": "38a8b36",
       "branch": "dev"
     }
   ],
