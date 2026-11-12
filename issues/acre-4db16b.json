@@ -1,0 +1,28 @@
+{
+  "id": "acre-4db16b",
+  "title": "acre-gui clips its render until the window gets input",
+  "body": "decade started `acre-gui` as its own window in the scratch pane `terminal3` while a session worked acre-8ed0f4. The document was the default `untitled` one, a 640 by 360 canvas holding one box. Two screenshots of the pane, taken with decade's `screenshot` tool, are kept in `tmp-claude/2026-11-12-decade-scratch/` in the acre checkout. That directory is not in git and lives on one machine only.\n\n- `before-click.png` is the first frame. The render runs off the right edge of the pane. At the scale it was drawn, the canvas would need about 940 pixels, and the pane leaves about 740.\n- `after-click.png` was taken after Jack clicked the pane. The canvas fits, at about 730 pixels wide, and nothing else changed in the source.\n\nThe window's height also differs between the two. The status bar holding `untitled` sits about 40 pixels higher in the second shot, and a strip of another colour shows below the window. This suggests that acre-gui drew its first frame at a size other than the one decade gave it, and drew again only when the click arrived. Nobody has checked this. The fault could be in acre-gui, in egui's handling of a resize, or in how decade sizes the window it places.\n\n## Open\n\n- Whether acre-gui gets a resize event when decade places it, and whether egui repaints on it.\n- Whether the same thing happens when acre-gui starts outside decade.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-12T21:53:33.950694153Z",
+  "updated_at": "2026-11-12T21:53:33.950694153Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
