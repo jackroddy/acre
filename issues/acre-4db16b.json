@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-12T21:53:33.950694153Z",
-  "updated_at": "2026-11-13T02:30:44.351495308Z",
+  "updated_at": "2026-11-13T02:40:23.448300044Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-11-13T02:30:44.351494738Z",
       "author": "Jack Roddy/cd2d1020",
       "text": "The cause is in the compositor, not in acre-gui. A trace of a run inside decade's scratch pane logged every call to `App::logic` and `App::ui`. `logic` ran every 250 to 750 ms, as `request_repaint_after` asks. `ui` ran once, for the first frame, and never again until input. eframe 0.37 calls `ui` only on winit's `RedrawRequested`, which on Wayland waits for the compositor's frame callback. While that callback is withheld, eframe runs `logic` alone (`MISSED_REDRAW_TIMEOUT` and `update_logic_only` in eframe's `src/native/run.rs` and `epi_integration.rs`). So decade sends acre-gui's window no frame callbacks after the first frame, and acre-gui's state moves on while the window shows its first frame.\n\nThe same trace showed a reload from disk and the fitted zoom reaching `App`'s state with the window unchanged. acre-gui can do nothing about this short of drawing without frame callbacks. The fix belongs in decade.",
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    {
+      "id": "def5e3c0",
+      "at": "2026-11-13T02:40:23.448299454Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "Filed in decade as decade-7091e6.",
       "commit": "38a8b36",
       "branch": "dev"
     }
