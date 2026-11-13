@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T06:50:40.120648079Z",
+  "updated_at": "2026-11-13T07:09:54.044904476Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -83,6 +83,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Canvas `size` takes `auto` for either side (acre-abc054, commit below on dev).\n\n- `size 1900 auto` fixes the width. `size auto auto` fixes neither. `size auto 800` also works, since each side is read on its own.\n- An `auto` side is the box around everything drawn, measured by the same code as `Scene::bounds`, plus `margin` on both ends. The scene is built once to measure and once more shifted so the drawing starts at the margin on each `auto` axis. A fixed side is not shifted.\n- `margin N` is one number on the canvas, default 20. One number keeps it as small as the plan allows. A default of 0 would leave text touching the edge of the image. 20 matches the padding most figures give their panels.\n- `margin` on a canvas with no `auto` is an error, because it would be ignored otherwise.\n- Bounds are taken at time 0 only, which is all the language has today. Revisit when animation lands.",
       "commit": "3506122",
+      "branch": "dev"
+    },
+    {
+      "id": "b06d0650",
+      "at": "2026-11-13T07:09:54.044903286Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Math syntax, from acre-3f9f94 (commits 7f31032 to 070e175 on dev).\n\n- `$...$` in any label's markup is a formula in LaTeX math. `$` always opens one, and `\\$` is a dollar sign. A `$` with no partner is an error that tells the writer to use `\\$`. I rejected a rule that guesses from context, as pandoc does (no space after the opening `$`, no digit after the closing one). It lets most lone dollars through, but a label would change meaning when someone adds a second `$` to it. The error catches every case at build time instead. In DNA figures the `$` sits in row cells, `chars` and palette symbols, which take no markup, so `figures/key-schemes.acre` builds unchanged.\n- Inside `$...$` in a quoted string, the lexer keeps every backslash with the character after it. Otherwise `$\\nu$` would read `\\n` as a line break, and `\\frac` would be an unknown escape. The lexer already kept `\\{`, `\\}`, `` \\` `` and `\\*` for markup, and now also knows `$`.\n- `math { at; text \"\"\"FORMULA\"\"\"; size; color; align; }` sets one formula in display style, placed by its top edge like `text`. Its formula has no `$` signs, so in a quoted string `\\frac` would need `\\\\frac`. A `\"\"\"` string takes no escapes and is the form to write. The node builds a `Text` whose one run, in `Font::Math`, is `\\displaystyle` followed by the formula.\n- `\\displaystyle`, `\\textstyle`, `\\scriptstyle` and `\\scriptscriptstyle` work anywhere in a formula, so inline math can ask for display style.\n- An unknown command is an error, not text. The subset is the tables `GREEK`, `SYMBOLS`, `LARGE_OPS` and `OPERATOR_NAMES` in `crates/acre/src/math/parse.rs`, plus `\\frac`, `\\sqrt`, `\\left`, `\\right`, `\\text`, `\\mathrm`, `\\operatorname`, `\\limits`, `\\nolimits` and the spaces `\\,`, `\\:`, `\\;`, `\\!`, `\\quad`, `\\qquad`.",
+      "commit": "070e175",
       "branch": "dev"
     }
   ],
