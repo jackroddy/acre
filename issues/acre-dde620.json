@@ -1,7 +1,7 @@
 {
   "id": "acre-dde620",
   "title": "acre draws libsufr's key schemes, masked and unmasked, with the code's structure",
-  "body": "libsufr's `build.rs` now splits key making into `Packing` and a `KeyScheme` trait with two implementations, `UnmaskedKeys` and `MaskedKeys`. `crates/acre/examples/prefix-encoder.acre` uses the old name `PrefixEncoder` and shows only the unmasked keys. The new figure, `examples/key-schemes.acre`, replaces it. It shows how the types fit together, `Packing` once, both schemes on one text with a 24-character spaced seed mask, and how each orders ties and takes an LCP. Every field of `Packing`, `UnmaskedKeys` and `MaskedKeys` appears.",
+  "body": "libsufr's `build.rs` now splits key making into `Packing` and a `KeyScheme` trait with two implementations, `UnmaskedKeys` and `MaskedKeys`. The earlier PrefixEncoder figure used the old name `PrefixEncoder` and shows only the unmasked keys. The new figure is `figures/key-schemes.acre` in the acre checkout. Jack keeps it out of git, as a test case for improving acre. It shows how the types fit together, `Packing` once, both schemes on one text with a 24-character spaced seed mask, and how each orders ties and takes an LCP. Every field of `Packing`, `UnmaskedKeys` and `MaskedKeys` appears.",
   "type": "task",
   "status": "in_progress",
   "priority": 1,
@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-13T05:32:53.906969075Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T05:50:18.280797792Z",
+  "updated_at": "2026-11-13T05:55:29.554260455Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
