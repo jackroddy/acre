@@ -13,9 +13,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T02:24:29.451964982Z",
-  "updated_at": "2026-11-13T05:08:59.472246979Z",
+  "updated_at": "2026-11-13T05:55:29.45406272Z",
   "closed_at": "2026-11-13T02:32:23.123399902Z",
-  "close_reason": "Landed in 43c5f60: Object::source, Scene::bounds and Scene::object_at in crates/acre/src/scene, and in acre-gui a click on the render selects the node, the cursor's node is outlined, and the status line shows the canvas point. Nobody tried the GUI side by hand in that session.",
+  "close_reason": "Landed in ac74cc9: Object::source, Scene::bounds and Scene::object_at in crates/acre/src/scene, and in acre-gui a click on the render selects the node, the cursor's node is outlined, and the status line shows the canvas point. Nobody tried the GUI side by hand in that session.",
   "resolution": "done",
   "notes": [],
   "stamps": {
