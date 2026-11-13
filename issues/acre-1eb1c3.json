@@ -3,20 +3,20 @@
   "title": "Connectors route around shapes, curve, and place their labels clear of the line",
   "body": "`line` and `arrow` (`Connector` in `scene/diagram.rs`) draw one straight segment with a filled triangle head and a label above the midpoint. acre-51488b is a symptom: a label overlaps a vertical arrow.\n\n## Proposal\n\n- `route straight | elbow | curve`: an elbow route turns at right angles, and a curve is a cubic with handles along each end's side.\n- `head none | triangle | open | dot` at each end, with `tail` for the start.\n- A label placed beside the line on its left or right, clear of the stroke, or at a fraction along it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-e77413",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T07:25:27.109541594Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.105150156Z",
-  "updated_at": "2026-11-13T07:14:22.069498479Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T07:14:22.087559389Z",
+  "closed_at": "2026-11-13T07:14:22.087559389Z",
+  "close_reason": "Landed in 6e74f14: route, head, tail, label-side and label-at on line and arrow. Routing around shapes in the way is not built; see the note.",
+  "resolution": "done",
   "notes": [
     {
       "id": "76681763",
@@ -32,6 +32,9 @@
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "6e74f14",
+      "branch": "dev"
+    }
   }
 }
