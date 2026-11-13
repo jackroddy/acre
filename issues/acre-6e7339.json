@@ -1,0 +1,28 @@
+{
+  "id": "acre-6e7339",
+  "title": "A line does not break inside a monospace code span",
+  "body": "text::wrap breaks at any space, including one inside a run in the mono font. In figures/key-schemes.acre, step 3 breaks `key_at(text, i + 21)` into `key_at(text, i +` and `21)`. A break should prefer a space outside inline code, and fall back to one inside only when the code span alone is wider than the width.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-e77413",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T06:04:28.794497334Z",
+  "updated_at": "2026-11-13T06:04:28.794497334Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "eff4b50",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
