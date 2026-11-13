@@ -15,7 +15,7 @@
   "lease_expires": "2026-11-13T07:06:14.325790035Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.096301498Z",
-  "updated_at": "2026-11-13T06:51:14.325790035Z",
+  "updated_at": "2026-11-13T07:09:54.055010668Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -26,6 +26,14 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "Checked on 2026-11-13: /usr/share/fonts/noto/NotoSansMath-Regular.ttf carries a MATH table, as its table directory lists MATH beside GSUB and GPOS. The text measure this issue waits on landed in eff4b50 (crates/acre/src/text.rs). Jack asked for a design proposal before work starts, as with the shaping issue.",
       "commit": "6866c55",
+      "branch": "dev"
+    },
+    {
+      "id": "b090d8e8",
+      "at": "2026-11-13T07:09:54.055009788Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Landed in four commits on dev. 7f31032 embeds Noto Sans Math and reads its MATH table (`math/font.rs`). f78165c parses the subset (`math/parse.rs`). 60b20c0 sets it (`math/layout.rs`, with changes to `text.rs` and `render.rs`). 070e175 adds `$...$`, the `math` node and its schema entry. The syntax choices are a note on acre-4518a5.\n\nDesign:\n\n- `math` is a module at the crate root beside `text`, because `text::layout` sets a formula inside a line and `render` draws it. It touches no file or screen, and it carries its own unit tests, as `text` does.\n- A formula travels as a `Run` in `Font::Math` whose text is the LaTeX source. `text::layout` calls `math::layout` and appends the result to the line. Every glyph of the formula advances to its right edge, and an empty rule marks its left edge, so wrapping and measuring treat it as one piece that never breaks. `text::Glyph` now holds a `Mark`: an outline at its own size, or a filled rule for fraction and radical bars.\n- Scripts follow TeX's rule 18 with the MATH constants. The baseline drops apply to every base, as the OpenType MATH constants define them, where TeX uses zero for a single character. `\\left` and `\\right` grow to TeX's target: 90.1% of the body, at most half an em short.\n- `math::layout` takes `&MathFont`. `text::layout` passes `MathFont::noto()`, and `text::face(Font::Math)` returns the same font to the renderer. acre-7101c7 has to carry a chosen font to both places, because a `Mark` names a `Font` and not a font value.\n\nI rendered fractions, roots with and without an index, scripts on scripts, `\\sum` and `\\prod` with limits, `\\lim`, `\\int`, grown parentheses, brackets, braces, floors and ceilings, inline and display, and the derived-values table of `key-schemes.acre` with its formulas moved into `$...$`. By eye the placement matches LaTeX's.\n\nOpen:\n\n- Script glyphs are base glyphs scaled down. The font's `ssty` variants, drawn heavier for small sizes, are not used.\n- A line with a tall inline formula keeps the fixed line height, so an inline `\\displaystyle` sum overlaps the line above it. Only the first line's ascent and the last line's descent grow.\n- `'` gives U+2032, which Noto Sans Math draws raised, so `f'` looks right. `x^{\\prime}` sets that raised glyph again at script size and comes out too small and too high.\n- Not yet read: `\\binom`, accents such as `\\hat` and `\\vec`, `\\overline`, `\\mathbf` and the `\\big` sizes.",
+      "commit": "070e175",
       "branch": "dev"
     }
   ],
