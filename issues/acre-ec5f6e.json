@@ -3,20 +3,20 @@
   "title": "A node can grow or shrink over time",
   "body": "Every node lowers to an `Object` in `crates/acre/src/scene/mod.rs`. An `Object` carries `opacity: Track<f64>` and an optional `lifetime`, and nothing else that changes over time. Only a row's `origin` and its cells can move. No node can change size. The language builds no keyframes yet, since `scene::build` sets `duration` to 0, so this waits on the animation syntax in acre-4518a5.\n\n## Proposal\n\n- Add `scale: Track<f64>` to `Object`, so every kind of node can grow or shrink.\n- `Scene::draw(t)` scales the object's primitives about an anchor point: points, sizes, stroke widths and text sizes. The renderers stay as they are, so PNG, SVG and PDF all draw it alike.\n\n## Open\n\n- The anchor. Leaning to the node's center by default. A file needs a way to name a corner or a side instead.\n- Layout: whether a scaled node pushes its neighbours in a `stack` or a `grid`. Leaning no. Scale changes the drawing only, so a pulse does not move the page.\n- Connectors: whether an arrow attached to a scaling node follows its scaled edge. Leaning yes. An arrow left on the old edge of a grown box looks broken.\n- Strokes: whether an outline thickens as the node grows. Leaning yes, because text grows with the node.\n- The syntax, which comes with the rest of the animation syntax.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T18:54:05.841174765Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T18:29:54.260417919Z",
-  "updated_at": "2026-11-13T18:39:05.841174765Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T18:55:53.602601907Z",
+  "closed_at": "2026-11-13T18:55:53.602601907Z",
+  "close_reason": "Landed on dev. 7f64906 adds the `scale` track and `pivot` on `Object` and scales primitives in `Scene::draw`, strokes and text included. 7e678ec adds `scale NAME F` to the timeline and `anchor` on a node. The syntax is in the latest note on acre-4518a5.",
+  "resolution": "done",
   "notes": [
     {
       "id": "e4a7d555",
@@ -32,6 +32,9 @@
       "commit": "c846b14",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "f1a91b7",
+      "branch": "dev"
+    }
   }
 }
