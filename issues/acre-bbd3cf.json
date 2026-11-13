@@ -1,0 +1,28 @@
+{
+  "id": "acre-bbd3cf",
+  "title": "acre formats a file, and the editor colors the v3 syntax",
+  "body": "`acre-gui` edits source in an egui `TextEdit` with colors from `lang::highlight`. Nothing reformats a file, and `highlight` predates v1 to v3 of the language: it colors a string as one run, with no markup inside it, and it treats `let` names as plain words.\n\n## Proposal\n\n- `lang::format` rewrites source into one layout: four-space indent per brace, single spaces between values, no space inside `( )`, at most one blank line in a row. It keeps comments and the line breaks the author chose between items, so a node written on one line stays on one line. It refuses a file that does not parse.\n- `acre fmt FILE` formats in place, and `--check` reports whether a file would change. The GUI formats on a menu item and a shortcut.\n- `highlight` marks the markup inside strings (`` ` ``, `**`, `{name`, `}`) and the words a `let` defines. The GUI paints each `#rrggbb` and each color `let` name on its own color.\n\nThe formatter works on the token stream, which already keeps every byte through the spans between tokens. It needs no new syntax tree.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T02:24:29.434493007Z",
+  "updated_at": "2026-11-13T02:24:29.434493007Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
