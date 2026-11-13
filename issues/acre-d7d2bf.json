@@ -1,0 +1,28 @@
+{
+  "id": "acre-d7d2bf",
+  "title": "A polygon node fills a shape given by its points",
+  "body": "acre draws rectangles, ellipses, and straight or routed lines. It has no node for a shape given by its points.\n\nThe cloud-search figure draws three regions of a 260 by 362 DP matrix. They are the forward cloud, the backward cloud, and the row bounds made from the two. Each region's edge is a staircase of a few hundred points. With no shape node, `gen_cloud.py` drew the forward cloud as 517 `line` nodes, one per anti-diagonal, wide enough to touch their neighbours. It drew the row bounds as 278 one-row `box` nodes. The alignment path through the matrix took 327 more `line` nodes, one per step.\n\n## Proposal\n\n- `polygon { points X Y X Y ...; }` fills and strokes a closed shape, with the usual `fill`, `stroke`, `stroke-width` and `dash`.\n- `polyline { points X Y X Y ...; }` strokes an open path, and takes `head` and `tail` like `line`.\n\nEach region above becomes one node. A list of several hundred points still comes from a program, so this pairs with the issue on reading numbers from a data file.\n\n## Open\n\n- Whether `points` takes cell coordinates and a scale, so a staircase in matrix cells can be written without multiplying each value by the cell size.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-fb60bb",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T19:10:18.186555978Z",
+  "updated_at": "2026-11-13T19:10:18.186555978Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "743a77a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
