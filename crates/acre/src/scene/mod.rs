@@ -7,6 +7,7 @@
 
 mod build;
 pub mod code;
+mod connector;
 pub mod diagram;
 mod expand;
 pub mod grid;
@@ -19,7 +20,8 @@ pub mod track;
 
 pub use build::build;
 pub use code::Code;
-pub use diagram::{Brace, Connector, Label, Ruler, Shape, Side, Text};
+pub use connector::{Connector, Head, LabelSide, Route};
+pub use diagram::{Brace, Label, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
 pub use primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};

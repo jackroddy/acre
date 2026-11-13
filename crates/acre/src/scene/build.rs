@@ -5,8 +5,8 @@ use super::expand::expand;
 use super::markup;
 use super::schema;
 use super::{
-    Brace, Canvas, Color, Connector, Font, HAlign, Kind, Label, Object, Point, Row, RowCell, Ruler,
-    Run, Scene, Shape, Side, Stroke, Text,
+    Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Object, Point,
+    Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Text,
 };
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
 
@@ -244,7 +244,10 @@ fn add_objects(
                 continue;
             }
             "line" | "arrow" => {
-                let head = node.kind.text == "arrow";
+                let head = match node.kind.text.as_str() {
+                    "arrow" => Head::Triangle,
+                    _ => Head::None,
+                };
                 let repeat = node
                     .properties
                     .iter()
@@ -955,7 +958,7 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
 fn connector(
     node: &Node,
     names: &Names,
-    head: bool,
+    default_head: Head,
     offset: Point,
     shift: usize,
 ) -> Result<Connector, Error> {
@@ -977,10 +980,37 @@ fn connector(
         from: on_edge(&from, &to),
         to: on_edge(&to, &from),
         stroke,
-        head,
+        route: props.choice(
+            "route",
+            Route::Straight,
+            &[
+                ("straight", Route::Straight),
+                ("elbow", Route::Elbow),
+                ("curve", Route::Curve),
+            ],
+        )?,
+        head: props.choice("head", default_head, &HEADS)?,
+        tail: props.choice("tail", Head::None, &HEADS)?,
         label: props.label("label", "text-size", "text-color", names)?,
+        label_side: props.choice(
+            "label-side",
+            LabelSide::Above,
+            &[
+                ("above", LabelSide::Above),
+                ("left", LabelSide::Left),
+                ("right", LabelSide::Right),
+            ],
+        )?,
+        label_at: props.number_or("label-at", 0.5)?,
     })
 }
+
+const HEADS: [(&str, Head); 4] = [
+    ("none", Head::None),
+    ("triangle", Head::Triangle),
+    ("open", Head::Open),
+    ("dot", Head::Dot),
+];
 
 fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
     let props = Props::new(node, &keys("text"), false)?;
@@ -1519,6 +1549,25 @@ impl<'a> Props<'a> {
         match self.get(key) {
             Some(p) => Ok(p.numbers::<1>()?[0]),
             None => Ok(default),
+        }
+    }
+
+    /// The value of the word `key` takes from `choices`, or `default`
+    /// when `key` is absent.
+    fn choice<T: Copy>(&self, key: &str, default: T, choices: &[(&str, T)]) -> Result<T, Error> {
+        let Some(p) = self.get(key) else {
+            return Ok(default);
+        };
+        let word = p.word()?;
+        match choices.iter().find(|(name, _)| *name == word) {
+            Some((_, value)) => Ok(*value),
+            None => {
+                let names: Vec<&str> = choices.iter().map(|(name, _)| *name).collect();
+                Err(Error::new(
+                    p.span,
+                    format!("`{key}` is one of {}", names.join(", ")),
+                ))
+            }
         }
     }
 
@@ -2137,6 +2186,61 @@ mod tests {
         };
         assert_eq!(c.from, Point::new(40.0, 20.0));
         assert_eq!(c.to, Point::new(100.0, 20.0));
+    }
+
+    #[test]
+    fn a_connector_reads_its_route_heads_and_label_placement() {
+        let s = scene(
+            "canvas { size 100 100;
+                line { from 0 0; to 50 50; }
+                arrow { from 0 0; to 50 50; route curve; head dot; tail open;
+                    label \"x\"; label-side right; label-at 0.25; } }",
+        )
+        .unwrap();
+        let connector = |i: usize| match &s.objects[i].kind {
+            Kind::Connector(c) => c.clone(),
+            other => panic!("expected a connector, got {other:?}"),
+        };
+        let line = connector(0);
+        assert_eq!(
+            (line.route, line.head, line.tail),
+            (Route::Straight, Head::None, Head::None)
+        );
+        assert_eq!(line.label_side, LabelSide::Above);
+        assert_eq!(line.label_at, 0.5);
+        let arrow = connector(1);
+        assert_eq!(
+            (arrow.route, arrow.head, arrow.tail),
+            (Route::Curve, Head::Dot, Head::Open)
+        );
+        assert_eq!(arrow.label_side, LabelSide::Right);
+        assert_eq!(arrow.label_at, 0.25);
+        assert_eq!(
+            connector_head("arrow { from 0 0; to 5 5; }"),
+            Head::Triangle
+        );
+        assert_eq!(
+            connector_head("arrow { from 0 0; to 5 5; head none; }"),
+            Head::None
+        );
+    }
+
+    fn connector_head(node: &str) -> Head {
+        let s = scene(&format!("canvas {{ size 10 10; {node} }}")).unwrap();
+        match &s.objects[0].kind {
+            Kind::Connector(c) => c.head,
+            other => panic!("expected a connector, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unknown_route_or_head_is_an_error() {
+        let (_, _, message) =
+            scene("canvas { size 10 10; line { from 0 0; to 5 5; route bent; } }").unwrap_err();
+        assert_eq!(message, "`route` is one of straight, elbow, curve");
+        let (_, _, message) =
+            scene("canvas { size 10 10; line { from 0 0; to 5 5; head big; } }").unwrap_err();
+        assert_eq!(message, "`head` is one of none, triangle, open, dot");
     }
 
     #[test]

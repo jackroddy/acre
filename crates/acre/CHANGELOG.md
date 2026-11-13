@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `route` on a `line` or an `arrow` is `straight`, `elbow` or `curve`. An elbow
+  turns at right angles halfway along the longer distance between the ends,
+  and a curve leaves each end along that same axis.
+- `head` and `tail` on a `line` or an `arrow` are `none`, `triangle`, `open` or
+  `dot`, at the end and the start. An `arrow` still has a triangle head and a
+  `line` none.
+- `label-side` (`above`, `left` or `right`) and `label-at` (a fraction from 0
+  to 1) place a connector's label beside the line or part way along it.
 - A first version of the acre language, for still drawings. A file holds one
   `canvas`, and the canvas holds `box`, `ellipse`, `line`, `arrow` and `text`
   nodes. `examples/layers.acre` uses each of them.
@@ -130,6 +138,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `text::Glyph` holds a `text::Mark` in place of its font and glyph id. A mark
   is a glyph's outline at its own size, or a filled rule such as a fraction
   bar.
+- A connector's label sits beside the line, clear of the stroke, on any
+  slope. A label on a vertical or diagonal line no longer overlaps it. A
+  horizontal line's label is where it was.
+- `scene::Connector` holds a `route`, a `head` and a `tail` of type `Head`, and
+  a `label_side` and `label_at`. `head` was a `bool`.
 
 ### Removed
 

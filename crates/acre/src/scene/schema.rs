@@ -114,7 +114,32 @@ const CONNECTOR: &[Property] = &[
     STROKE,
     STROKE_WIDTH,
     DASH,
+    prop(
+        "route",
+        "straight | elbow | curve",
+        "the path from `from` to `to`; an elbow turns at right angles and a curve leaves each end along the longer axis",
+    ),
+    prop(
+        "head",
+        "none | triangle | open | dot",
+        "what it draws at `to`; an `arrow` has a triangle and a `line` has none",
+    ),
+    prop(
+        "tail",
+        "none | triangle | open | dot",
+        "what it draws at `from`",
+    ),
     LABEL,
+    prop(
+        "label-side",
+        "above | left | right",
+        "which side of the line the label sits on; left and right are as seen going from `from` to `to`, and above is the side that faces up",
+    ),
+    prop(
+        "label-at",
+        "F",
+        "how far along the line the label sits, from 0 at `from` to 1 at `to`; the default is 0.5",
+    ),
     TEXT_SIZE,
     TEXT_COLOR,
     FONT,
@@ -223,7 +248,7 @@ pub const NODES: &[NodeKind] = &[
     },
     NodeKind {
         name: "line",
-        about: "a straight line between two points or things",
+        about: "a line between two points or things, straight unless `route` says otherwise",
         properties: CONNECTOR,
         children: &[],
     },

@@ -29,17 +29,6 @@ pub struct Shape {
     pub text_align: Option<HAlign>,
 }
 
-/// A straight line, with an optional arrowhead at `to` and an optional
-/// label above its middle.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Connector {
-    pub from: Point,
-    pub to: Point,
-    pub stroke: Stroke,
-    pub head: bool,
-    pub label: Option<Label>,
-}
-
 /// Free-standing text, placed by its top edge and `align`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Text {
@@ -152,40 +141,6 @@ impl Shape {
                 let y = self.origin.y + self.padding.y;
                 out.push(label.at(Point::new(x, y), align, VAlign::Top));
             }
-        }
-    }
-}
-
-impl Connector {
-    pub fn draw(&self, out: &mut Vec<Primitive>) {
-        let d = self.to - self.from;
-        let len = (d.x * d.x + d.y * d.y).sqrt();
-        if len == 0.0 {
-            return;
-        }
-        let dir = d * (1.0 / len);
-        let head_len = (8.0 + 3.0 * self.stroke.width).min(len);
-        let shaft_end = if self.head {
-            self.to - dir * head_len
-        } else {
-            self.to
-        };
-        out.push(Primitive::Line {
-            from: self.from,
-            to: shaft_end,
-            stroke: self.stroke,
-        });
-        if self.head {
-            let side = Point::new(-dir.y, dir.x) * (head_len * 0.45);
-            out.push(Primitive::Polygon {
-                points: vec![self.to, shaft_end + side, shaft_end - side],
-                fill: Some(self.stroke.color),
-                stroke: None,
-            });
-        }
-        if let Some(label) = &self.label {
-            let mid = (self.from + self.to) * 0.5;
-            out.push(label.at(mid - Point::new(0.0, 6.0), HAlign::Center, VAlign::Baseline));
         }
     }
 }
@@ -407,28 +362,5 @@ mod tests {
         let p = e.edge_toward(Point::new(130.0, 90.0)) - e.center();
         let on = (p.x / 50.0).powi(2) + (p.y / 20.0).powi(2);
         assert!((on - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn an_arrow_ends_its_shaft_where_the_head_begins() {
-        let arrow = Connector {
-            from: Point::new(0.0, 0.0),
-            to: Point::new(100.0, 0.0),
-            stroke: Stroke::solid(Color::BLACK, 2.0),
-            head: true,
-            label: None,
-        };
-        let mut out = Vec::new();
-        arrow.draw(&mut out);
-        match &out[..] {
-            [
-                Primitive::Line { to, .. },
-                Primitive::Polygon { points, .. },
-            ] => {
-                assert_eq!(*to, Point::new(86.0, 0.0));
-                assert_eq!(points[0], Point::new(100.0, 0.0));
-            }
-            other => panic!("expected a line and a head, got {other:?}"),
-        }
     }
 }
