@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-13T07:39:10.708759168Z",
   "defer_until": null,
   "created_at": "2026-11-13T01:14:46.971389521Z",
-  "updated_at": "2026-11-13T07:24:10.708759168Z",
+  "updated_at": "2026-11-13T07:33:31.348709008Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "Jack asked on 2026-11-13 to plan this with the milestone acre-e77413. PDF matters as much as SVG for papers. Text can go out as outlines from the shaped glyphs of acre-ea949d, which avoids embedding fonts. Embedding them keeps text selectable and is the better default for PDF.",
       "commit": "f4067bd",
+      "branch": "dev"
+    },
+    {
+      "id": "4b64130a",
+      "at": "2026-11-13T07:33:31.348708328Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "PDF goes through `krilla` 0.8 (MIT OR Apache-2.0), with default features off. The other candidate was `pdf-writer` with `subsetter`, which `krilla` itself builds on. With those two, acre would have to write the CID font dictionaries, the widths, the `ToUnicode` CMap and the font subset tag itself. `krilla` writes all of them and subsets TrueType and CFF fonts. Its `Surface::draw_glyphs` takes glyph ids with explicit advances and offsets, so acre passes the positions from `text::layout` and never lets `krilla` shape. Every new crate in `Cargo.lock` is MIT, Apache-2.0 or dual-licensed. The two dev-dependencies for tests are `lopdf` (MIT) to parse the PDF and `roxmltree` (MIT OR Apache-2.0) to parse the SVG.\n\nSVG text is glyph outlines, not `<text>`. `<text>` cannot name a glyph id, so it cannot draw a stretched delimiter or a size variant from the math font, and each viewer would shape the characters again in its own way. Inkscape also handles `@font-face` with embedded data unevenly. Each glyph is one `<path>` in `<defs>`, keyed by font, glyph and size, and each placement is a `<use>` with `x` and `y`. A reader cannot select SVG text. PDF is the format for selectable text.\n\nA canvas pixel is a CSS pixel in both formats, so a PDF page is 0.75 pt per pixel and matches the SVG's declared size. `--scale` multiplies both.\n\nChecked by rasterizing each trial with `rsvg-convert` and `pdftoppm` and comparing with the PNG: `figures/key-schemes.acre` and the math, connector, marker and font trials. The SVG matches the PNG to antialiasing (RMSE under 1.1%). The PDF differs only in poppler's antialiasing; at 4x the glyph positions are identical. Chrome draws the SVG the same as `rsvg-convert`. Inkscape is not installed, so the SVG has not been checked there. `pdftotext` gets back the text, and the formulas come back as their Unicode math characters.",
+      "commit": "2a3a569",
       "branch": "dev"
     }
   ],
