@@ -1,0 +1,28 @@
+{
+  "id": "acre-a96693",
+  "title": "The viewer plays a drawing's timeline",
+  "body": "`acre-gui` draws every scene at time 0. In `crates/acre-gui/src/view.rs`, `View::draw` calls `render::draw_view(scene, 0.0, ...)`. Since acre-5ca447 a canvas `timeline` gives a `Scene` whose `canvas.duration` is above 0, and `acre render --time T` draws any instant. The viewer has no way to show one.\n\n## Proposal\n\nWhen the scene's `canvas.duration` is above 0, a slim bar along the bottom of the window holds these controls.\n\n- A play and pause button.\n- A slider that scrubs over `0..=duration`.\n- The time, as `1.25 s / 5.00 s`.\n- A loop toggle, on by default.\n\nWith a duration of 0 there is no bar, and the viewer draws as before.\n\nSpace plays and pauses. Left and Right step one frame at `canvas.fps`, and Home goes to 0. The viewer takes these keys only when no text field has focus.\n\nPlaying advances by wall-clock time. The viewer stores the time at which play started and the instant it started, and works out `t` from them each frame. It does not add a fixed step per frame. On Wayland eframe calls `ui` only after a compositor frame callback, so a frame can arrive late, and the time stays right when one does. At the end the time loops to 0, or stops on the last instant when loop is off. The viewer asks for repaints only while playing.\n\nA reload keeps the time, clamped to the new duration, and keeps the play state. A file opens paused at 0.\n\nThe time logic lives in a plain struct with unit tests, apart from the egui code.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T18:56:48.652500016Z",
+  "updated_at": "2026-11-13T18:56:48.652500016Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f1a91b7",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
