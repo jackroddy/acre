@@ -1,0 +1,28 @@
+{
+  "id": "acre-804185",
+  "title": "A connector that names sides leaves and enters along them only in a straight route",
+  "body": "`Connector` in `crates/acre/src/scene/connector.rs` stores only `from` and `to`. `Connector::path` picks an elbow's shape from the longer axis between the ends, so it always draws three segments turning halfway. A connector that names sides, such as `from build left; to unmasked top; route elbow`, draws a horizontal-vertical-horizontal Z and the arrowhead enters the top edge sideways. It should leave `build` along x and enter `unmasked` along y with one turn.\n\nA curve has the same flaw. The approved proposal in acre-1eb1c3 says its handles run along each end's side, and the code puts them along the longer axis.\n\n## Proposal\n\n`Connector` carries an optional outward direction for each end, set from the side the `end` function in `build.rs` resolves. A bare point or a bare name has none. Elbow draws an L for perpendicular directions and a Z for parallel ones. A curve's handles run along the directions. An end with no direction keeps today's rule.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T07:37:58.744351964Z",
+  "updated_at": "2026-11-13T07:37:58.744351964Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "2a3a569",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
