@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-12T22:09:04.635325543Z",
   "defer_until": null,
   "created_at": "2026-11-12T21:52:27.070439299Z",
-  "updated_at": "2026-11-12T21:54:04.635325543Z",
+  "updated_at": "2026-11-13T00:22:20.974957183Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "5d0d87b3",
+      "at": "2026-11-13T00:22:20.974956513Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "Ran all nine checks in a fresh Claude Code session under coax, in the decade workspace `acre`.\n\n| # | result | evidence |\n|---|---|---|\n| 1 | pass | The `decade` server instructions are in context. |\n| 2 | fail | The server instructions do not name the workspace, and no session-start hook mentions decade. The name is only in `DECADE_WORKSPACE`. Filed as decade-7819f2. |\n| 3 | pass | `program` reads \"a program on decade's PATH, or a path relative to the workspace's directory\". |\n| 4 | pass | `terminal3` has `scratch: true` and `terminal` has `you: true`. |\n| 5 | pass | `acre-gui-dev` started `target/debug/acre-gui` in `terminal3`, and its window was there. |\n| 6 | pass | A second `scratch_open` ended pid 811758 and started 812804. `pgrep` found one acre-gui both times. |\n| 7 | partial | An exit inside the wait is reported. `sh -c \"echo boom >&2; exit 3\"` came back with status 3 and `boom`. After the wait no tool reports anything, and `panes` gives the same reply with acre-gui running and with the pane empty. decade-992365 decided on no later query, so this matches decade's design. |\n| 8 | pass | `args: [\"crates/acre/examples/layers.acre\"]` opened the file, and the status bar showed that path. |\n| 9 | pass | The screenshot of `terminal3` showed acre-gui with the file and its render. The render was cut off on the right, as in acre-4db16b. |",
+      "commit": "38a8b36",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "38a8b36",
