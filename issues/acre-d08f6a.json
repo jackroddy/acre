@@ -3,26 +3,29 @@
   "title": "Numbered markers tie a place in a diagram to numbered text",
   "body": "Section 4 of `key-schemes.acre` explains eight steps in text beside its diagram, and nothing in the diagram points at the step that explains it.\n\n## Proposal\n\n`marker { at ...; number 3; }` draws a small filled circle with a number, and `step` text, or a panel's numbered list, uses the same numbers and look. A marker can sit at a named thing's side like a connector's end.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-e77413",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T07:29:51.362241372Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.114059754Z",
-  "updated_at": "2026-11-13T07:14:51.362241372Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T07:17:46.782312391Z",
+  "closed_at": "2026-11-13T07:17:46.782312391Z",
+  "close_reason": "Landed in 638f24c: the `marker` node, `number` on `text`, and `style marker` for both. Choices are in the note on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "638f24c",
+      "branch": "dev"
+    }
   }
 }
