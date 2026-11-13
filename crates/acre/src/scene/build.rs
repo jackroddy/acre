@@ -5,7 +5,7 @@ use super::markup;
 use super::schema;
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Kind, Label, Object, Point, Row, RowCell, Ruler,
-    Scene, Shape, Side, Stroke, Text,
+    Run, Scene, Shape, Side, Stroke, Text,
 };
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
 
@@ -67,7 +67,14 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     }
     name_things(&canvas.children, Point::ZERO, &mut names)?;
     let mut objects = Vec::new();
-    add_objects(&canvas.children, Point::ZERO, &names, &mut objects)?;
+    let mut panels = 0;
+    add_objects(
+        &canvas.children,
+        Point::ZERO,
+        &names,
+        &mut panels,
+        &mut objects,
+    )?;
 
     Ok(Scene {
         canvas: Canvas {
@@ -88,6 +95,11 @@ fn name_things<'a>(nodes: &'a [Node], offset: Point, names: &mut Names<'a>) -> R
         if node.kind.text == "group" {
             let at = group_at(node, names, offset)?;
             name_things(&node.children, at, names)?;
+            continue;
+        }
+        if node.kind.text == "panel" {
+            let place = panel_place(node, names, offset, None)?;
+            name_things(&node.children, place.contents, names)?;
             continue;
         }
         let Some(name) = &node.name else { continue };
@@ -117,14 +129,27 @@ fn add_objects(
     nodes: &[Node],
     offset: Point,
     names: &Names,
+    panels: &mut usize,
     out: &mut Vec<Object>,
 ) -> Result<(), Error> {
     for node in nodes {
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
             "palette" => continue,
+            "caption" => {
+                // a caption goes under everything before it
+                let below = bounds_of(out).map_or(offset.y, |(_, max)| max.y);
+                let t = caption(node, names, Point::new(offset.x, below))?;
+                out.push(Object::new(Kind::Text(t)).from_source(node.span));
+                continue;
+            }
             "group" => {
-                add_objects(&node.children, group_at(node, names, offset)?, names, out)?;
+                let at = group_at(node, names, offset)?;
+                add_objects(&node.children, at, names, panels, out)?;
+                continue;
+            }
+            "panel" => {
+                add_panel(node, names, offset, panels, out)?;
                 continue;
             }
             "line" | "arrow" => {
@@ -162,7 +187,7 @@ fn add_objects(
                     node.kind.span,
                     format!(
                         "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, table, row, brace, ruler, group, palette and style"
+                         text, table, row, brace, ruler, group, panel, caption, palette and style"
                     ),
                 ));
             }
@@ -170,6 +195,165 @@ fn add_objects(
         out.push(Object::new(kind).from_source(node.span));
     }
     Ok(())
+}
+
+/// Where a panel's heading and contents go.
+struct PanelPlace {
+    /// The top-left corner of the heading.
+    at: Point,
+    /// The origin of the nodes in the panel, under the heading.
+    contents: Point,
+    heading: Option<Label>,
+}
+
+/// Place `node`, a panel, numbered `number` when it has one.
+fn panel_place(
+    node: &Node,
+    names: &Names,
+    offset: Point,
+    number: Option<usize>,
+) -> Result<PanelPlace, Error> {
+    let props = Props::new(node, &keys("panel"), true)?;
+    let at = match props.get("at") {
+        Some(p) => self::at(p, names, offset)?,
+        None => offset,
+    };
+    let font = match props.get("title-font") {
+        Some(p) => font(p)?,
+        None => Font::SansBold,
+    };
+    let heading = match props.get("title") {
+        None => None,
+        Some(p) => {
+            let mut runs = Vec::new();
+            if let Some(n) = number {
+                runs.push(Run {
+                    text: format!("{n}   "),
+                    font,
+                    color: props.color_or("number-color", Color::rgb(0.54, 0.54, 0.54))?,
+                });
+            }
+            runs.extend(
+                markup::runs(
+                    &p.string()?,
+                    font,
+                    props.color_or("title-color", Color::BLACK)?,
+                    &names.colors,
+                )
+                .map_err(|message| Error::new(p.span, message))?,
+            );
+            Some(Label {
+                runs,
+                size: props.number_or("title-size", 18.0)?,
+                width: None,
+            })
+        }
+    };
+    let below = match &heading {
+        Some(h) => h.size().y + props.number_or("gap", 16.0)?,
+        None => 0.0,
+    };
+    Ok(PanelPlace {
+        at,
+        contents: at + Point::new(0.0, below),
+        heading,
+    })
+}
+
+/// Append a panel's heading, frame, contents and captions to `out`.
+fn add_panel(
+    node: &Node,
+    names: &Names,
+    offset: Point,
+    panels: &mut usize,
+    out: &mut Vec<Object>,
+) -> Result<(), Error> {
+    let props = Props::new(node, &keys("panel"), true)?;
+    let numbered = match props.get("number") {
+        Some(p) => p.word()? != "none",
+        None => true,
+    };
+    let number = numbered.then(|| {
+        *panels += 1;
+        *panels
+    });
+    let place = panel_place(node, names, offset, number)?;
+    let start = out.len();
+    if let Some(heading) = place.heading {
+        let text = Text {
+            origin: place.at,
+            label: heading,
+            align: HAlign::Left,
+        };
+        out.push(Object::new(Kind::Text(text)).from_source(node.span));
+    }
+    let (captions, contents): (Vec<&Node>, Vec<&Node>) =
+        node.children.iter().partition(|c| c.kind.text == "caption");
+    let contents: Vec<Node> = contents.into_iter().cloned().collect();
+    add_objects(&contents, place.contents, names, panels, out)?;
+
+    let Some((min, max)) = bounds_of(&out[start..]) else {
+        return Ok(());
+    };
+    let mut bottom = max.y;
+    let frame = props.stroke(None)?;
+    let fill = match props.get("fill") {
+        Some(p) => p.color_or_none()?,
+        None => None,
+    };
+    if frame.is_some() || fill.is_some() {
+        let pad = props.number_or("padding", 16.0)?;
+        let frame = Shape {
+            origin: min - Point::new(pad, pad),
+            size: max - min + Point::new(2.0 * pad, 2.0 * pad),
+            oval: false,
+            radius: props.number_or("radius", 0.0)?,
+            fill,
+            stroke: frame,
+            label: None,
+            padding: Point::ZERO,
+            text_align: None,
+        };
+        bottom += pad;
+        out.insert(
+            start,
+            Object::new(Kind::Shape(frame)).from_source(node.span),
+        );
+    }
+    for c in captions {
+        let t = caption(c, names, Point::new(place.at.x, bottom))?;
+        bottom = t.origin.y + t.label.size().y;
+        out.push(Object::new(Kind::Text(t)).from_source(c.span));
+    }
+    Ok(())
+}
+
+/// A caption whose top-left corner goes `gap` under `above`.
+fn caption(node: &Node, names: &Names, above: Point) -> Result<Text, Error> {
+    let props = Props::new(node, &keys("caption"), false)?;
+    let mut label = props
+        .label("text", "size", "color", names)?
+        .ok_or_else(|| Error::new(node.kind.span, "`caption` needs `text`"))?;
+    if props.get("size").is_none() {
+        label.size = 13.0;
+    }
+    if let Some(p) = props.get("width") {
+        label.width = Some(p.numbers::<1>()?[0]);
+    }
+    Ok(Text {
+        origin: above + Point::new(0.0, props.number_or("gap", 10.0)?),
+        label,
+        align: HAlign::Left,
+    })
+}
+
+/// The box around what `objects` draw at time 0.
+fn bounds_of(objects: &[Object]) -> Option<(Point, Point)> {
+    let mut prims = Vec::new();
+    for o in objects {
+        o.draw(0.0, &mut prims);
+    }
+    super::primitive::bounds(&prims)
 }
 
 /// Where a group puts the origin of the nodes in it.
@@ -1301,5 +1485,44 @@ mod tests {
             scene("canvas { size 10 10; box { at 0 0; } }").is_err(),
             "a box needs a size or text"
         );
+    }
+
+    #[test]
+    fn panels_number_themselves_and_hold_their_contents_under_a_heading() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                style panel { title-size 20; gap 10; }
+                panel { at 10 10; title "first"; box { at 0 0; size 50 20; } }
+                panel { at 10 200; title "second"; stroke #000000; padding 5;
+                    box { at 0 0; size 50 20; }
+                    caption { text "under"; gap 4; }
+                }
+                panel { at 300 10; title "aside"; number none; } }"#,
+        )
+        .unwrap();
+        let heading = |i: usize| match &s.objects[i].kind {
+            Kind::Text(t) => (t.origin, t.label.text()),
+            other => panic!("expected a heading, got {other:?}"),
+        };
+        assert_eq!(heading(0), (Point::new(10.0, 10.0), "1   first".into()));
+        let Kind::Shape(first_box) = &s.objects[1].kind else {
+            panic!("expected the box");
+        };
+        let Kind::Text(h) = &s.objects[0].kind else {
+            unreachable!()
+        };
+        assert_eq!(first_box.origin.y, 10.0 + h.label.size().y + 10.0);
+
+        // the framed panel puts its frame first, around heading and box
+        let Kind::Shape(frame) = &s.objects[2].kind else {
+            panic!("expected the frame");
+        };
+        assert_eq!(frame.origin, Point::new(5.0, 195.0));
+        assert_eq!(heading(3).1, "2   second");
+        let Kind::Text(caption) = &s.objects[5].kind else {
+            panic!("expected the caption");
+        };
+        assert_eq!(caption.origin.y, frame.origin.y + frame.size.y + 4.0);
+        assert_eq!(heading(6).1, "aside");
     }
 }

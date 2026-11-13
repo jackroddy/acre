@@ -121,7 +121,8 @@ const CONNECTOR: &[Property] = &[
 ];
 
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
+    "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group", "panel",
+    "caption",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -140,7 +141,7 @@ pub const NODES: &[NodeKind] = &[
         ],
         children: &[
             "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
-            "palette", "style",
+            "panel", "caption", "palette", "style",
         ],
     },
     NodeKind {
@@ -319,6 +320,58 @@ pub const NODES: &[NodeKind] = &[
             "where the group's origin sits",
         )],
         children: DRAWN,
+    },
+    NodeKind {
+        name: "panel",
+        about: "a numbered section with a heading; what it holds goes under the heading",
+        properties: &[
+            prop(
+                "at",
+                "X Y | NAME [DX DY]",
+                "the top-left corner of the heading",
+            ),
+            prop("title", "\"TEXT\"", "the heading, with markup"),
+            prop("number", "none", "leave the panel out of the numbering"),
+            prop("title-size", "N", "the heading's size"),
+            prop("title-color", "COLOR", "the heading's color"),
+            prop(
+                "title-font",
+                "mono | sans | sans-bold | sans-italic",
+                "the heading's font",
+            ),
+            prop("number-color", "COLOR", "the color of the panel's number"),
+            prop(
+                "gap",
+                "N",
+                "the space between the heading and what the panel holds",
+            ),
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            FILL,
+            prop(
+                "padding",
+                "N",
+                "the space between the frame and what it holds",
+            ),
+            RADIUS,
+            STYLE,
+        ],
+        children: DRAWN,
+    },
+    NodeKind {
+        name: "caption",
+        about: "text under the panel it sits in, or under everything before it",
+        properties: &[
+            prop("text", "\"TEXT\"", "the caption, with markup"),
+            prop("width", "N", "the width it wraps within"),
+            prop("size", "N", "the size in pixels"),
+            prop("color", "COLOR", "the color"),
+            FONT,
+            prop("gap", "N", "the space above it"),
+            STYLE,
+        ],
+        children: &[],
     },
     NodeKind {
         name: "palette",

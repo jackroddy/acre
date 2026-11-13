@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pixels. A box without `size` takes the size of its text plus `padding`.
   `text-align` sets the text in a box from the top, inside the padding, at the
   left, center or right.
+- A `panel` node is a section with a heading. Panels number themselves in
+  source order, and `number none` leaves one out. What a panel holds goes
+  under its heading. `stroke` or `fill` draws a frame around the heading and
+  contents, with `padding`.
+- A `caption` node sets text under the panel it sits in, or under everything
+  before it.
+- A style named after a node kind, such as `style panel { ... }`, applies to
+  every node of that kind.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

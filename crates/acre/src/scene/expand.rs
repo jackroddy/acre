@@ -22,8 +22,9 @@ const RESERVED: &[&str] = &[
 ];
 
 /// The canvas with its `let` lines and `style` nodes applied and removed,
-/// and the colors its lets name. A node's own property wins over a
-/// style's, and a later style over an earlier one.
+/// and the colors its lets name. A style named after a node kind applies
+/// to every node of that kind. A node's own property wins over a style's,
+/// and a later style over an earlier one.
 pub(super) fn expand(canvas: &Node) -> Result<(Node, HashMap<String, Color>), Error> {
     let mut lets: HashMap<&str, Vec<Value>> = HashMap::new();
     let mut properties = Vec::new();
@@ -117,7 +118,13 @@ fn apply(
     styles: &HashMap<&str, Vec<Property>>,
 ) -> Result<Node, Error> {
     let mut own: Vec<Property> = Vec::new();
-    let mut inherited: Vec<Property> = Vec::new();
+
+    // a style named after the node's kind comes first, so a style the
+    // node names, and the node's own properties, go over it
+    let mut inherited: Vec<Property> = styles
+        .get(node.kind.text.as_str())
+        .cloned()
+        .unwrap_or_default();
     for p in &node.properties {
         if p.key.text != "style" {
             own.push(p.clone());
@@ -329,6 +336,30 @@ mod tests {
             err.message,
             "`left` is a word acre reads itself, so it cannot be a `let` name"
         );
+    }
+
+    #[test]
+    fn a_style_named_after_a_kind_applies_to_every_node_of_that_kind() {
+        let canvas = expanded(
+            "canvas { size 10 10;
+                style box { radius 4; fill #000000; }
+                box { fill #ffffff; }
+                text { }
+            }",
+        );
+        let keys = |n: usize| -> Vec<String> {
+            canvas.children[n]
+                .properties
+                .iter()
+                .map(|p| p.key.text.clone())
+                .collect()
+        };
+        assert_eq!(keys(0), ["radius", "fill"]);
+        assert_eq!(
+            values(&canvas.children[0].properties[1]),
+            [ValueKind::Color([255, 255, 255, 255])]
+        );
+        assert!(keys(1).is_empty());
     }
 
     #[test]
