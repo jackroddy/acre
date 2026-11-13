@@ -13,9 +13,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T00:52:09.141968215Z",
-  "updated_at": "2026-11-13T02:36:33.101445791Z",
+  "updated_at": "2026-11-13T05:55:29.530385418Z",
   "closed_at": "2026-11-13T02:36:33.101445791Z",
-  "close_reason": "crates/acre/examples/prefix-encoder.acre draws every field of PrefixEncoder across four panels and a strip for the mask fields, written by hand in the v3 language (notes on acre-4518a5). Jack judged it pretty good at a glance. Vector output for a paper is acre-329c2b.",
+  "close_reason": "The PrefixEncoder figure, a file kept outside git, draws every field of PrefixEncoder across four panels and a strip for the mask fields, written by hand in the v3 language (notes on acre-4518a5). Jack judged it pretty good at a glance. It was later replaced by figures/key-schemes.acre. Vector output for a paper is acre-329c2b.",
   "resolution": "done",
   "notes": [],
   "stamps": {
