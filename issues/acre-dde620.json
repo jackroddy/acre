@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T06:31:10.38183783Z",
+  "updated_at": "2026-11-13T07:39:43.638455334Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -50,6 +50,14 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "State after the code node (6866c55): figures/key-schemes.acre draws its five sections as white cards (style panel with fill, stroke, padding 28 and width 1820) in one stack on a grey page. Section 1's type diagram is nested stacks, section 4's steps wrap to width 600, and section 4 ends with the real MaskedKeys::masked_key_pext in a code block. The canvas height, 3310, is still set by hand. tmp-claude/2026-11-13-key-schemes/model.py checks every key value the figure shows. Run acre fmt and acre render on it only from a fresh build: a stale binary that predates block strings rewrote its triple quotes once.",
       "commit": "6866c55",
+      "branch": "dev"
+    },
+    {
+      "id": "b76154e1",
+      "at": "2026-11-13T07:39:43.638454454Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "State after the polish pass at dd3c79a. The canvas takes its height from `size 1900 auto`. Labels sit `lx` (-24) left of their rows, and `x0` is 200. Section 4's labels no longer run past the card's left edge, and its card is as wide as the others. Section 1 is centered, and its two side boxes are the same size, so `calls` runs straight down. Its arrows use `route elbow`. Section 2 sets its formulas as inline math. Section 4 numbers its steps with `number` and ties them to rows with `marker`. The pext and `bmi2` note sits under the code. A thin rule sits under section 5's header row. `model.py` still checks every value. The file before this pass is `tmp-claude/2026-11-12-paper-milestone/key-schemes.acre.bak`.\n\nStill open:\n- Bold code names draw in regular mono (acre-95ce06).\n- Markers 3 and 4 stack in the reverse order of their steps, because `care_bits[0]` sits above window 0.\n- At 1900 pixels across a full page width, 14-pixel body text prints at about 3.6 pt. The journal decides the canvas width.",
+      "commit": "dd3c79a",
       "branch": "dev"
     }
   ],
