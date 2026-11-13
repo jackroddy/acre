@@ -4,9 +4,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use acre::lang;
 use acre::scene::{self, Scene};
-use eframe::egui::{self, Color32, Vec2, ViewportCommand};
+use eframe::egui::{self, Color32, Key, Modifiers, Vec2, ViewportCommand};
 
 use crate::link::{Incoming, Link, Outgoing};
+use crate::playback::Playback;
 use crate::recent::Recent;
 use crate::view::View;
 
@@ -38,6 +39,9 @@ pub struct App {
     /// is none.
     reported: bool,
     view: View,
+    playback: Playback,
+    /// The time drawn this frame.
+    time: f64,
     /// The render pane's size at the last frame.
     pane: Vec2,
     /// The editor's cursor, as a byte offset into the source.
@@ -66,6 +70,8 @@ impl App {
             version: 0,
             reported: false,
             view: View::new(),
+            playback: Playback::new(),
+            time: 0.0,
             pane: Vec2::ZERO,
             cursor: None,
             hover: None,
@@ -94,6 +100,9 @@ impl App {
                 self.path = Some(path.to_path_buf());
                 self.modified = modified(path);
                 self.notice = self.recent.touch(path).err();
+                let now = Instant::now();
+                self.playback.pause(now);
+                self.playback.seek(now, 0.0);
                 self.show(text);
             }
             Err(e) => self.notice = Some(format!("cannot open {}: {e}", path.display())),
@@ -106,6 +115,8 @@ impl App {
         self.text = text;
         match lang::parse(&self.text).and_then(|program| self.build(&program)) {
             Ok(scene) => {
+                self.playback
+                    .set_duration(Instant::now(), scene.canvas.duration);
                 self.error = None;
                 self.scene = Some(scene);
                 self.version += 1;
@@ -218,7 +229,7 @@ impl App {
         };
         (0..scene.objects.len())
             .filter(|&i| scene.objects[i].source == innermost)
-            .filter_map(|i| scene.bounds(i, 0.0))
+            .filter_map(|i| scene.bounds(i, self.time))
             .collect()
     }
 
@@ -226,7 +237,7 @@ impl App {
     /// `point`, or name the node's line when there is no editor.
     fn go_to_object_at(&mut self, point: scene::Point) {
         let Some(scene) = &self.scene else { return };
-        let Some(index) = scene.object_at(point, 0.0) else {
+        let Some(index) = scene.object_at(point, self.time) else {
             return;
         };
         let offset = scene.objects[index].source.start;
@@ -300,6 +311,69 @@ impl App {
         });
     }
 
+    /// Space plays and pauses, Left and Right step a frame, and Home
+    /// goes to the start, unless a text field has the keys.
+    fn keys(&mut self, ctx: &egui::Context) {
+        let Some(scene) = &self.scene else { return };
+        if self.playback.duration() <= 0.0 || ctx.text_edit_focused() {
+            return;
+        }
+
+        // consumed before the bar is laid out, so a focused button or
+        // slider does not take the same press
+        let (space, left, right, home) = ctx.input_mut(|i| {
+            (
+                i.count_and_consume_key(Modifiers::NONE, Key::Space),
+                i.count_and_consume_key(Modifiers::NONE, Key::ArrowLeft),
+                i.count_and_consume_key(Modifiers::NONE, Key::ArrowRight),
+                i.count_and_consume_key(Modifiers::NONE, Key::Home),
+            )
+        });
+        let now = Instant::now();
+        if space % 2 == 1 {
+            self.playback.toggle(now);
+        }
+        let frames = right as i64 - left as i64;
+        if frames != 0 {
+            self.playback.step(now, frames, scene.canvas.fps);
+        }
+        if home > 0 {
+            self.playback.seek(now, 0.0);
+        }
+    }
+
+    /// The bar that plays, pauses and scrubs the scene's time.
+    fn transport(&mut self, ui: &mut egui::Ui) {
+        let now = Instant::now();
+        let duration = self.playback.duration();
+        ui.horizontal(|ui| {
+            let label = if self.playback.playing() {
+                "Pause"
+            } else {
+                "Play"
+            };
+            if ui.button(label).on_hover_text("space").clicked() {
+                self.playback.toggle(now);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut looping = self.playback.looping();
+                if ui.toggle_value(&mut looping, "Loop").changed() {
+                    self.playback.set_looping(now, looping);
+                }
+                ui.label(format!("{:.2} s / {duration:.2} s", self.time));
+
+                // the slider fills what the other controls leave
+                ui.spacing_mut().slider_width = ui.available_width();
+                let mut t = self.time;
+                let slider = egui::Slider::new(&mut t, 0.0..=duration).show_value(false);
+                if ui.add(slider).changed() {
+                    self.playback.seek(now, t);
+                }
+            });
+        });
+        self.time = self.playback.time(now);
+    }
+
     fn status(&self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let where_ = self
@@ -348,18 +422,26 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.keys(ui.ctx());
+        self.time = self.playback.time(Instant::now());
         if self.link.is_none() {
             egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         }
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
+        if self.playback.duration() > 0.0 {
+            egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));
+        }
+        if self.playback.playing() {
+            ui.ctx().request_repaint();
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let marks = self.marks();
-                let shown = self
-                    .view
-                    .show(ui, self.scene.as_ref(), self.version, &marks);
+                let shown =
+                    self.view
+                        .show(ui, self.scene.as_ref(), self.version, self.time, &marks);
                 self.pane = shown.pane;
                 self.hover = shown.hover;
                 if let Some(point) = shown.clicked {

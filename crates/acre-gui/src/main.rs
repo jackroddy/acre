@@ -3,6 +3,7 @@
 
 mod app;
 mod link;
+mod playback;
 mod recent;
 mod view;
 

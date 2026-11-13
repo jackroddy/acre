@@ -54,6 +54,7 @@ struct Drawn {
     zoom: f32,
     origin: Vec2,
     scene: u64,
+    time: f64,
 }
 
 impl Drawn {
@@ -103,13 +104,14 @@ impl View {
     }
 
     /// Lay the pane out in `ui`, take the person's zoom and pan, and draw
-    /// `scene`, whose version is `version`, with an outline around each
-    /// box in `marks`, given in canvas pixels.
+    /// `scene`, whose version is `version`, at time `t`, with an outline
+    /// around each box in `marks`, given in canvas pixels.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
         scene: Option<&Scene>,
         version: u64,
+        t: f64,
         marks: &[(Point, Point)],
     ) -> Shown {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -160,6 +162,7 @@ impl View {
             zoom: self.zoom,
             origin: self.origin,
             scene: version,
+            time: t,
         };
         let painter = ui.painter_at(rect);
         let mut cover = self.drawn.map(|d| self.texture_rect(rect, &d));
@@ -172,6 +175,7 @@ impl View {
             None => true,
             Some(d) => {
                 d.scene != version
+                    || d.time != t
                     || d.pane != wanted.pane
                     || d.pixels_per_point != ppp
                     || (d != wanted && settled)
@@ -226,7 +230,7 @@ impl View {
         let origin = (wanted.origin + overdraw) * ppp;
         let pixmap = render::draw_view(
             scene,
-            0.0,
+            wanted.time,
             pixels[0] as u32,
             pixels[1] as u32,
             (wanted.zoom * ppp) as f64,
@@ -266,6 +270,7 @@ mod tests {
             zoom,
             origin,
             scene: 0,
+            time: 0.0,
         }
     }
 
