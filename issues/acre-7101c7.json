@@ -1,0 +1,30 @@
+{
+  "id": "acre-7101c7",
+  "title": "A drawing can use fonts the user provides",
+  "body": "acre embeds its fonts in `crates/acre/src/render.rs`: JetBrains Mono, Noto Sans in three faces, and, after the math issue, a math font. `font` takes one of the names `mono`, `sans`, `sans-bold`, `sans-italic`.\n\n## Proposal\n\n- A canvas-level `fonts { name \"path/to/font.ttf\"; ... }` registers font files under names that `font` then accepts. A program crate reads the files and passes their bytes to the library, which still reads no file itself.\n- The math font can be swapped the same way, provided it has a MATH table.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-e77413",
+  "blocked_by": [
+    "acre-ea949d"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T05:49:59.122823703Z",
+  "updated_at": "2026-11-13T05:49:59.122823703Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f4067bd",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
