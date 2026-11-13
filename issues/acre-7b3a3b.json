@@ -1,0 +1,28 @@
+{
+  "id": "acre-7b3a3b",
+  "title": "Justified text hyphenates words to even out its spacing",
+  "body": "`text-align justify` (acre-2457be) breaks a paragraph only at spaces, and `text::even_breaks` in `crates/acre/src/text.rs` chooses among those breaks. Spaces never shrink, so in a narrow `width` some lines come out loose. A trial at 180 pixels with 14-pixel text set \"suffix   of   a   text   in\" with spaces several times their width, because the next word did not fit.\n\nTeX hyphenates words for this reason. Each place a word may break adds one more choice of where a line ends, and with more choices the breaker finds lines that fill the width with spaces close to their natural size. Knuth and Plass count a break at a hyphen as a candidate with a penalty, `\\hyphenpenalty` 50 in plain TeX, so the breaker hyphenates only when it buys evener spacing.\n\n## Proposal\n\nLet `even_breaks` also break inside a word, at the points Liang's hyphenation patterns allow, with a penalty, and end such a line with a hyphen glyph.\n\n## Cost\n\n- Patterns per language. English patterns are tens of kilobytes. A crate such as `hyphenation` embeds them, which adds a dependency and its licence terms to the library.\n- Shaping. Words are shaped whole by rustybuzz, and a break point inside a ligature such as \"ffi\" has no glyph boundary. The word would have to be shaped again as two pieces, with a hyphen shaped in the first one's font.\n- Text. The PDF writer copies `Layout::text` out by glyph. A hyphen the layout added is not in that text, so copying would need to leave it out or map it.\n- Code spans and formulas never hyphenate, and neither should names in mono.\n- Ragged text would stay as it is, so existing figures do not move.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T08:08:34.550819599Z",
+  "updated_at": "2026-11-13T08:08:34.550819599Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "dd3c79a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
