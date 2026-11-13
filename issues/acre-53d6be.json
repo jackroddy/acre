@@ -3,7 +3,7 @@
   "title": "Panels and captions number and style themselves",
   "body": "A figure's sections are `group` nodes with a title written as two `text` nodes at hand-picked offsets, such as `text { at 40 0; text \"{grey 4}   ...\"; style title; }` in `key-schemes.acre`. Nothing numbers them, and every figure restates the same title style.\n\n## Proposal\n\n- `panel NAME { title \"...\"; ... }`: a group with a heading. Panels number themselves 1, 2, 3 in source order. A canvas-level style sets how a panel heading looks, with an optional frame and background.\n- `caption { text \"...\"; width N; }`: text set in the caption style, under its panel or under the whole figure.\n- A panel reports its size, measured from what it holds, so the layout issue can stack panels.\n\n## Open\n\n- Whether the number is part of the title text or a separate mark, and whether `panel` replaces `group` or wraps it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "acre-e77413",
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/cd2d1020",
-  "lease_expires": "2026-11-13T06:36:48.905254638Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.060806857Z",
-  "updated_at": "2026-11-13T06:21:48.905254638Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T06:23:16.690639927Z",
+  "closed_at": "2026-11-13T06:23:16.690639927Z",
+  "close_reason": "Panels, captions and kind styles landed in d696f9e. The rework into cards is uncommitted on dev: a framed panel's at is its frame's corner, its heading and contents sit inside padding, and width and height set the least frame size. A stack or grid now measures a child's lines, arrows and braces when their names resolve. figures/key-schemes.acre draws its five sections as white cards on a grey page.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "149a80b",
+      "branch": "dev"
+    }
   }
 }
