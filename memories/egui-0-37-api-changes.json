@@ -1,10 +1,10 @@
 {
   "slug": "egui-0-37-api-changes",
-  "text": "egui/eframe 0.37, used by crates/acre-gui, differs from 0.29-0.31. eframe::App requires `fn ui(&mut self, ui: &mut egui::Ui, frame)`, with an optional `logic(ctx, frame)`. `egui::Panel::left/top/bottom(id).show(ui, ..)` replaces SidePanel and TopBottomPanel. `MenuBar::new().ui(ui, ..)` replaces menu::bar, and `ui.close()` replaces close_menu. `LayoutSection::byte_range` is a Range<ByteIndex>. `Id::new` is deprecated for `Id::unique`. Found compiling crates/acre-gui/src/app.rs.",
+  "text": "egui/eframe 0.37 in crates/acre-gui differs from 0.29-0.31. eframe::App needs fn ui(&mut self, ui, frame) and has an optional logic(ctx, frame). Panel::top/bottom/left(id).show(ui, ..) replaces TopBottomPanel and SidePanel, MenuBar::new().ui replaces menu::bar, ui.close() replaces close_menu, and Id::new is deprecated for Id::unique. On Wayland eframe calls ui only after a compositor frame callback and runs logic alone until one comes (src/native/run.rs, MISSED_REDRAW_TIMEOUT).",
   "created_at": "2026-11-09T23:27:03.934904011Z",
-  "updated_at": "2026-11-09T23:27:03.934904011Z",
+  "updated_at": "2026-11-13T06:31:19.423202159Z",
   "stamp": {
-    "commit": "38a8b36",
+    "commit": "6866c55",
     "branch": "dev"
   }
 }
