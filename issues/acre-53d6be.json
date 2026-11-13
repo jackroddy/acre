@@ -3,7 +3,7 @@
   "title": "Panels and captions number and style themselves",
   "body": "A figure's sections are `group` nodes with a title written as two `text` nodes at hand-picked offsets, such as `text { at 40 0; text \"{grey 4}   ...\"; style title; }` in `key-schemes.acre`. Nothing numbers them, and every figure restates the same title style.\n\n## Proposal\n\n- `panel NAME { title \"...\"; ... }`: a group with a heading. Panels number themselves 1, 2, 3 in source order. A canvas-level style sets how a panel heading looks, with an optional frame and background.\n- `caption { text \"...\"; width N; }`: text set in the caption style, under its panel or under the whole figure.\n- A panel reports its size, measured from what it holds, so the layout issue can stack panels.\n\n## Open\n\n- Whether the number is part of the title text or a separate mark, and whether `panel` replaces `group` or wraps it.",
   "type": "feature",
-  "status": "closed",
+  "status": "open",
   "priority": 2,
   "labels": [],
   "parent": "acre-e77413",
@@ -15,19 +15,16 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.060806857Z",
-  "updated_at": "2026-11-13T06:08:51.771420334Z",
-  "closed_at": "2026-11-13T06:08:51.771420334Z",
-  "close_reason": "Landed uncommitted on dev: panel and caption in crates/acre/src/scene/build.rs (panel_place, add_panel, caption, bounds_of) and the schema, and styles named after a node kind in scene/expand.rs. figures/key-schemes.acre uses five panels in place of its hand-placed headings. The number is a separate run before the title. A panel is its own node, not a group with a heading.",
-  "resolution": "done",
+  "updated_at": "2026-11-13T06:21:48.896467691Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": {
-      "commit": "b2de97d",
-      "branch": "dev"
-    }
+    "closed": null
   }
 }
