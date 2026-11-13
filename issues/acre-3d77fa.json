@@ -1,0 +1,28 @@
+{
+  "id": "acre-3d77fa",
+  "title": "Decide whether to delete the local backup-before-rewrite branch",
+  "body": "Rewriting dev on 2026-11-13 so that prefix-encoder.acre was never committed left the old commits on a local branch, backup-before-rewrite, and in the reflog. Nothing on dev, main or origin holds them. Deleting the branch and expiring the reflog prunes them for good. Jack has not decided yet.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T06:31:10.408666068Z",
+  "updated_at": "2026-11-13T06:31:10.408666068Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6866c55",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
