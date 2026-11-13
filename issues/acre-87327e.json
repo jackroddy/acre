@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-13T04:33:31.273746987Z",
   "defer_until": null,
   "created_at": "2026-11-13T03:51:14.543446449Z",
-  "updated_at": "2026-11-13T04:18:31.273746987Z",
+  "updated_at": "2026-11-13T04:19:20.312350949Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "10820d39",
+      "at": "2026-11-13T04:19:20.312350059Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "Implemented in crates/acre-gui/src/view.rs, not yet committed. The texture reaches a quarter of the pane past each edge (OVERDRAW). During a pan or zoom, View::texture_rect moves and scales the last texture, and View::draw runs again only 150 ms after the last motion (SETTLE), or at once when the texture no longer covers the pane. Glyph path caching in render is not done. Waiting on Jack to try panning in the release build.",
+      "commit": "43c5f60",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "43c5f60",
