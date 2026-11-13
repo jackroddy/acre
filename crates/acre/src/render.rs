@@ -1,7 +1,11 @@
-//! A scene drawn into pixels.
+//! A scene drawn into pixels, or written as SVG or PDF.
 //!
 //! [`draw_frame`] samples a [`Scene`] at one instant and paints its
-//! primitives onto a pixmap. Nothing here writes a file.
+//! primitives onto a pixmap. [`draw_svg`] and [`draw_pdf`] write the
+//! same primitives as vector graphics. Nothing here writes a file.
+
+mod pdf;
+mod svg;
 
 use tiny_skia as sk;
 use ttf_parser::{GlyphId, OutlineBuilder};
@@ -9,6 +13,9 @@ use ttf_parser::{GlyphId, OutlineBuilder};
 use crate::fonts::Fonts;
 use crate::scene::{Color, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
 use crate::text::{self, Mark};
+
+pub use pdf::draw_pdf;
+pub use svg::draw_svg;
 
 /// The scene at time `t`, drawn onto a pixmap of `scale` pixels to each
 /// canvas pixel.
@@ -100,13 +107,7 @@ fn draw_primitives(
                 fill,
                 stroke,
             } => {
-                let rect = sk::Rect::from_ltrb(
-                    (center.x - radius.x) as f32,
-                    (center.y - radius.y) as f32,
-                    (center.x + radius.x) as f32,
-                    (center.y + radius.y) as f32,
-                );
-                if let Some(path) = rect.and_then(sk::PathBuilder::from_oval) {
+                if let Some(path) = oval(*center, *radius) {
                     paint_path(pixmap, &path, *fill, *stroke);
                 }
             }
@@ -204,6 +205,16 @@ fn rounded_rect(origin: Point, size: Point, radius: f64) -> Option<sk::Path> {
     p.cubic_to(l, t + k, l + k, t, l + r, t);
     p.close();
     p.finish()
+}
+
+fn oval(center: Point, radius: Point) -> Option<sk::Path> {
+    let rect = sk::Rect::from_ltrb(
+        (center.x - radius.x) as f32,
+        (center.y - radius.y) as f32,
+        (center.x + radius.x) as f32,
+        (center.y + radius.y) as f32,
+    )?;
+    sk::PathBuilder::from_oval(rect)
 }
 
 fn paint(color: Color) -> sk::Paint<'static> {

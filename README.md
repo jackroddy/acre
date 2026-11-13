@@ -14,7 +14,10 @@ The tool is purpose-built for my own use cases, and it is primarily developed us
 ```sh
 acre check drawing.acre
 acre render drawing.acre --out drawing.png
+acre render drawing.acre --out drawing.pdf
 ```
+
+`render` writes PNG, SVG or PDF, as the extension of `--out` says.
 
 ## crates
 

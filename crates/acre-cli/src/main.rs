@@ -24,7 +24,7 @@ struct Cli {
 enum Command {
     /// Parse a drawing and report its errors without rendering.
     Check(CheckArgs),
-    /// Render a drawing to a PNG image.
+    /// Render a drawing to a PNG, SVG or PDF file.
     Render(RenderArgs),
     /// Rewrite drawings in acre's one layout.
     Fmt(FmtArgs),
@@ -59,17 +59,39 @@ struct CheckArgs {
 
 #[derive(Args)]
 struct RenderArgs {
-    /// Where the image goes [default: the file with a .png extension]
+    /// Where the image goes, in the format its extension names [default: the
+    /// file with the format's extension]
     #[arg(long, value_name = "path")]
     out: Option<PathBuf>,
 
-    /// Image pixels to each canvas pixel
+    /// The format to write [default: from the extension of --out, else png]
+    #[arg(long, value_enum, value_name = "format")]
+    format: Option<Format>,
+
+    /// Image pixels to each canvas pixel, or for SVG and PDF, CSS pixels
     #[arg(long, value_name = "n", default_value_t = 1.0)]
     scale: f64,
 
     /// The drawing to render
     #[arg(value_name = "file")]
     file: PathBuf,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Format {
+    Png,
+    Svg,
+    Pdf,
+}
+
+impl Format {
+    fn extension(self) -> &'static str {
+        match self {
+            Format::Png => "png",
+            Format::Svg => "svg",
+            Format::Pdf => "pdf",
+        }
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -148,11 +170,37 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Render(args) => {
+            let format = match (args.format, &args.out) {
+                (Some(format), _) => format,
+                (None, None) => Format::Png,
+                (None, Some(out)) => {
+                    let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    match ext.to_ascii_lowercase().as_str() {
+                        "png" => Format::Png,
+                        "svg" => Format::Svg,
+                        "pdf" => Format::Pdf,
+                        _ => {
+                            return Err(anyhow!(
+                                "cannot tell a format from {}: name it .png, .svg or .pdf, or give --format",
+                                out.display()
+                            ));
+                        }
+                    }
+                }
+            };
             let scene = load(&args.file)?;
-            let out = args.out.unwrap_or_else(|| args.file.with_extension("png"));
-            render::draw_frame(&scene, 0.0, args.scale)
-                .save_png(&out)
-                .with_context(|| format!("cannot write {}", out.display()))?;
+            let out = args
+                .out
+                .unwrap_or_else(|| args.file.with_extension(format.extension()));
+            let bytes = match format {
+                Format::Png => render::draw_frame(&scene, 0.0, args.scale)
+                    .encode_png()
+                    .context("cannot encode the image")?,
+                Format::Svg => render::draw_svg(&scene, 0.0, args.scale).into_bytes(),
+                Format::Pdf => render::draw_pdf(&scene, 0.0, args.scale)
+                    .map_err(|e| anyhow!("cannot write a PDF: {e}"))?,
+            };
+            fs::write(&out, bytes).with_context(|| format!("cannot write {}", out.display()))?;
         }
     }
     Ok(())

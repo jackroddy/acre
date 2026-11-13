@@ -98,7 +98,7 @@ pub struct Run {
 }
 
 /// The typeface text is set in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Font {
     #[default]
     Mono,

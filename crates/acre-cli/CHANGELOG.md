@@ -9,6 +9,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- `render` writes SVG or PDF as well as PNG. It takes the format from the
+  extension of `--out`, and `--format png|svg|pdf` names it outright. Without
+  `--out`, the file goes next to the drawing with the format's extension. An
+  `--out` with any other extension is an error unless `--format` is given.
 - `check` and `render` read the font files a drawing lists in `fonts`, with
   paths relative to the drawing's file. A file that cannot be read, or a math
   font without a MATH table, is an error naming the file and its line.

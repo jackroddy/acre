@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `render::draw_svg` writes a scene as SVG, and `render::draw_pdf` writes it
+  as a one-page PDF. Both draw the same primitives as the PNG renderer and put
+  text where it does. `draw_svg` writes text as glyph outlines, so a viewer
+  needs no font. `draw_pdf` embeds a subset of each font the scene uses, so a
+  reader can select and copy the text. A canvas pixel is a CSS pixel in both,
+  so a PDF page is 0.75 points to the pixel.
+- Each glyph in a `text::Layout` has the bytes of `Layout::text` it sets.
 - A `fonts` node in the canvas registers font files under names that `font`
   accepts, in the canvas, on any node and in a style. `math "PATH"` in it sets
   formulas in another math font, which needs an OpenType MATH table. The
@@ -132,6 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `text::Glyph` is `Clone` and no longer `Copy`, since it holds a range.
 - Text is shaped with rustybuzz, so kerning and other font rules apply. The new
   `text` module lays out and measures text for both `scene` and `render`.
   `Label::size` gives a label's measured size, and `Scene::bounds` measures

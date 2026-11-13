@@ -2,6 +2,8 @@
 //! lines, and measured. `scene` measures labels with this module and
 //! `render` draws them from it, so the two agree on every position.
 
+use std::ops::Range;
+
 use rustybuzz::{Face, UnicodeBuffer};
 
 use crate::fonts::Fonts;
@@ -23,9 +25,12 @@ pub enum Mark {
 }
 
 /// One shaped glyph, placed from the start of its line's baseline.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Glyph {
     pub mark: Mark,
+    /// The bytes of [`Layout::text`] the glyph sets, empty for a glyph
+    /// of a formula.
+    pub text: Range<usize>,
     pub x: f64,
     /// Up from the baseline is negative, as on the canvas.
     pub y: f64,
@@ -49,6 +54,8 @@ pub struct Line {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
     pub lines: Vec<Line>,
+    /// The text of every run, one after another.
+    pub text: String,
     pub size: f64,
     /// The height above the baseline of the first run's font, or of the
     /// formulas on the first line where they are taller.
@@ -130,12 +137,15 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
         glyphs: Vec::new(),
         width: 0.0,
     }];
+    let mut text = String::new();
     for run in runs {
+        let run_start = text.len();
+        text.push_str(&run.text);
         if run.font == Font::Math
             && let Ok(formula) = math::layout(&run.text, size, fonts)
         {
             let line = lines.last_mut().expect("there is always a line");
-            push_formula(line, formula, run.color);
+            push_formula(line, formula, run_start, run.color);
             continue;
         }
 
@@ -149,7 +159,10 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
         };
         let face = fonts.face(font);
         let scale = per_unit(face);
+        let mut piece_start = run_start;
         for (k, piece) in run.text.split('\n').enumerate() {
+            let start = piece_start;
+            piece_start += piece.len() + 1;
             if k > 0 {
                 lines.push(Line {
                     glyphs: Vec::new(),
@@ -163,14 +176,27 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
             let mut buffer = UnicodeBuffer::new();
             buffer.push_str(piece);
             let shaped = rustybuzz::shape(face, &[], buffer);
+            let mut clusters: Vec<usize> = shaped
+                .glyph_infos()
+                .iter()
+                .map(|info| info.cluster as usize)
+                .collect();
+            clusters.sort_unstable();
+            clusters.dedup();
             for (info, pos) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
                 let advance = pos.x_advance as f64 * scale;
+                let cluster = info.cluster as usize;
+                let end = clusters
+                    .iter()
+                    .find(|&&c| c > cluster)
+                    .map_or(piece.len(), |&c| c);
                 line.glyphs.push(Glyph {
                     mark: Mark::Outline {
                         font,
                         id: info.glyph_id as u16,
                         size,
                     },
+                    text: start + cluster..start + end,
                     x: line.width + pos.x_offset as f64 * scale,
                     y: -pos.y_offset as f64 * scale,
                     advance,
@@ -189,6 +215,7 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
     let descent = lines.last().map_or(0.0, |l| ink(fonts, l).1);
     Layout {
         lines,
+        text,
         size,
         ascent: (first.ascender() as f64 * scale).max(ascent),
         descent: (-(first.descender() as f64) * scale).max(descent),
@@ -197,7 +224,7 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
 }
 
 /// Append `formula` to `line` as one unbreakable stretch of glyphs.
-fn push_formula(line: &mut Line, formula: math::MathBox, color: Color) {
+fn push_formula(line: &mut Line, formula: math::MathBox, text_start: usize, color: Color) {
     let start = line.width;
     let end = start + formula.width;
 
@@ -217,6 +244,7 @@ fn push_formula(line: &mut Line, formula: math::MathBox, color: Color) {
         let x = start + piece.x;
         line.glyphs.push(Glyph {
             mark: piece.mark,
+            text: text_start..text_start,
             x,
             y: piece.y,
             advance: end - x,
@@ -318,7 +346,7 @@ fn line_of(glyphs: &[Glyph]) -> Line {
         .iter()
         .map(|g| Glyph {
             x: g.x - left,
-            ..*g
+            ..g.clone()
         })
         .collect();
     let width = glyphs
@@ -449,6 +477,24 @@ mod tests {
         let narrow = layout(&[run("x ", Font::Sans), math], 20.0, Some(1.0));
         assert_eq!(narrow.lines.len(), 2);
         assert!((narrow.lines[1].width - formula.width).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_glyphs_carry_their_runs_text_once_per_cluster() {
+        let l = layout(
+            &[run("ab", Font::Mono), run("c\nfi ffl", Font::Sans)],
+            20.0,
+            None,
+        );
+        let mut copied = String::new();
+        let mut last = None;
+        for g in l.lines.iter().flat_map(|l| &l.glyphs) {
+            if last != Some(g.text.clone()) {
+                copied.push_str(&l.text[g.text.clone()]);
+            }
+            last = Some(g.text.clone());
+        }
+        assert_eq!(copied, "abcfi ffl");
     }
 
     #[test]
