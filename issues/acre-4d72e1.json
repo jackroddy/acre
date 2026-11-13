@@ -1,0 +1,28 @@
+{
+  "id": "acre-4d72e1",
+  "title": "A drawing reads numbers from a data file",
+  "body": "Every value in an acre file is typed into the file. `let` names a value, and arithmetic works inside parentheses.\n\nBoth nail figures draw values that a program computed. These are the bounds of a cloud on each anti-diagonal, the first and last column of each matrix row, the steps of an alignment, and a grid of DP scores. To get them in, the figures were templates. A Python script substituted generated nodes for placeholders such as `@FWD@` and `@GRID_TRIM@`. The script then owned the geometry. So the `.acre` file was not the source of the figure, and `acre fmt` ran on generated output.\n\n## Proposal\n\nA drawing reads a TSV or CSV file by a path relative to the drawing, and names its columns. A `polygon`, a `polyline`, a `row` or a grid takes points, cells or cell text from those columns. One possible shape:\n\n```acre\ndata fwd { file \"fwd-cloud.tsv\"; columns seq prf; }\npolyline { points fwd.prf fwd.seq; }\n```\n\n## Open\n\n- Whether a column maps through a scale into pixels, or the drawing does arithmetic on each value.\n- Whether a data file may also fill a `table` or a `text`. The cloud-search figure typed 13 rows of scores into a `table` by hand.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-fb60bb",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T19:10:18.204930862Z",
+  "updated_at": "2026-11-13T19:10:18.204930862Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "743a77a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
