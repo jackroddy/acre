@@ -13,9 +13,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T02:24:29.460356156Z",
-  "updated_at": "2026-11-13T02:36:26.767485225Z",
+  "updated_at": "2026-11-13T05:08:59.480317975Z",
   "closed_at": "2026-11-13T02:36:26.767485225Z",
-  "close_reason": "Landed uncommitted on dev: scene::schema drives the builder's property checks, lang::context_at reads the cursor's node and property, and crates/acre-gui/src/editor.rs holds auto-indent, comment toggling, brace matching and completion, with line numbers, find and replace, and a reference panel in app.rs. The pure edits have tests. The GUI pieces were not tried by hand, since inside decade the window repaints only on input (acre-4db16b).",
+  "close_reason": "Landed in 43c5f60: scene::schema drives the builder's property checks, lang::context_at reads the cursor's node and property, and acre-gui gained an editor with auto-indent, brace matching, comment toggling, completion, line numbers, find and replace, and a reference panel. The pure edits had tests, and nobody tried the GUI side by hand. f4067bd removed the editor when acre-gui became a viewer for neovim.",
   "resolution": "done",
   "notes": [],
   "stamps": {
