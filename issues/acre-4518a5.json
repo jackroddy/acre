@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T07:14:17.504609754Z",
+  "updated_at": "2026-11-13T07:17:44.207595829Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -99,6 +99,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Syntax chosen for connectors.\n\n- `route straight | elbow | curve`. An elbow has three segments and turns halfway along the longer of the two distances between the ends. A curve is a cubic whose handles run along that same axis, so it leaves and arrives like the elbow does. It is drawn as 24 straight segments.\n- `head` and `tail` take `none | triangle | open | dot`. An `arrow` defaults to a triangle head and a `line` to none, so existing files draw as before.\n- `label-side above | left | right` and `label-at F`, two properties. A single property such as `label left 0.3` would mix a word and a number. `left` and `right` are as seen going from `from` to `to`, so they flip when the ends swap. `above` is the default: the normal that faces up, or right on a vertical line. On a horizontal line it is the old position.\n- The label's box is measured with the text layout and centered on the normal at `gap + half its extent along the normal`. Descenders are ignored when measuring the bottom, which keeps a horizontal line's label where it was.\n\nNot done: routing around shapes in the way. Elbow and curve use only the two ends.",
       "commit": "6e74f14",
+      "branch": "dev"
+    },
+    {
+      "id": "379d889c",
+      "at": "2026-11-13T07:17:44.207594819Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Numbered markers (acre-d08f6a) added `marker { at ...; number N; }` and `number N` on `text`. Choices the proposal left open:\n\n- `marker` has no size or color of its own by default. Its look is `style marker { fill; text-color; text-size; font; diameter }`. That one style also dresses numbered `text`, which reads it through the canvas, not by node kind.\n- `at` on a marker reuses the connector end resolution. A point or a bare name puts the circle's center there. A side puts the circle outside that side, touching it, because a circle centered on an edge covers the first cell of a row.\n- Numbered text is `text { number 3; ... }` and not a new `step` node. The badge goes left of the text and the text shifts right by the diameter plus 8. `width` shrinks by the same amount. `align` is rejected on numbered text.\n- The heading digits leave the string: `\"**1. The mask**\"` becomes `number 1` with `\"**The mask**\"`.",
+      "commit": "638f24c",
       "branch": "dev"
     }
   ],
