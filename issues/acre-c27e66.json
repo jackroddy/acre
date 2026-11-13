@@ -3,7 +3,7 @@
   "title": "Text wraps to a width, and a box can size itself to its text",
   "body": "A label breaks lines only at a `\\n` in its string, so the step paragraphs in `key-schemes.acre` hold hand-placed line breaks. A `box` takes a fixed `size`, so the boxes of its section 1 are sized by trial.\n\n## Proposal\n\n- `width N` on `text` and on a box's text wraps lines at spaces to fit N pixels, using the measure from the shaping issue. A `\\n` still forces a break.\n- A `box` without `size`, or with `size auto`, takes the size of its text plus `padding`, a new property.\n- Text inside a box can align `left`, `center` or `right`, with a padding, instead of always being centered.\n\n## Open\n\n- Whether a box's text should place by its first baseline or its top. Top matches `text` today.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-e77413",
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/cd2d1020",
-  "lease_expires": "2026-11-13T06:17:04.029147216Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.051748743Z",
-  "updated_at": "2026-11-13T06:02:04.029147216Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T06:04:28.785417235Z",
+  "closed_at": "2026-11-13T06:04:28.785417235Z",
+  "close_reason": "Landed uncommitted on dev: text::layout wraps at spaces within a width (text::wrap), width on text and on a box's text, and padding, text-align and an optional size on box. figures/key-schemes.acre uses them for section 1's boxes and section 4's steps.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "eff4b50",
+      "branch": "dev"
+    }
   }
 }
