@@ -53,6 +53,9 @@ scenes gets no editor and no window.
 builds. `acre-dev` and `acre-gui-dev` run the debug builds. The app menu
 entries `acre` and `acre (dev)` call the two GUI links.
 
+To show acre-gui in decade's scratch pane, open `acre-gui`, the release
+build. Open `acre-gui-dev` only when the debug build is the point.
+
 ## Branches
 
 All working changes go on `dev`. Do not open a feature branch unless I ask for

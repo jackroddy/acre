@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use acre::render;
 use acre::scene::{Point, Scene};
 use eframe::egui::{
@@ -9,6 +11,14 @@ const MAX_ZOOM: f32 = 40.0;
 
 /// The fraction of the pane a fitted canvas fills.
 const FIT_MARGIN: f32 = 0.96;
+
+/// How much of the pane's width and height the texture holds past each
+/// edge, so a pan shows drawn content until the scene is drawn again.
+const OVERDRAW: f32 = 0.25;
+
+/// How long the view waits after the last pan or zoom before it draws
+/// the scene again.
+const SETTLE: Duration = Duration::from_millis(150);
 
 /// The render pane: the scene drawn at the pane's own pixels, zoomed and
 /// panned by the person.
@@ -23,6 +33,8 @@ pub struct View {
     texture: Option<TextureHandle>,
     /// What the texture shows, to draw again only when that changes.
     drawn: Option<Drawn>,
+    /// When the person last panned or zoomed.
+    moved: Option<Instant>,
 }
 
 /// What the person did in the pane this frame.
@@ -34,12 +46,21 @@ pub struct Shown {
     pub clicked: Option<Point>,
 }
 
-#[derive(PartialEq)]
+/// The view the texture was drawn for.
+#[derive(Clone, Copy, PartialEq)]
 struct Drawn {
-    pixels: [usize; 2],
+    pane: Vec2,
+    pixels_per_point: f32,
     zoom: f32,
     origin: Vec2,
     scene: u64,
+}
+
+impl Drawn {
+    /// How far past each edge of the pane the texture reaches, in points.
+    fn overdraw(&self) -> Vec2 {
+        (self.pane * OVERDRAW).round()
+    }
 }
 
 impl View {
@@ -50,6 +71,7 @@ impl View {
             origin: Vec2::ZERO,
             texture: None,
             drawn: None,
+            moved: None,
         }
     }
 
@@ -77,6 +99,7 @@ impl View {
         self.origin = at - (at - self.origin) * factor;
         self.zoom = zoom;
         self.fit = false;
+        self.moved = Some(Instant::now());
     }
 
     /// Lay the pane out in `ui`, take the person's zoom and pan, and draw
@@ -106,6 +129,7 @@ impl View {
         if response.dragged() {
             self.origin += response.drag_delta();
             self.fit = false;
+            self.moved = Some(Instant::now());
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -130,45 +154,38 @@ impl View {
         }
 
         let ppp = ui.ctx().pixels_per_point();
-        let pixels = [
-            (rect.width() * ppp).round() as usize,
-            (rect.height() * ppp).round() as usize,
-        ];
-        if pixels[0] == 0 || pixels[1] == 0 {
-            return shown;
-        }
-        let drawn = Drawn {
-            pixels,
+        let wanted = Drawn {
+            pane: rect.size(),
+            pixels_per_point: ppp,
             zoom: self.zoom,
             origin: self.origin,
             scene: version,
         };
-        if self.drawn.as_ref() != Some(&drawn) {
-            let pixmap = render::draw_view(
-                scene,
-                0.0,
-                pixels[0] as u32,
-                pixels[1] as u32,
-                (self.zoom * ppp) as f64,
-                Point::new((self.origin.x * ppp) as f64, (self.origin.y * ppp) as f64),
-            );
-            let image = egui::ColorImage::from_rgba_premultiplied(pixels, pixmap.data());
-            match &mut self.texture {
-                Some(texture) => texture.set(image, TextureOptions::NEAREST),
-                None => {
-                    self.texture = Some(ui.ctx().load_texture(
-                        "render",
-                        image,
-                        TextureOptions::NEAREST,
-                    ));
-                }
-            }
-            self.drawn = Some(drawn);
-        }
         let painter = ui.painter_at(rect);
-        if let Some(texture) = &self.texture {
+        let mut cover = self.drawn.map(|d| self.texture_rect(rect, &d));
+
+        // between pans and zooms the last texture is moved and scaled
+        // into place, and the scene is drawn again only once the person
+        // stops, or when the texture no longer covers the pane
+        let settled = self.moved.is_none_or(|t| t.elapsed() >= SETTLE) && !response.dragged();
+        let stale = match self.drawn {
+            None => true,
+            Some(d) => {
+                d.scene != version
+                    || d.pane != wanted.pane
+                    || d.pixels_per_point != ppp
+                    || (d != wanted && settled)
+                    || !cover.is_some_and(|c| c.contains_rect(rect))
+            }
+        };
+        if stale && self.draw(ui.ctx(), scene, wanted) {
+            cover = Some(self.texture_rect(rect, &wanted));
+        } else if self.drawn != Some(wanted) {
+            ui.ctx().request_repaint_after(SETTLE);
+        }
+        if let (Some(texture), Some(cover)) = (&self.texture, cover) {
             let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-            painter.image(texture.id(), rect, uv, Color32::WHITE);
+            painter.image(texture.id(), cover, uv, Color32::WHITE);
         }
         let to_screen =
             |p: Point| rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom;
@@ -191,5 +208,92 @@ impl View {
             shown.clicked = response.interact_pointer_pos().map(to_canvas);
         }
         shown
+    }
+
+    /// Draw `scene` into the texture for the view `wanted`, with the
+    /// overdraw around the pane. False when the pane has no pixels.
+    fn draw(&mut self, ctx: &egui::Context, scene: &Scene, wanted: Drawn) -> bool {
+        let overdraw = wanted.overdraw();
+        let area = wanted.pane + overdraw * 2.0;
+        let ppp = wanted.pixels_per_point;
+        let pixels = [
+            (area.x * ppp).round() as usize,
+            (area.y * ppp).round() as usize,
+        ];
+        if pixels[0] == 0 || pixels[1] == 0 {
+            return false;
+        }
+        let origin = (wanted.origin + overdraw) * ppp;
+        let pixmap = render::draw_view(
+            scene,
+            0.0,
+            pixels[0] as u32,
+            pixels[1] as u32,
+            (wanted.zoom * ppp) as f64,
+            Point::new(origin.x as f64, origin.y as f64),
+        );
+        let image = egui::ColorImage::from_rgba_premultiplied(pixels, pixmap.data());
+        match &mut self.texture {
+            Some(texture) => texture.set(image, TextureOptions::LINEAR),
+            None => {
+                self.texture = Some(ctx.load_texture("render", image, TextureOptions::LINEAR));
+            }
+        }
+        self.drawn = Some(wanted);
+        true
+    }
+
+    /// Where on screen the texture drawn for `drawn` goes for the current
+    /// zoom and origin, in a pane at `rect`.
+    fn texture_rect(&self, rect: Rect, drawn: &Drawn) -> Rect {
+        // a point at x on the old screen is now at
+        //   origin + (x - old origin) * zoom / old zoom
+        let scale = self.zoom / drawn.zoom;
+        let overdraw = drawn.overdraw();
+        let min = rect.min + self.origin + (-overdraw - drawn.origin) * scale;
+        Rect::from_min_size(min, (drawn.pane + overdraw * 2.0) * scale)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drawn(zoom: f32, origin: Vec2) -> Drawn {
+        Drawn {
+            pane: Vec2::new(400.0, 200.0),
+            pixels_per_point: 1.0,
+            zoom,
+            origin,
+            scene: 0,
+        }
+    }
+
+    #[test]
+    fn an_unmoved_texture_covers_the_pane_and_its_overdraw() {
+        let mut view = View::new();
+        view.zoom = 2.0;
+        view.origin = Vec2::new(30.0, 40.0);
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), Vec2::new(400.0, 200.0));
+        let cover = view.texture_rect(rect, &drawn(2.0, view.origin));
+        assert_eq!(cover, rect.expand2(Vec2::new(100.0, 50.0)));
+    }
+
+    #[test]
+    fn a_texture_follows_a_pan_and_scales_with_a_zoom() {
+        let mut view = View::new();
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 200.0));
+        view.zoom = 1.0;
+        view.origin = Vec2::new(25.0, 0.0);
+        let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
+        assert_eq!(cover.min, pos2(-75.0, -50.0));
+
+        // zoomed 2x about the pane's top-left corner, the canvas origin
+        // stays at the corner and everything else spreads out
+        view.zoom_about(2.0, Vec2::ZERO);
+        view.origin = Vec2::ZERO;
+        let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
+        assert_eq!(cover.min, pos2(-200.0, -100.0));
+        assert_eq!(cover.size(), Vec2::new(1200.0, 600.0));
     }
 }

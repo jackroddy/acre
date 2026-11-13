@@ -27,6 +27,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   fits the canvas to the pane. A View menu zooms in and out (Ctrl+= and
   Ctrl+-), fits (Ctrl+0) and shows actual size (Ctrl+1). The status line shows
   the zoom.
+- A pan or a zoom moves and scales the last drawn image, which reaches a
+  quarter of the pane past each edge. acre-gui draws the scene again 150 ms
+  after the person stops, or sooner when the image no longer covers the pane.
 - acre-gui reads its file again when it changes on disk and has no unsaved
   edits. With unsaved edits it keeps them and says the file changed.
 - A click on the render selects, in the editor, the node that drew the object
