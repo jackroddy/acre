@@ -1,0 +1,28 @@
+{
+  "id": "acre-3893e8",
+  "title": "A timeline moves, scales and fades one cell of a row",
+  "body": "A timeline (acre-5ca447) can change the colors of one cell of a `row`, written `fill r 1 #f4b400`, but moves and scales a row only whole. A row lowers to one `Kind::Row` object, and `Row::draw` in `crates/acre/src/scene/row.rs` draws every cell at its slot. The per-cell `offset` track used by the `swap` helper in `crates/acre/tests/scene_examples.rs` belongs to `Grid`, a kind only Rust code builds, so the language has nothing to move one cell with.\n\n## Proposal\n\nJack decided the behaviour.\n\n- `move r 3 DX DY`, `scale r 3 F`, `fade r 3 in|out|F`, `show r 3` and `hide r 3` change cell 3 of row `r` on its own. A cell scales about its center.\n- The cell's note and text move with it.\n- Connectors, braces and veil rows that name the cell follow it. A veil row is a row placed with `at ROW N DX DY`.\n- A cell that is moved or scaled at an instant is drawn above every cell that is not, so a character that travels across a row stays visible.\n\nA row name followed by one more number than the action takes reads as a cell, as the color actions already do.\n\nThe paint order bears on acre-ca6566, which stays open.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T19:07:28.774125318Z",
+  "updated_at": "2026-11-13T19:07:28.774125318Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "743a77a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
