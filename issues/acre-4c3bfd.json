@@ -1,0 +1,28 @@
+{
+  "id": "acre-4c3bfd",
+  "title": "acre-gui is a viewer that neovim drives through a plugin",
+  "body": "Jack edits in neovim, so acre-gui drops its editor and becomes a viewer. `acre-gui --stdio` renders the text an editor sends as JSON lines on stdin and answers on stdout (`crates/acre-gui/src/link.rs`). A plugin in `editors/nvim/` starts it with `:AcreView`, sends the buffer as you type and the cursor as it moves, puts the viewer's errors in `vim.diagnostic`, and moves the cursor to a node clicked in the render. `acre fmt -` formats stdin for `formatprg`.\n\n## Open\n\n- Inside decade, the viewer window opens in another workspace, because decade cannot tell which workspace a window from neovim's child belongs to. That is decade-1919e9.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T05:05:13.769944919Z",
+  "updated_at": "2026-11-13T05:05:13.769944919Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "14a1746",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
