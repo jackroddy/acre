@@ -2,37 +2,15 @@
 //! lines, and measured. `scene` measures labels with this module and
 //! `render` draws them from it, so the two agree on every position.
 
-use std::sync::LazyLock;
-
 use rustybuzz::{Face, UnicodeBuffer};
 
-use crate::math::{self, MathFont};
+use crate::fonts::Fonts;
+use crate::math;
 use crate::scene::{Color, Font, HAlign, Point, Run, VAlign};
-
-static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
-static SANS: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
-static SANS_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
-static SANS_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-Italic.ttf");
-
-static FACES: LazyLock<[Face<'static>; 4]> = LazyLock::new(|| {
-    let face = |data| Face::from_slice(data, 0).expect("the embedded font parses");
-    [face(MONO), face(SANS), face(SANS_BOLD), face(SANS_ITALIC)]
-});
 
 /// The distance from one baseline to the next, in multiples of the
 /// text size.
 pub const LINE_HEIGHT: f64 = 1.3;
-
-/// The parsed face of `font`.
-pub fn face(font: Font) -> &'static Face<'static> {
-    match font {
-        Font::Mono => &FACES[0],
-        Font::Sans => &FACES[1],
-        Font::SansBold => &FACES[2],
-        Font::SansItalic => &FACES[3],
-        Font::Math => &MathFont::noto().face,
-    }
-}
 
 /// What a glyph draws.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -139,13 +117,13 @@ impl Layout {
     }
 }
 
-/// `runs` shaped at `size` pixels and broken into lines at each `\n`,
+/// `runs` set in `fonts`, shaped at `size` pixels and broken into lines at each `\n`,
 /// and at spaces to keep lines within `width` when it is given. A word
 /// wider than `width` takes a line of its own.
-pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
+pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Layout {
     let first = match runs.first().map_or(Font::Mono, |r| r.font) {
-        Font::Math => face(Font::Sans),
-        font => face(font),
+        Font::Math => fonts.face(Font::Sans),
+        font => fonts.face(font),
     };
     let per_unit = |face: &Face| size / face.units_per_em() as f64;
     let mut lines = vec![Line {
@@ -154,7 +132,7 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
     }];
     for run in runs {
         if run.font == Font::Math
-            && let Ok(formula) = math::layout(&run.text, size, MathFont::noto())
+            && let Ok(formula) = math::layout(&run.text, size, fonts)
         {
             let line = lines.last_mut().expect("there is always a line");
             push_formula(line, formula, run.color);
@@ -169,7 +147,7 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
         } else {
             run.font
         };
-        let face = face(font);
+        let face = fonts.face(font);
         let scale = per_unit(face);
         for (k, piece) in run.text.split('\n').enumerate() {
             if k > 0 {
@@ -207,8 +185,8 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
         lines = lines.into_iter().flat_map(|l| wrap(l, width)).collect();
     }
     let scale = per_unit(first);
-    let ascent = lines.first().map_or(0.0, |l| -ink(l).0);
-    let descent = lines.last().map_or(0.0, |l| ink(l).1);
+    let ascent = lines.first().map_or(0.0, |l| -ink(fonts, l).0);
+    let descent = lines.last().map_or(0.0, |l| ink(fonts, l).1);
     Layout {
         lines,
         size,
@@ -251,7 +229,7 @@ fn push_formula(line: &mut Line, formula: math::MathBox, color: Color) {
 
 /// The top and bottom of the ink of the formulas in `line`, from its
 /// baseline with down positive, or zeros when it holds none.
-fn ink(line: &Line) -> (f64, f64) {
+fn ink(fonts: &Fonts, line: &Line) -> (f64, f64) {
     let mut top: f64 = 0.0;
     let mut bottom: f64 = 0.0;
     for g in &line.glyphs {
@@ -262,7 +240,7 @@ fn ink(line: &Line) -> (f64, f64) {
                 id,
                 size,
             } => {
-                let face = face(Font::Math);
+                let face = fonts.face(Font::Math);
                 let scale = size / face.units_per_em() as f64;
                 match face.glyph_bounding_box(ttf_parser::GlyphId(id)) {
                     Some(b) => (b.y_max as f64 * scale, b.y_min as f64 * scale),
@@ -355,6 +333,10 @@ fn line_of(glyphs: &[Glyph]) -> Line {
 mod tests {
     use super::*;
 
+    fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
+        super::layout(&Fonts::default(), runs, size, width)
+    }
+
     fn run(text: &str, font: Font) -> Run {
         Run {
             text: text.into(),
@@ -365,7 +347,8 @@ mod tests {
 
     /// The sum of each character's advance with no shaping, in pixels.
     fn unkerned(text: &str, font: Font, size: f64) -> f64 {
-        let face = face(font);
+        let fonts = Fonts::default();
+        let face = fonts.face(font);
         let scale = size / face.units_per_em() as f64;
         text.chars()
             .map(|c| {
@@ -455,7 +438,7 @@ mod tests {
             font: Font::Math,
             color: Color::BLACK,
         };
-        let formula = math::layout(&math.text, 20.0, MathFont::noto()).unwrap();
+        let formula = math::layout(&math.text, 20.0, &Fonts::default()).unwrap();
         let alone = layout(&[run("x ", Font::Sans)], 20.0, None);
         let l = layout(&[run("x ", Font::Sans), math.clone()], 20.0, None);
         assert!((l.width() - (alone.lines[0].width + formula.width)).abs() < 1e-9);

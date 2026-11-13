@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- The viewer reads the font files a drawing lists in `fonts`, relative to the
+  drawing's file, and builds the drawing again when one of them changes.
 - The `acre-gui` viewer. It renders a drawing and draws it again when the
   source changes. The last good render stays up while the source has an
   error, and the error's line, column and message show in the status line.

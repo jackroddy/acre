@@ -8,7 +8,9 @@ use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Object, Point,
     Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Text,
 };
+use crate::fonts::{Fonts, Typeface};
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
+use crate::math::MathFont;
 use crate::text::LINE_HEIGHT;
 
 const STROKE_WIDTH: f64 = 2.0;
@@ -17,8 +19,108 @@ const FPS: u32 = 30;
 /// The space `margin` leaves around the drawing of an `auto` canvas.
 const AUTO_MARGIN: f64 = 20.0;
 
-/// The scene a program describes.
-pub fn build(program: &Program) -> Result<Scene, Error> {
+/// A font file the canvas lists in `fonts`, for a program to read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FontFile {
+    /// The name `font` takes for it, or `math` for the math font.
+    pub name: String,
+    /// The path as written, which a program resolves against the file
+    /// the program came from.
+    pub path: String,
+    /// Where the path is in the source.
+    pub span: Span,
+}
+
+/// The name that sets the math font in `fonts`.
+const MATH_FONT: &str = "math";
+
+/// The font files `program` lists, in source order. A program reads
+/// them all and passes their bytes, in this order, to [`build`].
+pub fn font_files(program: &Program) -> Result<Vec<FontFile>, Error> {
+    match program.nodes.as_slice() {
+        [canvas, ..] if canvas.kind.text == "canvas" => listed_fonts(canvas),
+        _ => Ok(Vec::new()),
+    }
+}
+
+/// The files of the `fonts` node of `canvas`.
+fn listed_fonts(canvas: &Node) -> Result<Vec<FontFile>, Error> {
+    let mut out: Vec<FontFile> = Vec::new();
+    let mut nodes = canvas.children.iter().filter(|n| n.kind.text == "fonts");
+    let Some(node) = nodes.next() else {
+        return Ok(out);
+    };
+    if let Some(extra) = nodes.next() {
+        return Err(Error::new(extra.kind.span, "a canvas holds one `fonts`"));
+    }
+    if let Some(name) = &node.name {
+        return Err(Error::new(name.span, "`fonts` takes no name"));
+    }
+    if let Some(child) = node.children.first() {
+        return Err(Error::new(child.kind.span, "`fonts` holds no nodes"));
+    }
+    for p in &node.properties {
+        let name = p.key.text.as_str();
+        if BUILT_IN_FONTS.contains(&name) {
+            return Err(Error::new(
+                p.key.span,
+                format!("`{name}` is a font acre embeds, so it cannot be a font name"),
+            ));
+        }
+        if out.iter().any(|f| f.name == name) {
+            return Err(twice("fonts", &p.key));
+        }
+        let path = match p.values.as_slice() {
+            [
+                Value {
+                    kind: ValueKind::Str(path),
+                    span,
+                },
+            ] => (path.clone(), *span),
+            _ => return Err(p.expected("a quoted path to a font file")),
+        };
+        out.push(FontFile {
+            name: name.into(),
+            path: path.0,
+            span: path.1,
+        });
+    }
+    Ok(out)
+}
+
+const BUILT_IN_FONTS: [&str; 4] = ["mono", "sans", "sans-bold", "sans-italic"];
+
+/// The fonts `listed` names, from their files' `bytes` in the same
+/// order.
+fn read_fonts(listed: &[FontFile], bytes: &[Vec<u8>], canvas: &Node) -> Result<Fonts, Error> {
+    if listed.len() != bytes.len() {
+        return Err(Error::new(
+            canvas.span,
+            format!(
+                "`fonts` lists {} files and {} were read",
+                listed.len(),
+                bytes.len()
+            ),
+        ));
+    }
+    let mut custom = Vec::new();
+    let mut math = None;
+    for (file, data) in listed.iter().zip(bytes) {
+        let data: std::sync::Arc<[u8]> = data.as_slice().into();
+        let bad = |why: &str| Error::new(file.span, format!("`{}` {why}", file.path));
+        if file.name == MATH_FONT {
+            math = Some(MathFont::parse(data).map_err(bad)?);
+        } else {
+            let face = Typeface::parse(data).ok_or_else(|| bad("is not a font file"))?;
+            custom.push((file.name.clone(), face));
+        }
+    }
+    Ok(Fonts::new(custom, math))
+}
+
+/// The scene a program describes. `font_bytes` holds the contents of
+/// each file [`font_files`] lists, in that order.
+pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> {
     let canvas = match program.nodes.as_slice() {
         [] => return Err(Error::new(Span::default(), "the file has no `canvas`")),
         [node, ..] if node.kind.text != "canvas" => {
@@ -37,6 +139,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     };
     let (canvas, colors, badge) = expand(canvas)?;
     let canvas = &canvas;
+    let fonts = read_fonts(&listed_fonts(canvas)?, font_bytes, canvas)?;
     let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
     let [width, height] = canvas_size(size)?;
@@ -59,11 +162,12 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     };
     let mut names = Names {
         font: match props.get("font") {
-            Some(p) => font(p)?,
+            Some(p) => font(p, &fonts)?,
             None => Font::Mono,
         },
         colors,
-        badge: Badge::of_style(badge, canvas.span)?,
+        badge: Badge::of_style(badge, canvas.span, &fonts)?,
+        fonts: fonts.clone(),
         palettes: HashMap::new(),
         shapes: HashMap::new(),
         rows: HashMap::new(),
@@ -91,7 +195,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     let mut offset = Point::ZERO;
     let mut sides = [width.unwrap_or(0.0), height.unwrap_or(0.0)];
     if width.is_none() || height.is_none() {
-        let (min, max) = bounds_of(&objects).unwrap_or((Point::ZERO, Point::ZERO));
+        let (min, max) = bounds_of(&fonts, &objects).unwrap_or((Point::ZERO, Point::ZERO));
         if width.is_none() {
             sides[0] = (max.x - min.x + 2.0 * margin).ceil();
             offset.x = margin - min.x;
@@ -112,6 +216,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
             background,
         },
         objects,
+        fonts,
     })
 }
 
@@ -221,10 +326,10 @@ fn add_objects(
     for node in nodes {
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
-            "palette" => continue,
+            "palette" | "fonts" => continue,
             "caption" => {
                 // a caption goes under everything before it
-                let below = bounds_of(out).map_or(offset.y, |(_, max)| max.y);
+                let below = bounds_of(&names.fonts, out).map_or(offset.y, |(_, max)| max.y);
                 let t = caption(node, names, Point::new(offset.x, below))?;
                 out.push(Object::new(Kind::Text(t)).from_source(node.span));
                 continue;
@@ -351,7 +456,7 @@ fn panel_place(
         false => corner,
     };
     let font = match props.get("title-font") {
-        Some(p) => font(p)?,
+        Some(p) => font(p, &names.fonts)?,
         None => Font::SansBold,
     };
     let heading = match props.get("title") {
@@ -378,6 +483,7 @@ fn panel_place(
                 runs,
                 size: props.number_or("title-size", 18.0)?,
                 width: None,
+                fonts: names.fonts.clone(),
             })
         }
     };
@@ -436,7 +542,7 @@ fn add_panel(
     let contents: Vec<Node> = contents.into_iter().cloned().collect();
     add_objects(&contents, place.contents, pass, panels, out)?;
 
-    let max = bounds_of(&out[start..]).map_or(place.at, |(_, max)| max);
+    let max = bounds_of(&names.fonts, &out[start..]).map_or(place.at, |(_, max)| max);
     let mut bottom = max.y;
     if framed(&props)? {
         // the frame reaches past the contents by the padding, and is at
@@ -496,12 +602,12 @@ fn caption(node: &Node, names: &Names, above: Point) -> Result<Text, Error> {
 }
 
 /// The box around what `objects` draw at time 0.
-fn bounds_of(objects: &[Object]) -> Option<(Point, Point)> {
+fn bounds_of(fonts: &Fonts, objects: &[Object]) -> Option<(Point, Point)> {
     let mut prims = Vec::new();
     for o in objects {
         o.draw(0.0, &mut prims);
     }
-    super::primitive::bounds(&prims)
+    super::primitive::bounds(fonts, &prims)
 }
 
 /// The slot of each child of a stack or a grid, by where the child's
@@ -536,7 +642,7 @@ fn measure<'a>(
     };
     let mut objects = Vec::new();
     add_objects(node, slot, &pass, &mut 0, &mut objects)?;
-    Ok(bounds_of(&objects))
+    Ok(bounds_of(&names.fonts, &objects))
 }
 
 /// The slot of each child of `node`, a stack or a grid. A child's size
@@ -708,6 +814,7 @@ fn keys(kind: &str) -> Vec<&'static str> {
 #[derive(Clone)]
 struct Names<'a> {
     font: Font,
+    fonts: Fonts,
     /// The `let` names that stand for one color, for markup.
     colors: HashMap<String, Color>,
     /// The look of the number on a `marker` and on numbered `text`.
@@ -872,9 +979,10 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
         None => Some(Color::WHITE),
     };
     let stroke = props.stroke(Some(Color::BLACK))?;
-    let font = props.font_or(names.font)?;
+    let font = props.font_or(names.font, &names.fonts)?;
     let label = |text: &str| -> Result<Label, Error> {
         Ok(Label::plain(
+            &names.fonts,
             text,
             props.number_or("text-size", TEXT_SIZE)?,
             font,
@@ -883,10 +991,11 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     };
     let note = |text: &str| -> Result<Label, Error> {
         Ok(Label::plain(
+            &names.fonts,
             text,
             props.number_or("note-size", TEXT_SIZE * 0.7)?,
             match props.get("note-font") {
-                Some(p) => self::font(p)?,
+                Some(p) => self::font(p, &names.fonts)?,
                 None => Font::Mono,
             },
             props.color_or("note-color", Color::BLACK)?,
@@ -1072,7 +1181,7 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
 fn marker(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     let props = Props::new(node, &keys("marker"), false)?;
     let at = props.require("at")?;
-    let badge = Badge::read(&props)?;
+    let badge = Badge::read(&props, &names.fonts)?;
     let mut center = match end(at, names, offset, 0)? {
         End::Point(p) => p,
         End::Box(s) => s.center(),
@@ -1104,15 +1213,17 @@ struct Badge {
     text_size: f64,
     font: Font,
     diameter: f64,
+    fonts: Fonts,
 }
 
 impl Badge {
-    fn read(props: &Props) -> Result<Badge, Error> {
+    fn read(props: &Props, fonts: &Fonts) -> Result<Badge, Error> {
         Ok(Badge {
+            fonts: fonts.clone(),
             fill: props.color_or("fill", Color::BLACK)?,
             text_color: props.color_or("text-color", Color::WHITE)?,
             text_size: props.number_or("text-size", 12.0)?,
-            font: props.font_or(Font::SansBold)?,
+            font: props.font_or(Font::SansBold, fonts)?,
             diameter: props.number_or("diameter", 20.0)?,
         })
     }
@@ -1120,7 +1231,7 @@ impl Badge {
     /// The badge that `style marker` sets, whose properties are
     /// `properties`; `span` is where a mistake in them is reported when
     /// they carry none.
-    fn of_style(properties: Vec<Property>, span: Span) -> Result<Badge, Error> {
+    fn of_style(properties: Vec<Property>, span: Span, fonts: &Fonts) -> Result<Badge, Error> {
         let word = |text: &str| crate::lang::Word {
             text: text.into(),
             span,
@@ -1132,7 +1243,7 @@ impl Badge {
             children: Vec::new(),
             span,
         };
-        Badge::read(&Props::new(&node, &keys("marker"), false)?)
+        Badge::read(&Props::new(&node, &keys("marker"), false)?, fonts)
     }
 
     fn shape(&self, number: usize, center: Point) -> Shape {
@@ -1145,6 +1256,7 @@ impl Badge {
             fill: Some(self.fill),
             stroke: None,
             label: Some(Label::plain(
+                &self.fonts,
                 number.to_string(),
                 self.text_size,
                 self.font,
@@ -1177,6 +1289,7 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
             runs: vec![run],
             size: props.number_or("size", TEXT_SIZE)?,
             width: None,
+            fonts: names.fonts.clone(),
         },
         align: props.align()?,
     })
@@ -1226,7 +1339,7 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
     }
     let height = props.number_or("row-height", TEXT_SIZE * 1.5)?;
     let size = props.number_or("size", TEXT_SIZE)?;
-    let font = props.font_or(names.font)?;
+    let font = props.font_or(names.font, &names.fonts)?;
     let color = props.color_or("color", Color::BLACK)?;
 
     let mut out = Vec::new();
@@ -1249,6 +1362,7 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
                     runs,
                     size,
                     width: None,
+                    fonts: names.fonts.clone(),
                 },
                 align: aligns[column],
             });
@@ -1346,6 +1460,7 @@ fn code(node: &Node, names: &Names, offset: Point) -> Result<Code, Error> {
         radius: props.number_or("radius", 6.0)?,
         emphasize,
         emphasis: color("emphasis", hex(0xfff3b0))?,
+        fonts: names.fonts.clone(),
     })
 }
 
@@ -1420,9 +1535,10 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
             .stroke(Some(Color::BLACK))?
             .unwrap_or(Stroke::solid(Color::BLACK, 1.0)),
         label: Label::plain(
+            &names.fonts,
             "",
             props.number_or("text-size", TEXT_SIZE * 0.7)?,
-            props.font_or(names.font)?,
+            props.font_or(names.font, &names.fonts)?,
             props.color_or("text-color", Color::BLACK)?,
         ),
     })
@@ -1592,16 +1708,19 @@ fn side(p: &Property) -> Result<Side, Error> {
     }
 }
 
-fn font(p: &Property) -> Result<Font, Error> {
-    match p.word()? {
+fn font(p: &Property, fonts: &Fonts) -> Result<Font, Error> {
+    let name = p.word()?;
+    match name {
         "mono" => Ok(Font::Mono),
         "sans" => Ok(Font::Sans),
         "sans-bold" => Ok(Font::SansBold),
         "sans-italic" => Ok(Font::SansItalic),
-        _ => Err(Error::new(
-            p.span,
-            "`font` is mono, sans, sans-bold or sans-italic",
-        )),
+        _ => fonts.lookup(name).ok_or_else(|| {
+            Error::new(
+                p.span,
+                "`font` is mono, sans, sans-bold, sans-italic or a name from `fonts`",
+            )
+        }),
     }
 }
 
@@ -1721,9 +1840,9 @@ impl<'a> Props<'a> {
         }
     }
 
-    fn font_or(&self, default: Font) -> Result<Font, Error> {
+    fn font_or(&self, default: Font, fonts: &Fonts) -> Result<Font, Error> {
         match self.get("font") {
-            Some(p) => font(p),
+            Some(p) => font(p, fonts),
             None => Ok(default),
         }
     }
@@ -1755,7 +1874,7 @@ impl<'a> Props<'a> {
         };
         let runs = markup::runs(
             &p.string()?,
-            self.font_or(names.font)?,
+            self.font_or(names.font, &names.fonts)?,
             self.color_or(color, Color::BLACK)?,
             &names.colors,
         )
@@ -1764,6 +1883,7 @@ impl<'a> Props<'a> {
             runs,
             size: self.number_or(size, TEXT_SIZE)?,
             width: None,
+            fonts: names.fonts.clone(),
         }))
     }
 }
@@ -1843,7 +1963,7 @@ mod tests {
 
     fn scene(src: &str) -> Result<Scene, (usize, usize, String)> {
         let program = parse(src).unwrap();
-        build(&program).map_err(|e| {
+        build(&program, &[]).map_err(|e| {
             let (line, col) = e.line_col(src);
             (line, col, e.message)
         })
@@ -2265,7 +2385,7 @@ mod tests {
 
     /// The box around everything `s` draws at time 0.
     fn drawn(s: &Scene) -> (Point, Point) {
-        bounds_of(&s.objects).unwrap()
+        bounds_of(&Fonts::default(), &s.objects).unwrap()
     }
 
     #[test]
@@ -2434,5 +2554,117 @@ mod tests {
         assert!(scene("canvas { size 9 9; marker { at 1 1; } }").is_err());
         assert!(scene("canvas { size 9 9; marker { at 1 1; number 1.5; } }").is_err());
         assert!(scene("canvas { size 9 9; text { text \"a\"; number 1; align right; } }").is_err());
+    }
+
+    const BOLD: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Bold.ttf");
+    const MATH: &[u8] = include_bytes!("../../assets/fonts/NotoSansMath-Regular.ttf");
+    const SANS: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
+
+    /// The scene `src` builds with `fonts` as the contents of the files
+    /// it lists.
+    fn scene_with(src: &str, fonts: &[&[u8]]) -> Result<Scene, (usize, usize, String)> {
+        let program = parse(src).unwrap();
+        let bytes: Vec<Vec<u8>> = fonts.iter().map(|f| f.to_vec()).collect();
+        build(&program, &bytes).map_err(|e| {
+            let (line, col) = e.line_col(src);
+            (line, col, e.message)
+        })
+    }
+
+    #[test]
+    fn the_files_a_canvas_lists_come_in_source_order_with_their_places() {
+        let src = "canvas {\n  size 9 9;\n  fonts {\n    serif \"a/serif.ttf\";\n    math \"m.otf\";\n  }\n}";
+        let files = font_files(&parse(src).unwrap()).unwrap();
+        let named: Vec<_> = files
+            .iter()
+            .map(|f| (f.name.as_str(), f.path.as_str()))
+            .collect();
+        assert_eq!(named, [("serif", "a/serif.ttf"), ("math", "m.otf")]);
+        let at = files[0].span.start;
+        assert_eq!(&src[at..at + 13], "\"a/serif.ttf\"");
+        assert!(
+            font_files(&parse("canvas { size 9 9; }").unwrap())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_registered_font_is_a_name_font_takes_and_text_is_measured_in_it() {
+        let src = "canvas { size 200 50; fonts { heavy \"h.ttf\"; }
+            text { at 0 0; text \"Hello\"; font heavy; }
+            text { at 0 20; text \"Hello\"; font sans-bold; } }";
+        let s = scene_with(src, &[BOLD]).unwrap();
+        let (Kind::Text(a), Kind::Text(b)) = (&s.objects[0].kind, &s.objects[1].kind) else {
+            panic!("expected texts");
+        };
+        assert_eq!(a.label.runs[0].font, Font::Custom(0));
+        assert_eq!(a.label.size(), b.label.size());
+        assert_eq!(s.fonts.bytes(Font::Custom(0)).as_ref(), BOLD);
+    }
+
+    #[test]
+    fn a_registered_font_can_be_the_canvas_default() {
+        let src = "canvas { size 200 50; font heavy; fonts { heavy \"h.ttf\"; }
+            text { at 0 0; text \"Hello\"; } }";
+        let s = scene_with(src, &[BOLD]).unwrap();
+        let Kind::Text(t) = &s.objects[0].kind else {
+            panic!("expected text");
+        };
+        assert_eq!(t.label.runs[0].font, Font::Custom(0));
+    }
+
+    #[test]
+    fn a_font_no_fonts_node_names_is_an_error() {
+        let (_, _, message) =
+            scene("canvas { size 9 9; text { at 0 0; text \"a\"; font heavy; } }").unwrap_err();
+        assert!(message.contains("`fonts`"), "{message}");
+    }
+
+    #[test]
+    fn fonts_that_do_not_load_are_errors_naming_the_file_and_line() {
+        let src = "canvas { size 9 9;\n fonts {\n  a \"notes.txt\";\n }\n}";
+        let (line, _, message) = scene_with(src, &[b"not a font"]).unwrap_err();
+        assert_eq!(line, 3);
+        assert!(
+            message.contains("`notes.txt` is not a font file"),
+            "{message}"
+        );
+
+        let src = "canvas { size 9 9;\n fonts {\n  math \"text.ttf\";\n }\n}";
+        let (line, _, message) = scene_with(src, &[SANS]).unwrap_err();
+        assert_eq!(line, 3);
+        assert!(
+            message.contains("`text.ttf` has no MATH table"),
+            "{message}"
+        );
+
+        let (_, _, message) = scene_with(src, &[]).unwrap_err();
+        assert!(message.contains("lists 1 files"), "{message}");
+    }
+
+    #[test]
+    fn a_font_name_is_taken_once_and_never_an_embedded_one() {
+        let (_, _, message) =
+            scene_with("canvas { size 9 9; fonts { sans \"a.ttf\"; } }", &[SANS]).unwrap_err();
+        assert!(message.contains("`sans`"), "{message}");
+        let twice = "canvas { size 9 9; fonts { a \"a.ttf\"; a \"b.ttf\"; } }";
+        assert!(font_files(&parse(twice).unwrap()).is_err());
+        let not_a_path = "canvas { size 9 9; fonts { a 3; } }";
+        assert!(font_files(&parse(not_a_path).unwrap()).is_err());
+    }
+
+    #[test]
+    fn the_math_font_is_swapped_for_a_file_with_a_math_table() {
+        let src = "canvas { size 200 50; fonts { math \"m.ttf\"; }
+            math { at 0 0; text \"x^2\"; } }";
+        let s = scene_with(src, &[MATH]).unwrap();
+        assert_eq!(s.fonts.bytes(Font::Math).as_ref(), MATH);
+        let plain = scene("canvas { size 200 50; math { at 0 0; text \"x^2\"; } }").unwrap();
+        let width = |s: &Scene| match &s.objects[0].kind {
+            Kind::Text(t) => t.label.size().x,
+            other => panic!("expected text, got {other:?}"),
+        };
+        assert_eq!(width(&s), width(&plain));
     }
 }

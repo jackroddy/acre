@@ -13,7 +13,7 @@ fn every_example_draws() {
         let src = fs::read_to_string(&path).unwrap();
         let program = acre::lang::parse(&src)
             .unwrap_or_else(|e| panic!("{}: {:?}: {}", path.display(), e.line_col(&src), e));
-        let scene = acre::scene::build(&program)
+        let scene = acre::scene::build(&program, &[])
             .unwrap_or_else(|e| panic!("{}: {:?}: {}", path.display(), e.line_col(&src), e));
         acre::render::draw_frame(&scene, 0.0, 1.0);
         count += 1;

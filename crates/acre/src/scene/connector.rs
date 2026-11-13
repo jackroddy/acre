@@ -167,7 +167,7 @@ impl Connector {
         };
         // the box runs from the first line's ascent down to the
         // baseline, so a descender may hang past it as it always has
-        let layout = crate::text::layout(&label.runs, label.size, label.width);
+        let layout = crate::text::layout(&label.fonts, &label.runs, label.size, label.width);
         let (min, max) = layout.extent(Point::ZERO, HAlign::Center, VAlign::Baseline);
         let (half_w, ascent) = ((max.x - min.x) / 2.0, -min.y);
         let reach = LABEL_GAP + normal.x.abs() * half_w + normal.y.abs() * ascent / 2.0;
@@ -268,6 +268,7 @@ fn point_at(path: &[Point], f: f64) -> (Point, Point) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fonts::Fonts;
     use crate::scene::primitive::{Color, Font};
 
     fn connector(from: (f64, f64), to: (f64, f64)) -> Connector {
@@ -286,7 +287,13 @@ mod tests {
 
     fn labeled(mut c: Connector, side: LabelSide) -> Connector {
         c.head = Head::None;
-        c.label = Some(Label::plain("label", 14.0, Font::Sans, Color::BLACK));
+        c.label = Some(Label::plain(
+            &Fonts::default(),
+            "label",
+            14.0,
+            Font::Sans,
+            Color::BLACK,
+        ));
         c.label_side = side;
         c
     }
@@ -305,8 +312,8 @@ mod tests {
         else {
             panic!("expected the label last, got {out:?}");
         };
-        let (min, max) =
-            crate::text::layout(runs, *size, *width).extent(*origin, *h_align, *v_align);
+        let (min, max) = crate::text::layout(&Fonts::default(), runs, *size, *width)
+            .extent(*origin, *h_align, *v_align);
         // the box stops at the baseline, as the placement does
         (min, Point::new(max.x, origin.y))
     }

@@ -9,6 +9,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- `check` and `render` read the font files a drawing lists in `fonts`, with
+  paths relative to the drawing's file. A file that cannot be read, or a math
+  font without a MATH table, is an error naming the file and its line.
 - The `acre` command, moved here from the `acre` crate. Its 0.1.0 release
   shipped inside `acre` 0.1.0.
 

@@ -727,4 +727,22 @@ mod tests {
         let src = "x { text \"é\"; @ }";
         assert_eq!(err_at(src).1, 15);
     }
+
+    #[test]
+    fn a_name_and_a_quoted_path_are_a_property() {
+        let program =
+            parse("canvas { fonts { serif \"fonts/serif.ttf\"; math \"m.otf\"; } }").unwrap();
+        let fonts = &program.nodes[0].children[0];
+        assert_eq!(fonts.kind.text, "fonts");
+        let keys: Vec<_> = fonts
+            .properties
+            .iter()
+            .map(|p| p.key.text.as_str())
+            .collect();
+        assert_eq!(keys, ["serif", "math"]);
+        assert_eq!(
+            fonts.properties[0].values[0].kind,
+            ValueKind::Str("fonts/serif.ttf".into())
+        );
+    }
 }

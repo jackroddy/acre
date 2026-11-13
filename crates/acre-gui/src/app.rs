@@ -23,6 +23,9 @@ pub struct App {
     /// When the watched file last changed, as the disk reports it.
     modified: Option<SystemTime>,
     last_check: Instant,
+    /// The font files the last source listed, with when each last
+    /// changed on disk. A change reloads the source.
+    fonts: Vec<(PathBuf, Option<SystemTime>)>,
     /// The editor that sends the source, when acre-gui runs with
     /// `--stdio`. acre-gui then watches no file.
     link: Option<Link>,
@@ -56,6 +59,7 @@ impl App {
             text: String::new(),
             modified: None,
             last_check: Instant::now(),
+            fonts: Vec::new(),
             link,
             error: None,
             scene: None,
@@ -100,7 +104,7 @@ impl App {
     /// that built if it has an error.
     fn show(&mut self, text: String) {
         self.text = text;
-        match lang::parse(&self.text).and_then(|program| scene::build(&program)) {
+        match lang::parse(&self.text).and_then(|program| self.build(&program)) {
             Ok(scene) => {
                 self.error = None;
                 self.scene = Some(scene);
@@ -111,9 +115,38 @@ impl App {
         self.reported = false;
     }
 
+    /// The scene `program` describes, with the font files it lists read
+    /// from the folder of the source's file.
+    fn build(&mut self, program: &lang::Program) -> Result<Scene, lang::Error> {
+        let files = scene::font_files(program)?;
+        let dir = self.path.as_deref().and_then(Path::parent);
+        self.fonts = files
+            .iter()
+            .map(|f| {
+                let path = dir.map_or(PathBuf::from(&f.path), |d| d.join(&f.path));
+                let changed = modified(&path);
+                (path, changed)
+            })
+            .collect();
+        let mut bytes = Vec::new();
+        for (file, (path, _)) in files.iter().zip(&self.fonts) {
+            let read = fs::read(path).map_err(|e| {
+                lang::Error::new(file.span, format!("cannot read font {}: {e}", file.path))
+            })?;
+            bytes.push(read);
+        }
+        scene::build(program, &bytes)
+    }
+
+    /// Build the source again if a font file it lists changed on disk.
+    fn check_fonts(&mut self) {
+        if self.fonts.iter().any(|(path, at)| modified(path) != *at) {
+            self.show(self.text.clone());
+        }
+    }
+
     /// Read the watched file again if it changed on disk.
     fn check_disk(&mut self) {
-        self.last_check = Instant::now();
         let Some(path) = self.path.clone() else {
             return;
         };
@@ -299,12 +332,14 @@ impl eframe::App for App {
         if !self.talk() {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
-        if self.link.is_none() {
-            if self.last_check.elapsed() >= DISK_CHECK {
+        if self.last_check.elapsed() >= DISK_CHECK {
+            self.last_check = Instant::now();
+            self.check_fonts();
+            if self.link.is_none() {
                 self.check_disk();
             }
-            ctx.request_repaint_after(DISK_CHECK);
         }
+        ctx.request_repaint_after(DISK_CHECK);
         let title = format!("{} - acre", self.name());
         if title != self.title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));

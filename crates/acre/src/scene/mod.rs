@@ -18,7 +18,7 @@ pub mod row;
 pub mod schema;
 pub mod track;
 
-pub use build::build;
+pub use build::{FontFile, build, font_files};
 pub use code::Code;
 pub use connector::{Connector, Head, LabelSide, Route};
 pub use diagram::{Brace, Label, Ruler, Shape, Side, Text};
@@ -28,6 +28,7 @@ pub use primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 pub use row::{Row, RowCell};
 pub use track::{Easing, Keyframe, Lerp, Track};
 
+use crate::fonts::Fonts;
 use crate::lang::Span;
 
 /// The output frame: its size in pixels, timing, and background.
@@ -59,6 +60,8 @@ pub struct Scene {
     pub canvas: Canvas,
     /// The objects in paint order, first at the back.
     pub objects: Vec<Object>,
+    /// The fonts every text in the scene is set in.
+    pub fonts: Fonts,
 }
 
 /// One thing on the canvas, with the properties every kind shares.
@@ -173,7 +176,7 @@ impl Scene {
     pub fn bounds(&self, index: usize, t: f64) -> Option<(Point, Point)> {
         let mut prims = Vec::new();
         self.objects[index].draw(t, &mut prims);
-        primitive::bounds(&prims)
+        primitive::bounds(&self.fonts, &prims)
     }
 
     /// The object whose box holds `point` at time `t`, the smallest when
@@ -237,6 +240,7 @@ mod tests {
         let scene = Scene {
             canvas: canvas(),
             objects: vec![object],
+            fonts: Fonts::default(),
         };
         assert!(scene.draw(0.5).is_empty());
         assert_eq!(scene.draw(1.0).len(), 2);
@@ -250,6 +254,7 @@ mod tests {
         let scene = Scene {
             canvas: canvas(),
             objects: vec![object],
+            fonts: Fonts::default(),
         };
         assert!(scene.draw(0.0).is_empty());
         let prims = scene.draw(0.5);

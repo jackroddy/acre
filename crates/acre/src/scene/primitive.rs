@@ -1,5 +1,7 @@
 use std::ops::{Add, Mul, Sub};
 
+use crate::fonts::Fonts;
+
 /// A position or size in canvas pixels, origin top-left.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
@@ -105,6 +107,8 @@ pub enum Font {
     SansItalic,
     /// The math font. A run in it holds a formula in LaTeX math.
     Math,
+    /// The `k`th font a file registers with `fonts`.
+    Custom(u16),
 }
 
 /// Where a text's origin sits on its box, horizontally.
@@ -172,7 +176,7 @@ pub enum Primitive {
 /// The box around `prims`, as its top-left and bottom-right corners, or
 /// `None` when they cover nothing. Text covers its advances, from its
 /// font's ascent to its descent.
-pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
+pub fn bounds(fonts: &Fonts, prims: &[Primitive]) -> Option<(Point, Point)> {
     let mut min = Point::new(f64::INFINITY, f64::INFINITY);
     let mut max = Point::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
     let mut add = |p: Point, pad: f64| {
@@ -211,8 +215,8 @@ pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
                 h_align,
                 v_align,
             } => {
-                let (min, max) =
-                    crate::text::layout(runs, *size, *width).extent(*origin, *h_align, *v_align);
+                let (min, max) = crate::text::layout(fonts, runs, *size, *width)
+                    .extent(*origin, *h_align, *v_align);
                 add(min, 0.0);
                 add(max, 0.0);
             }

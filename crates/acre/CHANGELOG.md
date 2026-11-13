@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `fonts` node in the canvas registers font files under names that `font`
+  accepts, in the canvas, on any node and in a style. `math "PATH"` in it sets
+  formulas in another math font, which needs an OpenType MATH table. The
+  library reads no file. `scene::font_files` lists the files a program names,
+  and `scene::build` takes their bytes. A scene holds its `Fonts`, which the
+  text measure, the math layout and the renderer all use.
 - A `marker` node draws a number in a filled circle. `at` takes a point, a
   named thing (the circle sits at its center) or a named thing's side (the
   circle sits outside that side, touching it). `number` on a `text` puts the

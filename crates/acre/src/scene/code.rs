@@ -1,5 +1,6 @@
 use super::diagram::Label;
 use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
+use crate::fonts::Fonts;
 use crate::text;
 
 /// The distance from one line of code to the next, in multiples of the
@@ -22,6 +23,8 @@ pub struct Code {
     /// The lines, numbered from 1, drawn on `emphasis`.
     pub emphasize: Vec<usize>,
     pub emphasis: Color,
+    /// The fonts the lines are measured and set in.
+    pub fonts: Fonts,
 }
 
 /// What a stretch of source is, for its color.
@@ -190,7 +193,13 @@ impl Code {
             None => 0.0,
             Some(_) => {
                 let digits = self.lines.len().to_string().len();
-                text::layout(&[mono("0".repeat(digits), Color::BLACK)], self.size, None).width()
+                text::layout(
+                    &self.fonts,
+                    &[mono("0".repeat(digits), Color::BLACK)],
+                    self.size,
+                    None,
+                )
+                .width()
                     + self.size
             }
         }
@@ -201,7 +210,7 @@ impl Code {
         let widest = self
             .lines
             .iter()
-            .map(|runs| text::layout(runs, self.size, None).width())
+            .map(|runs| text::layout(&self.fonts, runs, self.size, None).width())
             .fold(0.0, f64::max);
         Point::new(
             widest + self.gutter() + 2.0 * self.padding.x,
@@ -243,7 +252,7 @@ impl Code {
                 });
             }
         }
-        let face = text::face(Font::Mono);
+        let face = self.fonts.face(Font::Mono);
         let ascent = face.ascender() as f64 * self.size / face.units_per_em() as f64;
         let gutter = self.gutter();
         let left = self.origin.x + self.padding.x;
@@ -253,7 +262,13 @@ impl Code {
             let top = self.origin.y + self.padding.y + k as f64 * self.line_height();
             let baseline = top + (self.line_height() - self.size) / 2.0 + ascent * 0.92;
             if let Some(color) = self.numbers {
-                let number = Label::plain((k + 1).to_string(), self.size, Font::Mono, color);
+                let number = Label::plain(
+                    &self.fonts,
+                    (k + 1).to_string(),
+                    self.size,
+                    Font::Mono,
+                    color,
+                );
                 out.push(number.at(
                     Point::new(left + gutter - self.size, baseline),
                     HAlign::Right,

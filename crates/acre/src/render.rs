@@ -6,6 +6,7 @@
 use tiny_skia as sk;
 use ttf_parser::{GlyphId, OutlineBuilder};
 
+use crate::fonts::Fonts;
 use crate::scene::{Color, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
 use crate::text::{self, Mark};
 
@@ -22,7 +23,7 @@ pub fn draw_frame(scene: &Scene, t: f64, scale: f64) -> sk::Pixmap {
         .expect("the canvas has a nonzero size");
     pixmap.fill(sk_color(canvas.background));
     let transform = sk::Transform::from_scale(scale as f32, scale as f32);
-    draw_primitives(&mut pixmap, &scene.draw(t), transform, None);
+    draw_primitives(&mut pixmap, &scene.fonts, &scene.draw(t), transform, None);
     pixmap
 }
 
@@ -60,12 +61,19 @@ pub fn draw_view(
         transform,
         None,
     );
-    draw_primitives(&mut pixmap, &scene.draw(t), transform, Some(&mask));
+    draw_primitives(
+        &mut pixmap,
+        &scene.fonts,
+        &scene.draw(t),
+        transform,
+        Some(&mask),
+    );
     pixmap
 }
 
 fn draw_primitives(
     pixmap: &mut sk::Pixmap,
+    fonts: &Fonts,
     prims: &[Primitive],
     transform: sk::Transform,
     mask: Option<&sk::Mask>,
@@ -129,7 +137,9 @@ fn draw_primitives(
                 h_align,
                 v_align,
             } => {
-                for (path, color) in text_paths(runs, *origin, *size, *width, *h_align, *v_align) {
+                for (path, color) in
+                    text_paths(fonts, runs, *origin, *size, *width, *h_align, *v_align)
+                {
                     paint_path(pixmap, &path, Some(color), None);
                 }
             }
@@ -224,6 +234,7 @@ fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
 /// `origin` sits where the alignments say, as one path per stretch of
 /// glyphs in one color.
 fn text_paths(
+    fonts: &Fonts,
     runs: &[Run],
     origin: Point,
     size: f64,
@@ -231,7 +242,7 @@ fn text_paths(
     h_align: HAlign,
     v_align: VAlign,
 ) -> Vec<(sk::Path, Color)> {
-    let layout = text::layout(runs, size, width);
+    let layout = text::layout(fonts, runs, size, width);
     let starts = layout.place(origin, h_align, v_align);
     let mut out = Vec::new();
     let mut builder = sk::PathBuilder::new();
@@ -247,7 +258,7 @@ fn text_paths(
             let (x, y) = (start.x + glyph.x, start.y + glyph.y);
             match glyph.mark {
                 Mark::Outline { font, id, size } => {
-                    let face = text::face(font);
+                    let face = fonts.face(font);
                     let mut outline = Outline {
                         builder,
                         x: x as f32,
@@ -368,7 +379,13 @@ mod tests {
             fill: Some(RED),
             stroke: None,
         };
-        draw_primitives(&mut pixmap, &[rect], sk::Transform::identity(), None);
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[rect],
+            sk::Transform::identity(),
+            None,
+        );
         assert_eq!(ink(&pixmap), [5, 6, 9, 9]);
         let p = pixmap.pixel(6, 7).unwrap();
         assert_eq!((p.red(), p.green(), p.blue()), (255, 0, 0));
@@ -385,7 +402,13 @@ mod tests {
             ],
             stroke: Stroke::solid(RED, 2.0),
         };
-        draw_primitives(&mut pixmap, &[line], sk::Transform::identity(), None);
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[line],
+            sk::Transform::identity(),
+            None,
+        );
         assert!(!is_white(&pixmap, 15, 5));
         assert!(!is_white(&pixmap, 25, 15));
         assert!(is_white(&pixmap, 15, 15));
@@ -406,7 +429,13 @@ mod tests {
             h_align: HAlign::Center,
             v_align: VAlign::Middle,
         };
-        draw_primitives(&mut pixmap, &[text], sk::Transform::identity(), None);
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[text],
+            sk::Transform::identity(),
+            None,
+        );
         let [left, top, right, bottom] = ink(&pixmap);
         assert!(right > left && bottom > top, "nothing was drawn");
         let mid_x = (left + right) as f64 / 2.0;
@@ -432,13 +461,20 @@ mod tests {
         };
         draw_primitives(
             &mut pixmap,
+            &Fonts::default(),
             &[text("a\u{10fffd}b")],
             sk::Transform::identity(),
             None,
         );
         let with_gap = ink(&pixmap);
         let mut pixmap = blank(200, 60);
-        draw_primitives(&mut pixmap, &[text("a b")], sk::Transform::identity(), None);
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[text("a b")],
+            sk::Transform::identity(),
+            None,
+        );
         assert_eq!(with_gap[2], ink(&pixmap)[2]);
     }
 
@@ -453,6 +489,7 @@ mod tests {
                 background: RED,
             },
             objects: Vec::new(),
+            fonts: Fonts::default(),
         };
         let pixmap = draw_view(&scene, 0.0, 40, 40, 2.0, Point::new(5.0, 5.0));
         let red = |x, y| pixmap.pixel(x, y).unwrap().red() == 255;
@@ -468,7 +505,7 @@ mod tests {
             font: Font::Sans,
             color: Color::BLACK,
         }];
-        let width = text::layout(&runs, 30.0, None).width();
+        let width = text::layout(&Fonts::default(), &runs, 30.0, None).width();
         let mut pixmap = blank(300, 60);
         let label = Primitive::Text {
             origin: Point::new(10.0, 40.0),
@@ -478,7 +515,13 @@ mod tests {
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };
-        draw_primitives(&mut pixmap, &[label], sk::Transform::identity(), None);
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[label],
+            sk::Transform::identity(),
+            None,
+        );
         let [left, _, right, _] = ink(&pixmap);
         // the ink starts at the first glyph's left bearing and ends at
         // the last one's right edge, so it falls inside the advances
@@ -501,6 +544,7 @@ mod tests {
                 background: RED,
             },
             objects: Vec::new(),
+            fonts: Fonts::default(),
         };
         let pixmap = draw_frame(&scene, 0.0, 1.0);
         assert_eq!((pixmap.width(), pixmap.height()), (12, 7));

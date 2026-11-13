@@ -1,4 +1,5 @@
 use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
+use crate::fonts::Fonts;
 
 /// Text in runs of font and color at one size, placed by whatever
 /// holds it.
@@ -8,6 +9,8 @@ pub struct Label {
     pub size: f64,
     /// The width lines wrap within, at spaces.
     pub width: Option<f64>,
+    /// The fonts the runs are set in.
+    pub fonts: Fonts,
 }
 
 /// A box or an ellipse filling the rectangle at `origin` of `size`, with
@@ -269,7 +272,13 @@ impl Text {
 
 impl Label {
     /// Text in one font and color.
-    pub fn plain(text: impl Into<String>, size: f64, font: Font, color: Color) -> Self {
+    pub fn plain(
+        fonts: &Fonts,
+        text: impl Into<String>,
+        size: f64,
+        font: Font,
+        color: Color,
+    ) -> Self {
         Label {
             runs: vec![Run {
                 text: text.into(),
@@ -278,13 +287,14 @@ impl Label {
             }],
             size,
             width: None,
+            fonts: fonts.clone(),
         }
     }
 
     /// The width and height the text takes when set, from the first
     /// line's ascent to the last line's descent.
     pub fn size(&self) -> Point {
-        let layout = crate::text::layout(&self.runs, self.size, self.width);
+        let layout = crate::text::layout(&self.fonts, &self.runs, self.size, self.width);
         let (min, max) = layout.extent(Point::ZERO, HAlign::Left, VAlign::Top);
         max - min
     }
@@ -300,7 +310,7 @@ impl Label {
             .runs
             .first()
             .map_or((Font::Mono, Color::BLACK), |r| (r.font, r.color));
-        Label::plain(text, self.size, font, color)
+        Label::plain(&self.fonts, text, self.size, font, color)
     }
 
     pub fn set_color(&mut self, color: Color) {

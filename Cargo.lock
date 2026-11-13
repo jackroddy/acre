@@ -131,6 +131,7 @@ name = "acre"
 version = "0.1.0"
 dependencies = [
  "rustybuzz",
+ "self_cell",
  "tiny-skia 0.12.0",
  "ttf-parser",
 ]

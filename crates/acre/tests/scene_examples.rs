@@ -1,6 +1,7 @@
 //! The two animations the scene model was designed against, built by
 //! hand: an array being sorted, and a line plot drawing itself.
 
+use acre::fonts::Fonts;
 use acre::scene::*;
 
 fn canvas(duration: f64) -> Canvas {
@@ -65,6 +66,7 @@ fn array_swap() -> Scene {
     Scene {
         canvas: canvas(2.0),
         objects: vec![Object::new(grid)],
+        fonts: Fonts::default(),
     }
 }
 
@@ -95,6 +97,7 @@ fn self_drawing_plot() -> Scene {
     Scene {
         canvas: canvas(3.0),
         objects: vec![object],
+        fonts: Fonts::default(),
     }
 }
 

@@ -166,5 +166,16 @@ fn load(path: &Path) -> anyhow::Result<Scene> {
         anyhow!("{}:{line}:{col}: {}", path.display(), e.message)
     };
     let program = lang::parse(&src).map_err(located)?;
-    scene::build(&program).map_err(located)
+    let dir = path.parent().unwrap_or(Path::new(""));
+    let mut fonts = Vec::new();
+    for file in scene::font_files(&program).map_err(located)? {
+        let font = fs::read(dir.join(&file.path)).map_err(|e| {
+            located(lang::Error::new(
+                file.span,
+                format!("cannot read font {}: {e}", file.path),
+            ))
+        })?;
+        fonts.push(font);
+    }
+    scene::build(&program, &fonts).map_err(located)
 }

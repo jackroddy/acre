@@ -3,8 +3,9 @@ use ttf_parser::math::MathValue;
 
 use super::font::{MathFont, Variant};
 use super::parse::{self, Atom, Class, Noad, Nucleus, Style};
+use crate::fonts::Fonts;
 use crate::scene::Font;
-use crate::text::{self, Mark};
+use crate::text::Mark;
 
 /// A formula set into glyphs and rules, and the box around it.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -59,14 +60,19 @@ impl MathBox {
 }
 
 /// `src`, LaTeX math, set in text style at `size` pixels to the em of
-/// `font`.
-pub fn layout(src: &str, size: f64, font: &MathFont) -> Result<MathBox, String> {
+/// the math font of `fonts`.
+pub fn layout(src: &str, size: f64, fonts: &Fonts) -> Result<MathBox, String> {
     let list = parse::parse(src)?;
     let mode = Mode {
         style: Style::Text,
         cramped: false,
     };
-    Ok(Setter { font, size }.list(&list, mode))
+    Ok(Setter {
+        fonts,
+        font: fonts.math(),
+        size,
+    }
+    .list(&list, mode))
 }
 
 /// A style, and whether it is cramped: a cramped style raises
@@ -122,6 +128,7 @@ impl Mode {
 }
 
 struct Setter<'f> {
+    fonts: &'f Fonts,
     font: &'f MathFont,
     /// Pixels to the em in text style.
     size: f64,
@@ -164,7 +171,7 @@ fn spacing(left: Class, right: Class, mode: Mode) -> f64 {
 impl Setter<'_> {
     /// Pixels to the em in `mode`.
     fn em(&self, mode: Mode) -> f64 {
-        let k = &self.font.constants;
+        let k = self.font.constants();
         let percent = match mode.style {
             Style::Display | Style::Text => 100,
             Style::Script => k.script_percent_scale_down(),
@@ -183,7 +190,7 @@ impl Setter<'_> {
     }
 
     fn axis(&self, mode: Mode) -> f64 {
-        self.value(mode, self.font.constants.axis_height())
+        self.value(mode, self.font.constants().axis_height())
     }
 
     /// `list` set in `mode`, its atoms spaced by their classes, as TeX's
@@ -280,10 +287,7 @@ impl Setter<'_> {
     /// Glyph `id` of `font` at `em` pixels to the em, in a box from its
     /// advance and its ink above and below the baseline.
     fn glyph(&self, font: Font, id: GlyphId, em: f64) -> MathBox {
-        let face = match font {
-            Font::Math => &self.font.face,
-            font => text::face(font),
-        };
+        let face = self.fonts.face(font);
         let scale = em / face.units_per_em() as f64;
         let (top, bottom) = face
             .glyph_bounding_box(id)
@@ -312,10 +316,7 @@ impl Setter<'_> {
     /// `text` set upright in `font`, one glyph to a character.
     fn text(&self, text: &str, font: Font, mode: Mode) -> MathBox {
         let em = self.em(mode);
-        let face = match font {
-            Font::Math => &self.font.face,
-            font => text::face(font),
-        };
+        let face = self.fonts.face(font);
         let mut out = MathBox::default();
         for c in text.chars() {
             let g = self.glyph(font, face.glyph_index(c).unwrap_or_default(), em);
@@ -342,7 +343,7 @@ impl Setter<'_> {
         for (g, at) in parts {
             let (top, bottom) = self
                 .font
-                .face
+                .face()
                 .glyph_bounding_box(g)
                 .map_or((0.0, 0.0), |b| (b.y_max as f64, b.y_min as f64));
 
@@ -369,7 +370,7 @@ impl Setter<'_> {
     fn large_op(&self, c: char, mode: Mode) -> MathBox {
         let em = self.em(mode);
         let b = if mode.display() {
-            let min = self.font.constants.display_operator_min_height() as f64;
+            let min = self.font.constants().display_operator_min_height() as f64;
             self.vertical(c, self.px(mode, min), em)
         } else {
             self.glyph(Font::Math, self.font.glyph(c), em)
@@ -387,7 +388,7 @@ impl Setter<'_> {
         large: bool,
         mode: Mode,
     ) -> MathBox {
-        let k = &self.font.constants;
+        let k = self.font.constants();
         let v = |value| self.value(mode, value);
         let mut sup_shift = 0.0;
         if let Some(sup) = &sup {
@@ -457,7 +458,7 @@ impl Setter<'_> {
         sub: Option<MathBox>,
         mode: Mode,
     ) -> MathBox {
-        let k = &self.font.constants;
+        let k = self.font.constants();
         let v = |value| self.value(mode, value);
         let width = [&sup, &sub]
             .into_iter()
@@ -495,7 +496,7 @@ impl Setter<'_> {
     /// A fraction with its bar on the math axis, as TeX's rule 15 sets
     /// it.
     fn fraction(&self, num: &[Noad], den: &[Noad], mode: Mode) -> MathBox {
-        let k = &self.font.constants;
+        let k = self.font.constants();
         let v = |value| self.value(mode, value);
         let num = self.list(num, mode.num());
         let den = self.list(den, mode.den());
@@ -540,7 +541,7 @@ impl Setter<'_> {
     /// A radical sign grown to cover `radicand`, with a bar over it and
     /// `index` in its crook, as TeX's rule 11 sets it.
     fn radical(&self, index: Option<&[Noad]>, radicand: &[Noad], mode: Mode) -> MathBox {
-        let k = &self.font.constants;
+        let k = self.font.constants();
         let v = |value| self.value(mode, value);
         let inner = self.list(radicand, mode.cramp());
         let mut gap = if mode.display() {
@@ -639,7 +640,7 @@ mod tests {
     const SIZE: f64 = 20.0;
 
     fn set(src: &str) -> MathBox {
-        layout(src, SIZE, MathFont::noto()).unwrap()
+        layout(src, SIZE, &Fonts::default()).unwrap()
     }
 
     fn close(a: f64, b: f64) -> bool {
@@ -661,8 +662,9 @@ mod tests {
     }
 
     fn axis() -> f64 {
-        let font = MathFont::noto();
-        font.constants.axis_height().value as f64 * SIZE / font.units_per_em()
+        let fonts = Fonts::default();
+        let font = fonts.math();
+        font.constants().axis_height().value as f64 * SIZE / font.units_per_em()
     }
 
     #[test]

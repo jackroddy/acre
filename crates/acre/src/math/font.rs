@@ -1,21 +1,26 @@
-use std::sync::LazyLock;
+use std::sync::Arc;
 
 use rustybuzz::Face;
+use self_cell::self_cell;
 use ttf_parser::GlyphId;
 use ttf_parser::math::{Constants, GlyphAssembly, Table};
 
-static NOTO_SANS_MATH: &[u8] = include_bytes!("../../assets/fonts/NotoSansMath-Regular.ttf");
-
-static NOTO: LazyLock<MathFont> =
-    LazyLock::new(|| MathFont::new(NOTO_SANS_MATH).expect("the embedded math font parses"));
-
-/// A font with an OpenType MATH table: its glyphs, and the constants,
-/// size variants and assemblies math is set with.
-pub struct MathFont {
-    pub face: Face<'static>,
-    pub constants: Constants<'static>,
-    table: Table<'static>,
+/// What a font file holds that math is set from.
+struct Tables<'a> {
+    face: Face<'a>,
+    constants: Constants<'a>,
+    table: Table<'a>,
 }
+
+self_cell!(
+    /// A font with an OpenType MATH table: its glyphs, and the constants,
+    /// size variants and assemblies math is set with.
+    pub struct MathFont {
+        owner: Arc<[u8]>,
+        #[covariant]
+        dependent: Tables,
+    }
+);
 
 /// The way to draw a character at a given size: one glyph, or parts
 /// stacked bottom to top.
@@ -28,32 +33,47 @@ pub enum Variant {
 }
 
 impl MathFont {
-    /// Noto Sans Math, which acre embeds.
-    pub fn noto() -> &'static MathFont {
-        &NOTO
-    }
-
-    fn new(data: &'static [u8]) -> Option<MathFont> {
-        let face = Face::from_slice(data, 0)?;
-        let table = face.tables().math?;
-        Some(MathFont {
-            constants: table.constants?,
-            face,
-            table,
+    /// The math font in `bytes`, or why they are not one.
+    pub fn parse(bytes: impl Into<Arc<[u8]>>) -> Result<MathFont, &'static str> {
+        MathFont::try_new(bytes.into(), |b| {
+            let face = Face::from_slice(b, 0).ok_or("is not a font file")?;
+            let table = face.tables().math.ok_or("has no MATH table")?;
+            Ok(Tables {
+                constants: table.constants.ok_or("has no MATH constants")?,
+                face,
+                table,
+            })
         })
     }
 
+    pub fn face(&self) -> &Face<'_> {
+        &self.borrow_dependent().face
+    }
+
+    pub fn constants(&self) -> &Constants<'_> {
+        &self.borrow_dependent().constants
+    }
+
+    /// The font file.
+    pub fn bytes(&self) -> &Arc<[u8]> {
+        self.borrow_owner()
+    }
+
+    fn table(&self) -> &Table<'_> {
+        &self.borrow_dependent().table
+    }
+
     pub fn units_per_em(&self) -> f64 {
-        self.face.units_per_em() as f64
+        self.face().units_per_em() as f64
     }
 
     pub fn glyph(&self, c: char) -> GlyphId {
-        self.face.glyph_index(c).unwrap_or_default()
+        self.face().glyph_index(c).unwrap_or_default()
     }
 
     /// The italic correction of `glyph`, in font units.
     pub fn italic_correction(&self, glyph: GlyphId) -> f64 {
-        self.table
+        self.table()
             .glyph_info
             .and_then(|i| i.italic_corrections)
             .and_then(|c| c.get(glyph))
@@ -64,7 +84,7 @@ impl MathFont {
     /// tall from top to bottom, or an assembly of parts when none is,
     /// or the largest variant when the font has no assembly.
     pub fn vertical(&self, glyph: GlyphId, height: f64) -> Variant {
-        let Some(variants) = self.table.variants else {
+        let Some(variants) = self.table().variants else {
             return Variant::Glyph(glyph);
         };
         let Some(construction) = variants.vertical_constructions.get(glyph) else {
@@ -140,10 +160,12 @@ fn assemble(assembly: GlyphAssembly, min_overlap: f64, height: f64) -> Vec<(Glyp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fonts::Fonts;
 
     #[test]
     fn a_taller_request_takes_a_larger_variant_and_then_an_assembly() {
-        let font = MathFont::noto();
+        let fonts = Fonts::default();
+        let font = fonts.math();
         let paren = font.glyph('(');
         assert_eq!(font.vertical(paren, 0.0), Variant::Glyph(paren));
         let Variant::Glyph(larger) = font.vertical(paren, 1500.0) else {
@@ -154,7 +176,7 @@ mod tests {
             panic!("expected an assembly");
         };
         let (last, at) = *parts.last().unwrap();
-        let top = at + font.face.glyph_bounding_box(last).unwrap().height() as f64;
+        let top = at + font.face().glyph_bounding_box(last).unwrap().height() as f64;
         assert!(top >= 20_000.0 * 0.95, "the parts reach {top}");
         assert!(parts.windows(2).all(|w| w[0].1 < w[1].1));
     }

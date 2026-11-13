@@ -60,8 +60,8 @@ const TEXT_SIZE: Property = prop("text-size", "N", "the size of the text in pixe
 const TEXT_COLOR: Property = prop("text-color", "COLOR", "the color of the text");
 const FONT: Property = prop(
     "font",
-    "mono | sans | sans-bold | sans-italic",
-    "the text's font",
+    "mono | sans | sans-bold | sans-italic | NAME",
+    "the text's font; a NAME is one `fonts` registers",
 );
 const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup");
 const SIDE: Property = prop("side", "top | bottom | left | right", "which way it faces");
@@ -177,6 +177,7 @@ pub const NODES: &[NodeKind] = &[
         children: &[
             "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace",
             "ruler", "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
+            "fonts",
         ],
     },
     NodeKind {
@@ -543,6 +544,23 @@ pub const NODES: &[NodeKind] = &[
             "\"TEXT\" FILL [\"NOTE\"] [TEXT-COLOR]",
             "how a cell with this text is drawn; repeat for each",
         )],
+        children: &[],
+    },
+    NodeKind {
+        name: "fonts",
+        about: "font files a drawing uses, by name, with paths relative to the drawing's file",
+        properties: &[
+            prop(
+                "NAME",
+                "\"PATH\"",
+                "registers the font file at PATH as NAME, which `font` then takes; repeat for each",
+            ),
+            prop(
+                "math",
+                "\"PATH\"",
+                "sets formulas in the font file at PATH instead of Noto Sans Math; the file needs an OpenType MATH table",
+            ),
+        ],
         children: &[],
     },
     NodeKind {
