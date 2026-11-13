@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T01:00:41.20488806Z",
+  "updated_at": "2026-11-13T01:18:07.344750056Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -55,6 +55,14 @@
       "at": "2026-11-13T01:00:41.20488718Z",
       "author": "Jack Roddy/cd2d1020",
       "text": "v1 adds the nodes the `PrefixEncoder` figure (acre-de907c) needed. Nothing in it is committed yet.\n\n| node or property | what it does | why |\n|---|---|---|\n| `row` | cells on a grid of equal units, each covering a whole number of units | a 64-bit word is 21 cells of 3 bits and one of 1, so a cell's width has to follow its bits |\n| `cells \"G\" \"A\" ...;` and `cell { ... }` children | the list covers the common case, and a child cell overrides span, fill, stroke or note | 21 cells written as nodes would be 21 lines per row |\n| `palette NAME { symbol \"A\" #color \"001\"; }` | fills and notes by cell text | each character keeps one colour and its code across every row |\n| `brace` with `over ROW A B` | a curly or square bracket along cells A to B | the figure labels runs of cells, and computing their pixels by hand would break when a row moves |\n| `ruler` | a numbered scale of units | bit numbers from 63 down to 0 under a key |\n| `from ROW N side` on `line` and `arrow` | ends a line at a cell, or at the middle of one of its sides | the roll panel joins cell k of one row to cell k-1 of the next |\n| `font` on the canvas and on any text | `mono`, `sans`, `sans-bold`, `sans-italic` | prose in Noto Sans, code names in monospace |\n| `dash`, `radius`, `\\n` in strings | dashed strokes, rounded boxes, multi-line text | |\n\nThe example `crates/acre/examples/prefix-encoder.acre` came from a script that computed the keys and coordinates. Writing the file by hand would mean placing about 300 objects with numbers worked out on paper. The language has no arithmetic, loops or relative placement, and those three are what a hand-written figure of this size would need.",
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    {
+      "id": "fbf27f84",
+      "at": "2026-11-13T01:18:07.344749096Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "v2 makes a figure the size of the `PrefixEncoder` one writable by hand. `crates/acre/examples/prefix-encoder.acre` is now hand-written in 171 lines. The generated version was 229 lines of absolute coordinates.\n\n- `let NAME VALUES;` on the canvas. A bare word equal to a let name stands for its values in any property. The substitution runs before `scene` reads a node, in `scene/expand.rs`. It has no scoping, so a let name shadows any word value of the same spelling, such as `right` or `show`.\n- `style NAME { ... }` and `style A B;` on a node. A node's own property wins over a style's, and a later style over an earlier one. Styles reach nested nodes such as a row's `cell` children.\n- `group { at X Y; ... }` moves the numbers in every `at`, `from` and `to` inside it. Names stay global, and an end that names a thing uses where that thing already is.\n- `at NAME DX DY` starts from a shape's or a row's top-left corner, and `at ROW N DX DY` from a cell's. A row name followed by exactly one number reads as a cell, so `at row -60 14` has to give both numbers.\n- `chars \"GATC\"` adds a cell per character.\n- `repeat N` on `line` and `arrow` draws N copies, adding one to every cell index on each copy. The 20 lines of the roll panel are one node.\n- A palette `symbol` takes a text color after its note, for white text on dark cells.\n\nThe derived-values box still takes 15 `text` nodes for a three-column table. A `table` node, or text that mixes colours within a line, would shorten it. Neither is built.",
       "commit": "38a8b36",
       "branch": "dev"
     }
