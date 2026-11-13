@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-13T05:32:53.906969075Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T05:55:29.569593862Z",
+  "updated_at": "2026-11-13T05:55:41.259087068Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -35,6 +35,14 @@
       "commit": "f4067bd",
       "branch": "dev",
       "deleted_at": "2026-11-13T05:55:29.569593662Z"
+    },
+    {
+      "id": "8d3c0403",
+      "at": "2026-11-13T05:55:41.259086498Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "The figure is at figures/key-schemes.acre in the acre checkout, which .git/info/exclude keeps out of git. Jack wants it refined as the milestone acre-e77413 lands, as a test case for each new feature. Section 4 explains masked keys in eight steps with a bit-level diagram, and all its text follows the deslop rules and the main ASD-STE100 rules. tmp-claude/2026-11-13-key-schemes/model.py checks every key value it shows.",
+      "commit": "934e4ef",
+      "branch": "dev"
     }
   ],
   "stamps": {
