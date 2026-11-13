@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - acre embeds Noto Sans Math. `math::MathFont` holds a font with an OpenType
   MATH table, and `MathFont::noto` returns the embedded one. `Font::Math`
   names it.
+- `math::parse` reads a formula in a subset of LaTeX math into a list of atoms,
+  each with a class that sets the space around it.
 
 ### Changed
 
