@@ -1,0 +1,28 @@
+{
+  "id": "acre-fb60bb",
+  "title": "acre draws figures of computed data without a generator script",
+  "body": "Two figures of the nail sequence aligner were drawn in acre at `c846b14`. `pipeline.acre` shows the whole `nail search` pipeline. `cloud.acre` explains how libnail's cloud search fills its DP matrix one anti-diagonal at a time, and how the profile HMM's states map onto the arrays that hold their scores. Both sit in nail's `tmp-claude/2026-11-13-acre-pipeline/`, which git ignores, beside the scripts that made them.\n\nNeither file was written by hand. Each started as a hand-written template, `pipeline.acre.in` or `cloud.acre.in`, with placeholders such as `@FWD@`. A Python script, `gen.py` or `gen_cloud.py`, read a program's output and replaced each placeholder with generated `line`, `box` and `text` nodes. The generated files run to about 2,000 lines. Most of those lines are one of three things:\n\n| what the figure shows | how the script drew it | nodes |\n|---|---|---|\n| a region of the DP matrix: a cloud, the row bounds | one thick `line` per anti-diagonal, or one `box` per matrix row | 278 to 526 per region |\n| the alignment path through the matrix | one `line` per step | 327 |\n| a zoomed grid of DP cells, 12 by 13 | one `box` per cell, one `text` per heading | 181 per grid, 5 grids |\n\nEach child of this issue is one feature that would have let the template be the figure, or one behaviour that cost a render to find. They are separate because each can land, or be rejected, without the others.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T19:09:49.869900038Z",
+  "updated_at": "2026-11-13T19:09:49.869900038Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "743a77a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
