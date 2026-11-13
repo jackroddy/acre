@@ -147,8 +147,8 @@ const CONNECTOR: &[Property] = &[
 ];
 
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "row", "line", "arrow", "text", "math", "table", "brace", "ruler", "group",
-    "panel", "caption", "stack", "grid", "code",
+    "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace", "ruler",
+    "group", "panel", "caption", "stack", "grid", "code",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -175,8 +175,8 @@ pub const NODES: &[NodeKind] = &[
             ),
         ],
         children: &[
-            "box", "ellipse", "row", "line", "arrow", "text", "math", "table", "brace", "ruler",
-            "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
+            "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace",
+            "ruler", "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
         ],
     },
     NodeKind {
@@ -272,6 +272,30 @@ pub const NODES: &[NodeKind] = &[
                 "where `at` sits along the text",
             ),
             prop("width", "N", "the width the text wraps within, at spaces"),
+            prop(
+                "number",
+                "N",
+                "a badge with this number to the left of the text, drawn as `style marker` sets; the text is aligned left",
+            ),
+            FONT,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "marker",
+        about: "a number in a filled circle; `style marker` sets the look of every marker and of numbered `text`",
+        properties: &[
+            prop(
+                "at",
+                "X Y | NAME [SIDE] | ROW N [SIDE]",
+                "the center: a point or the center of a named thing; with a side, the circle sits outside that side, touching it",
+            ),
+            prop("number", "N", "the number in the circle"),
+            prop("diameter", "N", "the width of the circle, default 20"),
+            FILL,
+            TEXT_SIZE,
+            TEXT_COLOR,
             FONT,
             STYLE,
         ],

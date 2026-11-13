@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `marker` node draws a number in a filled circle. `at` takes a point, a
+  named thing (the circle sits at its center) or a named thing's side (the
+  circle sits outside that side, touching it). `number` on a `text` puts the
+  same badge to the left of the text. `style marker` sets the fill, text color,
+  text size, font and `diameter` of both.
 - `route` on a `line` or an `arrow` is `straight`, `elbow` or `curve`. An elbow
   turns at right angles halfway along the longer distance between the ends,
   and a curve leaves each end along that same axis.

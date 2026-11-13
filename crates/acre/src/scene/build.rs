@@ -9,6 +9,7 @@ use super::{
     Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Text,
 };
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
+use crate::text::LINE_HEIGHT;
 
 const STROKE_WIDTH: f64 = 2.0;
 const TEXT_SIZE: f64 = 16.0;
@@ -34,7 +35,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
         }
         [node] => node,
     };
-    let (canvas, colors) = expand(canvas)?;
+    let (canvas, colors, badge) = expand(canvas)?;
     let canvas = &canvas;
     let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
@@ -62,6 +63,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
             None => Font::Mono,
         },
         colors,
+        badge: Badge::of_style(badge, canvas.span)?,
         palettes: HashMap::new(),
         shapes: HashMap::new(),
         rows: HashMap::new(),
@@ -277,7 +279,18 @@ fn add_objects(
                 Some(name) => Kind::Code(names.codes[name].clone()),
                 None => Kind::Code(code(node, names, offset)?),
             },
-            "text" => Kind::Text(text(node, names, offset)?),
+            "text" => {
+                let (badge, t) = text(node, names, offset)?;
+                if let Some(badge) = badge {
+                    out.push(Object::new(Kind::Shape(badge)).from_source(node.span));
+                }
+                Kind::Text(t)
+            }
+            "marker" => match marker(node, names, offset) {
+                Ok(m) => Kind::Shape(m),
+                Err(_) if pass.measuring => continue,
+                Err(e) => return Err(e),
+            },
             "math" => Kind::Text(math(node, names, offset)?),
             "table" => {
                 for t in table(node, names, offset)? {
@@ -296,7 +309,7 @@ fn add_objects(
                     node.kind.span,
                     format!(
                         "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, math, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
+                         text, math, marker, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
                          palette and style"
                     ),
                 ));
@@ -697,6 +710,8 @@ struct Names<'a> {
     font: Font,
     /// The `let` names that stand for one color, for markup.
     colors: HashMap<String, Color>,
+    /// The look of the number on a `marker` and on numbered `text`.
+    badge: Badge,
     palettes: HashMap<&'a str, Palette>,
     shapes: HashMap<&'a str, Shape>,
     rows: HashMap<&'a str, Row>,
@@ -1012,7 +1027,9 @@ const HEADS: [(&str, Head); 4] = [
     ("dot", Head::Dot),
 ];
 
-fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
+/// Text placed by its top edge. With a `number`, the badge for it sits
+/// at the left and the text is set to its right.
+fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Text), Error> {
     let props = Props::new(node, &keys("text"), false)?;
     let origin = match props.get("at") {
         Some(p) => at(p, names, offset)?,
@@ -1025,11 +1042,118 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
     if let Some(p) = props.get("width") {
         label.width = Some(p.numbers::<1>()?[0]);
     }
-    Ok(Text {
-        origin,
-        label,
-        align,
-    })
+    let mut origin = origin;
+    let mut badge = None;
+    if let Some(p) = props.get("number") {
+        if let Some(a) = props.get("align") {
+            return Err(Error::new(a.span, "numbered text is aligned left"));
+        }
+        let b = &names.badge;
+        let first_line = LINE_HEIGHT * label.size;
+        let center = origin + Point::new(b.diameter / 2.0, first_line / 2.0);
+        badge = Some(b.shape(p.count()?, center));
+        let indent = b.diameter + BADGE_GAP;
+        origin.x += indent;
+        if let Some(width) = &mut label.width {
+            *width = (*width - indent).max(0.0);
+        }
+    }
+    Ok((
+        badge,
+        Text {
+            origin,
+            label,
+            align,
+        },
+    ))
+}
+
+/// A number in a filled circle, centered on the point `at` names.
+fn marker(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
+    let props = Props::new(node, &keys("marker"), false)?;
+    let at = props.require("at")?;
+    let badge = Badge::read(&props)?;
+    let mut center = match end(at, names, offset, 0)? {
+        End::Point(p) => p,
+        End::Box(s) => s.center(),
+    };
+    // a side puts the circle outside it, touching
+    let outward = match at.values.last().map(|v| &v.kind) {
+        Some(ValueKind::Word(w)) => match w.as_str() {
+            "top" => Point::new(0.0, -1.0),
+            "bottom" => Point::new(0.0, 1.0),
+            "left" => Point::new(-1.0, 0.0),
+            "right" => Point::new(1.0, 0.0),
+            _ => Point::ZERO,
+        },
+        _ => Point::ZERO,
+    };
+    center = center + outward * (badge.diameter / 2.0);
+    let number = props.require("number")?.count()?;
+    Ok(badge.shape(number, center))
+}
+
+/// The gap between a badge and the text numbered by it.
+const BADGE_GAP: f64 = 8.0;
+
+/// How the number in a `marker` or beside numbered `text` is drawn.
+#[derive(Clone)]
+struct Badge {
+    fill: Color,
+    text_color: Color,
+    text_size: f64,
+    font: Font,
+    diameter: f64,
+}
+
+impl Badge {
+    fn read(props: &Props) -> Result<Badge, Error> {
+        Ok(Badge {
+            fill: props.color_or("fill", Color::BLACK)?,
+            text_color: props.color_or("text-color", Color::WHITE)?,
+            text_size: props.number_or("text-size", 12.0)?,
+            font: props.font_or(Font::SansBold)?,
+            diameter: props.number_or("diameter", 20.0)?,
+        })
+    }
+
+    /// The badge that `style marker` sets, whose properties are
+    /// `properties`; `span` is where a mistake in them is reported when
+    /// they carry none.
+    fn of_style(properties: Vec<Property>, span: Span) -> Result<Badge, Error> {
+        let word = |text: &str| crate::lang::Word {
+            text: text.into(),
+            span,
+        };
+        let node = Node {
+            kind: word("marker"),
+            name: None,
+            properties,
+            children: Vec::new(),
+            span,
+        };
+        Badge::read(&Props::new(&node, &keys("marker"), false)?)
+    }
+
+    fn shape(&self, number: usize, center: Point) -> Shape {
+        let size = Point::new(self.diameter, self.diameter);
+        Shape {
+            origin: center - size * 0.5,
+            size,
+            oval: true,
+            radius: 0.0,
+            fill: Some(self.fill),
+            stroke: None,
+            label: Some(Label::plain(
+                number.to_string(),
+                self.text_size,
+                self.font,
+                self.text_color,
+            )),
+            padding: Point::ZERO,
+            text_align: None,
+        }
+    }
 }
 
 /// A formula in display style, placed by its top edge like a `text`.
@@ -2251,5 +2375,64 @@ mod tests {
         assert!(scene("canvas { size auto 10; margin -1; }").is_err());
         assert!(scene("canvas { size auto; }").is_err());
         assert!(scene("canvas { size auto fast; }").is_err());
+    }
+
+    fn shape_at(s: &Scene, i: usize) -> Shape {
+        match &s.objects[i].kind {
+            Kind::Shape(shape) => shape.clone(),
+            other => panic!("expected a shape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_marker_is_a_numbered_circle_centered_where_it_is_put() {
+        let s = scene(
+            "canvas { size 300 100;
+                box a { at 100 20; size 100 40; }
+                marker { at 50 50; number 3; }
+                marker { at a right; number 4; }
+                marker { at a; number 5; } }",
+        )
+        .unwrap();
+        let [m, side, center] = [1, 2, 3].map(|i| shape_at(&s, i));
+        assert!(m.oval);
+        assert_eq!(m.center(), Point::new(50.0, 50.0));
+        assert_eq!(m.label.as_ref().unwrap().text(), "3");
+        assert_eq!(side.center(), Point::new(210.0, 40.0));
+        assert_eq!(center.center(), Point::new(150.0, 40.0));
+    }
+
+    #[test]
+    fn style_marker_sets_the_badge_of_markers_and_numbered_text() {
+        let s = scene(
+            "canvas { size 300 100;
+                let red #ff0000;
+                style marker { fill red; diameter 30; }
+                marker { at 20 20; number 1; }
+                marker { at 60 20; number 2; fill #00ff00; }
+                text { at 0 50; number 3; text \"hi\"; width 200; } }",
+        )
+        .unwrap();
+        let red = Some(Color::rgba(1.0, 0.0, 0.0, 1.0));
+        let (a, b, c) = (shape_at(&s, 0), shape_at(&s, 1), shape_at(&s, 2));
+        assert_eq!((a.fill, a.size.x), (red, 30.0));
+        assert_eq!(b.fill, Some(Color::rgba(0.0, 1.0, 0.0, 1.0)));
+        assert_eq!((c.fill, c.size.x), (red, 30.0));
+        assert_eq!(c.label.as_ref().unwrap().text(), "3");
+        match &s.objects[3].kind {
+            Kind::Text(t) => {
+                assert_eq!(t.origin.x, 38.0);
+                assert_eq!(t.label.width, Some(162.0));
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_marker_needs_a_place_and_a_number() {
+        assert!(scene("canvas { size 9 9; marker { number 1; } }").is_err());
+        assert!(scene("canvas { size 9 9; marker { at 1 1; } }").is_err());
+        assert!(scene("canvas { size 9 9; marker { at 1 1; number 1.5; } }").is_err());
+        assert!(scene("canvas { size 9 9; text { text \"a\"; number 1; align right; } }").is_err());
     }
 }

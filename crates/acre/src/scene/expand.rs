@@ -21,11 +21,17 @@ const RESERVED: &[&str] = &[
     "sans-italic",
 ];
 
+/// The canvas, the colors its lets name, and the `marker` style's
+/// properties.
+pub(super) type Expanded = (Node, HashMap<String, Color>, Vec<Property>);
+
 /// The canvas with its `let` lines and `style` nodes applied and removed,
 /// and the colors its lets name. A style named after a node kind applies
 /// to every node of that kind. A node's own property wins over a style's,
-/// and a later style over an earlier one.
-pub(super) fn expand(canvas: &Node) -> Result<(Node, HashMap<String, Color>), Error> {
+/// and a later style over an earlier one. The properties of the style
+/// named `marker` come back as well, for the numbered text that wears
+/// the same badge.
+pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
     let mut lets: HashMap<&str, Vec<Value>> = HashMap::new();
     let mut properties = Vec::new();
     for p in &canvas.properties {
@@ -93,6 +99,18 @@ pub(super) fn expand(canvas: &Node) -> Result<(Node, HashMap<String, Color>), Er
             out.children.push(apply(node, &lets, &styles)?);
         }
     }
+    let badge = match styles.get("marker") {
+        Some(properties) => properties
+            .iter()
+            .map(|p| {
+                Ok(Property {
+                    values: substitute(&p.values, &lets)?,
+                    ..p.clone()
+                })
+            })
+            .collect::<Result<_, Error>>()?,
+        None => Vec::new(),
+    };
     let colors = lets
         .iter()
         .filter_map(|(name, values)| match values.as_slice() {
@@ -108,7 +126,7 @@ pub(super) fn expand(canvas: &Node) -> Result<(Node, HashMap<String, Color>), Er
             _ => None,
         })
         .collect();
-    Ok((out, colors))
+    Ok((out, colors, badge))
 }
 
 /// `node` and its children with styles applied and names substituted.
