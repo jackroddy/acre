@@ -15,11 +15,20 @@
   "lease_expires": "2026-11-13T07:33:12.466026133Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.122823703Z",
-  "updated_at": "2026-11-13T07:18:12.466026133Z",
+  "updated_at": "2026-11-13T07:23:40.017893582Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "05ed1abc",
+      "at": "2026-11-13T07:23:40.017892982Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Landed. The library reports files through scene::font_files(&Program) -> Vec<FontFile{name,path,span}> and scene::build(&Program, &[Vec<u8>]) takes the bytes in that order. A Fonts value (src/fonts.rs, Arc inside) holds each file's bytes with its parsed face via self_cell, and is carried by Scene, by Label and by Code, because text::layout is called from draw code with no scene in hand. Font::Custom(u16) indexes the registered fonts. Dead end avoided: leaking bytes to get 'static faces would grow on every GUI reload. Open: \\\\text and \\\\mathrm in math still use embedded sans. Checked by eye with Liberation Serif and DejaVu Math TeX Gyre.",
+      "commit": "35ad092",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "f4067bd",
