@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::code::{self, Code};
 use super::expand::expand;
 use super::markup;
 use super::schema;
@@ -49,6 +50,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
         palettes: HashMap::new(),
         shapes: HashMap::new(),
         rows: HashMap::new(),
+        codes: HashMap::new(),
     };
 
     // palettes, then named shapes and rows, so that a node may
@@ -122,16 +124,25 @@ fn name_things<'a>(
             continue;
         }
         let Some(name) = &node.name else { continue };
+        let key = name.text.as_str();
+        let used = names.shapes.contains_key(key)
+            || names.rows.contains_key(key)
+            || names.codes.contains_key(key);
         let taken = match node.kind.text.as_str() {
             "box" | "ellipse" => {
                 let shape = shape(node, names, offset)?;
-                names.shapes.insert(&name.text, shape).is_some()
-                    || names.rows.contains_key(name.text.as_str())
+                names.shapes.insert(key, shape);
+                used
             }
             "row" => {
                 let row = row(node, names, offset)?;
-                names.rows.insert(&name.text, row).is_some()
-                    || names.shapes.contains_key(name.text.as_str())
+                names.rows.insert(key, row);
+                used
+            }
+            "code" => {
+                let code = code(node, names, offset)?;
+                names.codes.insert(key, code);
+                used
             }
             _ => false,
         };
@@ -206,6 +217,10 @@ fn add_objects(
                 Some(name) => Kind::Row(names.rows[name].clone()),
                 None => Kind::Row(row(node, names, offset)?),
             },
+            "code" => match named {
+                Some(name) => Kind::Code(names.codes[name].clone()),
+                None => Kind::Code(code(node, names, offset)?),
+            },
             "text" => Kind::Text(text(node, names, offset)?),
             "table" => {
                 for t in table(node, names, offset)? {
@@ -224,8 +239,8 @@ fn add_objects(
                     node.kind.span,
                     format!(
                         "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, table, row, brace, ruler, group, panel, caption, stack, grid, palette \
-                         and style"
+                         text, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
+                         palette and style"
                     ),
                 ));
             }
@@ -628,6 +643,7 @@ struct Names<'a> {
     palettes: HashMap<&'a str, Palette>,
     shapes: HashMap<&'a str, Shape>,
     rows: HashMap<&'a str, Row>,
+    codes: HashMap<&'a str, Code>,
 }
 
 /// How a palette draws each cell text it lists.
@@ -1015,6 +1031,98 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
     Ok(out)
 }
 
+fn code(node: &Node, names: &Names, offset: Point) -> Result<Code, Error> {
+    let props = Props::new(node, &keys("code"), false)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
+    let lang = match props.get("lang") {
+        None => code::Lang::Text,
+        Some(p) => {
+            let name = p.word()?;
+            code::Lang::named(name)
+                .ok_or_else(|| Error::new(p.span, "`lang` is rust, python, acre or text"))?
+        }
+    };
+    let source = props.require("text")?.string()?;
+    let color = |key: &str, default: Color| props.color_or(key, default);
+    let hex = |v: u32| {
+        Color::rgb(
+            (v >> 16) as f32 / 255.0,
+            ((v >> 8) & 0xff) as f32 / 255.0,
+            (v & 0xff) as f32 / 255.0,
+        )
+    };
+    let colors = [
+        color("text-color", hex(0x24292f))?,
+        color("keyword-color", hex(0xcf222e))?,
+        color("type-color", hex(0x953800))?,
+        color("string-color", hex(0x0a3069))?,
+        color("comment-color", hex(0x6e7781))?,
+        color("number-color", hex(0x0550ae))?,
+    ];
+    let lines = code::highlight(&source, lang)
+        .into_iter()
+        .map(|line| {
+            line.into_iter()
+                .map(|(text, class)| Run {
+                    text,
+                    font: Font::Mono,
+                    color: colors[class as usize],
+                })
+                .collect()
+        })
+        .collect();
+    let numbers = match props.get("line-numbers") {
+        None => None,
+        Some(p) => match p.word()? {
+            "show" => Some(color("line-number-color", hex(0x8c959f))?),
+            "hide" => None,
+            _ => return Err(Error::new(p.span, "`line-numbers` is show or hide")),
+        },
+    };
+    let emphasize = match props.get("emphasize") {
+        None => Vec::new(),
+        Some(p) => p
+            .values
+            .iter()
+            .map(|v| match v.kind {
+                ValueKind::Number(n) if n >= 1.0 && n.fract() == 0.0 => Ok(n as usize),
+                _ => Err(Error::new(v.span, "`emphasize` takes line numbers from 1")),
+            })
+            .collect::<Result<_, _>>()?,
+    };
+    let padding = match props.get("padding") {
+        None => Point::new(14.0, 10.0),
+        Some(p) => match p.values.len() {
+            1 => {
+                let [n] = p.numbers::<1>()?;
+                Point::new(n, n)
+            }
+            _ => {
+                let [x, y] = p.numbers::<2>()?;
+                Point::new(x, y)
+            }
+        },
+    };
+    Ok(Code {
+        origin,
+        lines,
+        size: props.number_or("size", 14.0)?,
+        padding,
+        numbers,
+        fill: match props.get("fill") {
+            Some(p) => p.color_or_none()?,
+            None => Some(hex(0xf6f8fa)),
+        },
+        stroke: props.stroke(None)?,
+        radius: props.number_or("radius", 6.0)?,
+        emphasize,
+        emphasis: color("emphasis", hex(0xfff3b0))?,
+    })
+}
+
 fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
     let props = Props::new(node, &keys("brace"), false)?;
     let side = match props.get("side") {
@@ -1194,10 +1302,32 @@ fn target<'v>(
     if let Some(shape) = names.shapes.get(word.as_str()) {
         return Ok((shape.clone(), rest));
     }
+    if let Some(code) = names.codes.get(word.as_str()) {
+        return match rest.split_first() {
+            Some((
+                Value {
+                    kind: ValueKind::Number(n),
+                    span,
+                },
+                rest,
+            )) => {
+                let line = *n as usize + shift;
+                if n.fract() != 0.0 || *n < 1.0 || line > code.lines.len() {
+                    return Err(Error::new(
+                        *span,
+                        format!("code `{word}` has lines 1 to {}", code.lines.len()),
+                    ));
+                }
+                let (origin, size) = code.line_rect(line);
+                Ok((as_box(origin, size), rest))
+            }
+            _ => Ok((as_box(code.origin, code.extent()), rest)),
+        };
+    }
     let Some(row) = names.rows.get(word.as_str()) else {
         return Err(Error::new(
             name.span,
-            format!("no box, ellipse or row is named `{word}`"),
+            format!("no box, ellipse, row or code is named `{word}`"),
         ));
     };
     match rest.split_first() {
@@ -1535,7 +1665,7 @@ mod tests {
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  arrow { from a; to 1 1; } }").unwrap_err(),
-            (2, 16, "no box, ellipse or row is named `a`".into())
+            (2, 16, "no box, ellipse, row or code is named `a`".into())
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  box { at 1; size 2 2; } }").unwrap_err(),
@@ -1816,6 +1946,46 @@ mod tests {
                 Point::new(0.0, 50.0),
                 Point::new(60.0, 50.0),
             ]
+        );
+    }
+
+    #[test]
+    fn a_code_block_highlights_its_lines_and_names_them_from_one() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                code snippet {
+                    at 10 10; lang rust; line-numbers show; emphasize 2;
+                    text """
+                        fn key(&self) -> u64 {
+                            *self.state
+                        }
+                    """;
+                }
+                arrow { from snippet 2 right; to 390 390; } }"#,
+        )
+        .unwrap();
+        let Kind::Code(code) = &s.objects[0].kind else {
+            panic!("expected a code block");
+        };
+        assert_eq!(code.lines.len(), 3);
+        assert_eq!(code.lines[0][0].text, "fn");
+        assert_ne!(code.lines[0][0].color, code.lines[0][1].color);
+        assert_eq!(code.emphasize, [2]);
+        let (line, size) = code.line_rect(2);
+        let Kind::Connector(arrow) = &s.objects[1].kind else {
+            panic!("expected the arrow");
+        };
+        assert_eq!(
+            arrow.from,
+            Point::new(line.x + size.x, line.y + size.y / 2.0)
+        );
+        assert_eq!(
+            scene(
+                "canvas { size 10 10;\n code c { text \"a\"; }\n arrow { from c 2 left; to 0 0; } }"
+            )
+            .unwrap_err()
+            .2,
+            "code `c` has lines 1 to 1"
         );
     }
 }

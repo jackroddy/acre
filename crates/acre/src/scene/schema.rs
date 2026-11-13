@@ -123,7 +123,7 @@ const CONNECTOR: &[Property] = &[
 
 const DRAWN: &[&str] = &[
     "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group", "panel",
-    "caption", "stack", "grid",
+    "caption", "stack", "grid", "code",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -142,7 +142,7 @@ pub const NODES: &[NodeKind] = &[
         ],
         children: &[
             "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
-            "panel", "caption", "stack", "grid", "palette", "style",
+            "panel", "caption", "stack", "grid", "code", "palette", "style",
         ],
     },
     NodeKind {
@@ -401,6 +401,46 @@ pub const NODES: &[NodeKind] = &[
             STYLE,
         ],
         children: DRAWN,
+    },
+    NodeKind {
+        name: "code",
+        about: "source code, highlighted, on a background; lines are named from 1",
+        properties: &[
+            AT,
+            prop(
+                "lang",
+                "rust | python | acre | text",
+                "the language to highlight",
+            ),
+            prop("text", "\"\"\"CODE\"\"\"", "the source, without markup"),
+            prop("size", "N", "the text size"),
+            prop("line-numbers", "show | hide", "whether line numbers show"),
+            prop(
+                "emphasize",
+                "N...",
+                "the lines, from 1, drawn on the emphasis color",
+            ),
+            prop("padding", "N | X Y", "the space around the code"),
+            FILL,
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            RADIUS,
+            prop("text-color", "COLOR", "the color of plain text"),
+            prop("keyword-color", "COLOR", "the color of keywords"),
+            prop(
+                "type-color",
+                "COLOR",
+                "the color of names that start with a capital",
+            ),
+            prop("string-color", "COLOR", "the color of strings"),
+            prop("comment-color", "COLOR", "the color of comments"),
+            prop("number-color", "COLOR", "the color of numbers"),
+            prop("line-number-color", "COLOR", "the color of line numbers"),
+            prop("emphasis", "COLOR", "the background of emphasized lines"),
+            STYLE,
+        ],
+        children: &[],
     },
     NodeKind {
         name: "caption",

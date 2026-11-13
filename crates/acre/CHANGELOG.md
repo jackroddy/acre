@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A string can run over several lines between `"""` and `"""`. It keeps its line
   breaks, drops the indent its lines share and a break straight after the
   opening, and takes no escapes. Markup still applies where it is a label.
+- A `code` node draws source code on a background, highlighted for `rust`,
+  `python` or `acre`, or plain as `text`. It takes `line-numbers show`,
+  `emphasize` for lines to tint, and a color for each kind of token. Its lines
+  are named from 1, so `arrow { from snippet 7 right; ... }` and
+  `brace { over snippet 2 4; ... }` work as they do for a row's cells.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

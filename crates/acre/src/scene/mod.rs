@@ -6,6 +6,7 @@
 //! file or a pixel.
 
 mod build;
+pub mod code;
 pub mod diagram;
 mod expand;
 pub mod grid;
@@ -17,6 +18,7 @@ pub mod schema;
 pub mod track;
 
 pub use build::build;
+pub use code::Code;
 pub use diagram::{Brace, Connector, Label, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
@@ -80,6 +82,7 @@ pub enum Kind {
     Row(Row),
     Brace(Brace),
     Ruler(Ruler),
+    Code(Code),
 }
 
 /// A half-open interval of seconds, `start..end`.
@@ -130,6 +133,7 @@ impl Object {
             Kind::Row(row) => row.draw(out),
             Kind::Brace(brace) => brace.draw(out),
             Kind::Ruler(ruler) => ruler.draw(out),
+            Kind::Code(code) => code.draw(out),
         }
         if opacity < 1.0 {
             for prim in &mut out[start..] {
