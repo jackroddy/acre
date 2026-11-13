@@ -1,0 +1,28 @@
+{
+  "id": "acre-66ca87",
+  "title": "Try the neovim plugin with the real viewer inside decade",
+  "body": "The plugin in editors/nvim and acre-gui --stdio landed in 934e4ef, tested in headless neovim against a stand-in viewer only. A run with the real viewer from neovim inside decade put the viewer's window in another workspace, which decade-1919e9 is to settle. Once that lands, run :AcreView from neovim in a decade pane on figures/key-schemes.acre and check four things: where the window goes, rendering as you type, a click on the render moving neovim's cursor, and an error showing as a diagnostic. Open a window outside scratch_open only after Jack says to.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T06:31:10.400090683Z",
+  "updated_at": "2026-11-13T06:31:10.400090683Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6866c55",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
