@@ -1,7 +1,7 @@
 {
   "id": "acre-e77413",
   "title": "Figures fit for a paper",
-  "body": "`crates/acre/examples/key-schemes.acre` shows what acre can draw today and where it falls short. Every heading, box and paragraph is placed at a hand-picked pixel offset. Boxes are sized by hand to their text. Formulas are typed as plain characters. Text has no kerning. Output is PNG only.\n\nThe pieces, in the order to build them:\n\n1. Text shaping and measurement. Everything below needs real text widths.\n2. Text that wraps to a width, and boxes sized to their text.\n3. Panels and captions.\n4. `stack` and `grid` layout.\n5. A multi-line string literal, then `code` blocks with highlighting.\n6. Math in a subset of LaTeX syntax.\n7. Better connectors: right-angle and curved routes, arrowhead styles, label placement.\n8. Numbered markers that tie a place in a diagram to numbered text.\n9. SVG and PDF output (acre-329c2b).\n10. Fonts the user provides.\n\nJack approved all of these on 2026-11-13. Each child issue holds its own plan.",
+  "body": "`figures/key-schemes.acre`, a figure kept outside git in the acre checkout, shows what acre can draw today and where it falls short. Every heading, box and paragraph is placed at a hand-picked pixel offset. Boxes are sized by hand to their text. Formulas are typed as plain characters. Text has no kerning. Output is PNG only.\n\nThe pieces, in the order to build them:\n\n1. Text shaping and measurement. Everything below needs real text widths.\n2. Text that wraps to a width, and boxes sized to their text.\n3. Panels and captions.\n4. `stack` and `grid` layout.\n5. A multi-line string literal, then `code` blocks with highlighting.\n6. Math in a subset of LaTeX syntax.\n7. Better connectors: right-angle and curved routes, arrowhead styles, label placement.\n8. Numbered markers that tie a place in a diagram to numbered text.\n9. SVG and PDF output (acre-329c2b).\n10. Fonts the user provides.\n\nJack approved all of these on 2026-11-13. Each child issue holds its own plan.",
   "type": "milestone",
   "status": "open",
   "priority": 1,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.033272971Z",
-  "updated_at": "2026-11-13T05:49:59.033272971Z",
+  "updated_at": "2026-11-13T05:55:29.542235918Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
