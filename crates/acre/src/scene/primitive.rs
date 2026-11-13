@@ -95,6 +95,9 @@ pub struct Run {
     pub text: String,
     pub font: Font,
     pub color: Color,
+    /// Whether the run is the bullet of a list item, set at the start of
+    /// a line with the line's text hanging after it.
+    pub bullet: bool,
 }
 
 /// The typeface text is set in.

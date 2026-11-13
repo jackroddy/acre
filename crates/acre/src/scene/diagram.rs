@@ -286,6 +286,7 @@ impl Label {
                 text: text.into(),
                 font,
                 color,
+                bullet: false,
             }],
             size,
             width: None,

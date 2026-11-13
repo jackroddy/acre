@@ -94,6 +94,7 @@ impl Grid {
                     text: cell.text.at(t),
                     font: Font::Mono,
                     color: cell.text_color.at(t),
+                    bullet: false,
                 }],
                 size: self.text_size,
                 width: None,

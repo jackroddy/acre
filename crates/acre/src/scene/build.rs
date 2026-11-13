@@ -468,6 +468,7 @@ fn panel_place(
                     text: format!("{n}   "),
                     font,
                     color: props.color_or("number-color", Color::rgb(0.54, 0.54, 0.54))?,
+                    bullet: false,
                 });
             }
             runs.extend(
@@ -1324,6 +1325,7 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
         text: format!("\\displaystyle {formula}"),
         font: Font::Math,
         color: props.color_or("color", Color::BLACK)?,
+        bullet: false,
     };
     Ok(Text {
         origin,
@@ -1454,6 +1456,7 @@ fn code(node: &Node, names: &Names, offset: Point) -> Result<Code, Error> {
                     text,
                     font: Font::Mono,
                     color: colors[class as usize],
+                    bullet: false,
                 })
                 .collect()
         })

@@ -430,6 +430,7 @@ mod tests {
                 text: "8".into(),
                 font: Font::Mono,
                 color: Color::BLACK,
+                bullet: false,
             }],
             size: 40.0,
             width: None,
@@ -461,6 +462,7 @@ mod tests {
                 text: s.into(),
                 font: Font::Mono,
                 color: Color::BLACK,
+                bullet: false,
             }],
             size: 30.0,
             width: None,
@@ -513,6 +515,7 @@ mod tests {
             text: "Measure AV.".into(),
             font: Font::Sans,
             color: Color::BLACK,
+            bullet: false,
         }];
         let width = text::layout(&Fonts::default(), &runs, 30.0, None, false).width();
         let mut pixmap = blank(300, 60);

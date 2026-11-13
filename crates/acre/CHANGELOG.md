@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   down to it unless that leaves the lines above too loose. The last line of a
   paragraph, a line that ends at `\n` and a line of one word keep their natural
   spacing. Ragged text breaks as before.
+- A line of a label's text that starts with `- ` is a list item. acre draws a
+  bullet in the text's color and hangs the item's wrapped lines under its
+  first word. `width` includes the indent. A list item sits 0.3 of the text
+  size lower than a plain line would. The line after a list does too. With
+  `text-align justify` each item justifies on its own. A line that starts
+  with `\- ` starts with a dash, written `"\\- "` in a quoted string. Text with
+  no such line draws as before.
 - A first version of the acre language, for still drawings. A file holds one
   `canvas`, and the canvas holds `box`, `ellipse`, `line`, `arrow` and `text`
   nodes. `examples/layers.acre` uses each of them.
@@ -174,9 +181,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   horizontal line's label is where it was.
 - `scene::Connector` holds a `route`, a `head` and a `tail` of type `Head`, and
   a `label_side` and `label_at`. `head` was a `bool`.
-- `text::layout` takes a `justify` argument. `Primitive::Text`, `scene::Label`
-  and `text::Layout` have a `justify` field. `Layout::place` gives the lines of
-  justified text one left edge.
+- `text::layout` takes a `justify` argument. `Primitive::Text` and
+  `scene::Label` have a `justify` field. `text::Layout` has a `block` field.
+  It is true for justified text and for text with a list item.
+  `Layout::place` gives the lines of a block one left edge.
+- `scene::Run` has a `bullet` field. It is true for the bullet of a list item.
+  `text::Line` has a `gap` field. It holds the space above the line beyond one
+  line height.
 
 ### Removed
 

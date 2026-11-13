@@ -7,8 +7,10 @@ use super::primitive::{Color, Font, Run};
 /// `` `code` `` sets text in the mono font, `**bold**` in the bold sans
 /// font, and `{NAME text}` colors `text` with the color `colors` gives
 /// `NAME`, or with `{#rrggbb text}`. `$formula$` is LaTeX math, as one
-/// run in the math font. A backslash takes the character after it as it
-/// is, so `\$` is a dollar sign.
+/// run in the math font. A line that starts with `- ` is a list item,
+/// and its `- ` becomes a bullet run, `•` in `color`. A backslash takes the
+/// character after it as it is, so `\$` is a dollar sign and a line that
+/// starts with `\- ` starts with a dash.
 pub fn runs(
     src: &str,
     font: Font,
@@ -21,6 +23,7 @@ pub fn runs(
     let mut stack: Vec<Color> = Vec::new();
     let mut chars = src.chars().peekable();
     let mut text = String::new();
+    let mut line_start = true;
 
     // the run being built is pushed whenever the style changes, with
     // the style it was written in
@@ -35,18 +38,32 @@ pub fn runs(
         };
         let color = stack.last().copied().unwrap_or(color);
         match out.last_mut() {
-            Some(last) if last.font == font && last.color == color => last.text.push_str(text),
+            Some(last) if !last.bullet && last.font == font && last.color == color => {
+                last.text.push_str(text)
+            }
             _ => out.push(Run {
                 text: text.clone(),
                 font,
                 color,
+                bullet: false,
             }),
         }
         text.clear();
     };
 
     while let Some(c) = chars.next() {
+        let at_line_start = std::mem::replace(&mut line_start, c == '\n');
         match c {
+            '-' if at_line_start && chars.peek() == Some(&' ') => {
+                chars.next();
+                flush(&mut out, &mut text, mono, bold, &stack);
+                out.push(Run {
+                    text: "\u{2022}".into(),
+                    font: Font::Sans,
+                    color,
+                    bullet: true,
+                });
+            }
             '\\' => match chars.next() {
                 Some(c) => text.push(c),
                 None => return Err("a `\\` at the end of the text escapes nothing".into()),
@@ -62,6 +79,7 @@ pub fn runs(
                     text: formula,
                     font: Font::Math,
                     color: stack.last().copied().unwrap_or(color),
+                    bullet: false,
                 });
             }
             '*' if chars.peek() == Some(&'*') => {
@@ -199,6 +217,40 @@ mod tests {
         assert_eq!(
             err("$x^$"),
             "in `$x^$`: an argument is missing at the end of the formula"
+        );
+    }
+
+    #[test]
+    fn a_line_that_starts_with_a_dash_and_a_space_is_a_list_item() {
+        let colors = HashMap::from([("red".to_string(), RED)]);
+        let runs: Vec<(String, Font, Color, bool)> = runs(
+            "- a\n\\- b\nc - d\n-e\n- **f**\n{red g\n- h}",
+            Font::Mono,
+            Color::BLACK,
+            &colors,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.text, r.font, r.color, r.bullet))
+        .collect();
+        let bullet = ("\u{2022}".to_string(), Font::Sans, Color::BLACK, true);
+        assert_eq!(
+            runs,
+            [
+                bullet.clone(),
+                (
+                    "a\n- b\nc - d\n-e\n".into(),
+                    Font::Mono,
+                    Color::BLACK,
+                    false
+                ),
+                bullet.clone(),
+                ("f".into(), Font::SansBold, Color::BLACK, false),
+                ("\n".into(), Font::Mono, Color::BLACK, false),
+                ("g\n".into(), Font::Mono, RED, false),
+                bullet,
+                ("h".into(), Font::Mono, RED, false),
+            ]
         );
     }
 

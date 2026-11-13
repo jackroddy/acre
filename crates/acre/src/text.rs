@@ -42,12 +42,15 @@ pub struct Glyph {
 }
 
 /// One line of shaped text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Line {
     pub glyphs: Vec<Glyph>,
     /// The distance from the start of the line to the end of its last
     /// glyph's advance.
     pub width: f64,
+    /// The space between this line and the one before it beyond one
+    /// line height.
+    pub gap: f64,
 }
 
 /// Runs shaped into lines at one size.
@@ -65,9 +68,9 @@ pub struct Layout {
     pub descent: f64,
     /// The height of a capital in the first run's font.
     pub cap_height: f64,
-    /// Whether the lines were wrapped and justified, so they align as
-    /// one block.
-    pub justify: bool,
+    /// Whether the lines align as one block: wrapped and justified, or
+    /// holding a list item.
+    pub block: bool,
 }
 
 impl Layout {
@@ -82,11 +85,12 @@ impl Layout {
     /// The left end of each line's baseline when the text's `origin`
     /// sits where `h_align` and `v_align` say: `Top` at the first line's
     /// ascent, `Middle` at half the capital height of the middle of the
-    /// lines, `Baseline` on the first baseline. Justified lines share
-    /// one left edge.
+    /// lines, `Baseline` on the first baseline. The lines of a block
+    /// share one left edge.
     pub fn place(&self, origin: Point, h_align: HAlign, v_align: VAlign) -> Vec<Point> {
         let block = self.width();
         let lines = self.lines.len().max(1) as f64;
+        let gaps: f64 = self.lines.iter().map(|l| l.gap).sum();
         let first_baseline = origin.y
             + match v_align {
                 VAlign::Top => self.ascent,
@@ -94,21 +98,25 @@ impl Layout {
                 // half the capital height rather than half the ascent
                 // and descent, so a digit or a capital sits in the
                 // middle of a grid cell
-                VAlign::Middle => self.cap_height / 2.0 - (lines - 1.0) * self.line_height() / 2.0,
+                VAlign::Middle => {
+                    self.cap_height / 2.0 - ((lines - 1.0) * self.line_height() + gaps) / 2.0
+                }
                 VAlign::Baseline => 0.0,
             };
+        let mut below = 0.0;
         self.lines
             .iter()
             .enumerate()
             .map(|(k, line)| {
-                let width = if self.justify { block } else { line.width };
+                below += line.gap;
+                let width = if self.block { block } else { line.width };
                 let x = origin.x
                     - match h_align {
                         HAlign::Left => 0.0,
                         HAlign::Center => width / 2.0,
                         HAlign::Right => width,
                     };
-                Point::new(x, first_baseline + k as f64 * self.line_height())
+                Point::new(x, first_baseline + k as f64 * self.line_height() + below)
             })
             .collect()
     }
@@ -133,17 +141,20 @@ impl Layout {
 /// `runs` set in `fonts`, shaped at `size` pixels and broken into lines at each `\n`,
 /// and at spaces to keep lines within `width` when it is given. A word
 /// wider than `width` takes a line of its own. With `justify`, the
-/// wrapped lines are stretched to fill `width`, as [`wrap`] says.
+/// wrapped lines are stretched to fill `width`, as [`wrap`] says. A line
+/// that starts with a bullet run is a list item, set as [`item`] says.
 pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justify: bool) -> Layout {
-    let first = match runs.first().map_or(Font::Mono, |r| r.font) {
+    let first_run = runs.iter().find(|r| !r.bullet);
+    let first = match first_run.map_or(Font::Mono, |r| r.font) {
         Font::Math => fonts.face(Font::Sans),
         font => fonts.face(font),
     };
     let per_unit = |face: &Face| size / face.units_per_em() as f64;
-    let mut lines = vec![Line {
-        glyphs: Vec::new(),
-        width: 0.0,
-    }];
+    let mut lines = vec![Line::default()];
+
+    // the number of bullet glyphs that start each line, 0 for a line
+    // that is not a list item
+    let mut bullets = vec![0];
     let mut text = String::new();
     for run in runs {
         let run_start = text.len();
@@ -171,10 +182,8 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
             let start = piece_start;
             piece_start += piece.len() + 1;
             if k > 0 {
-                lines.push(Line {
-                    glyphs: Vec::new(),
-                    width: 0.0,
-                });
+                lines.push(Line::default());
+                bullets.push(0);
             }
             if piece.is_empty() {
                 continue;
@@ -213,12 +222,30 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
                 line.width += advance;
             }
         }
+        if run.bullet {
+            let line = lines.last().expect("there is always a line");
+            *bullets.last_mut().expect("one per line") = line.glyphs.len();
+        }
     }
-    if let Some(width) = width {
-        lines = lines
-            .into_iter()
-            .flat_map(|l| wrap(l, width, justify))
-            .collect();
+    let has_items = bullets.iter().any(|&b| b > 0);
+    if width.is_some() || has_items {
+        let mut out = Vec::with_capacity(lines.len());
+        let mut after_item = false;
+        for (line, marks) in lines.into_iter().zip(bullets) {
+            let mut set = if marks > 0 {
+                item(line, marks, size, width, justify)
+            } else if let Some(width) = width {
+                wrap(line, width, justify)
+            } else {
+                vec![line]
+            };
+            if let (true, Some(first)) = (after_item, set.first_mut()) {
+                first.gap = ITEM_GAP * size;
+            }
+            out.extend(set);
+            after_item = marks > 0;
+        }
+        lines = out;
     }
     let scale = per_unit(first);
     let ascent = lines.first().map_or(0.0, |l| -ink(fonts, l).0);
@@ -230,8 +257,47 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
         ascent: (first.ascender() as f64 * scale).max(ascent),
         descent: (-(first.descender() as f64) * scale).max(descent),
         cap_height: first.capital_height().unwrap_or(first.ascender()) as f64 * scale,
-        justify: justify && width.is_some(),
+        block: (justify && width.is_some()) || has_items,
     }
+}
+
+/// How far a list item's text starts from its bullet's left edge, in
+/// multiples of the text size.
+const INDENT: f64 = 1.0;
+
+/// The space after a list item beyond one line height, in multiples
+/// of the text size.
+const ITEM_GAP: f64 = 0.3;
+
+/// The list item `line`, whose first `marks` glyphs are its bullet, set
+/// with its text [`INDENT`] from the bullet. The text wraps within what
+/// is left of `width`, as [`wrap`] says, and its lines hang at the
+/// indent.
+fn item(line: Line, marks: usize, size: f64, width: Option<f64>, justify: bool) -> Vec<Line> {
+    let indent = INDENT * size;
+    let mut bullet = line.glyphs;
+    let body = bullet.split_off(marks);
+    let left = body.first().map_or(line.width, |g| g.x);
+    let body = Line {
+        glyphs: body
+            .into_iter()
+            .map(|g| Glyph { x: g.x - left, ..g })
+            .collect(),
+        width: line.width - left,
+        gap: 0.0,
+    };
+    let mut lines = match width {
+        Some(width) => wrap(body, (width - indent).max(0.0), justify),
+        None => vec![body],
+    };
+    for line in &mut lines {
+        for g in &mut line.glyphs {
+            g.x += indent;
+        }
+        line.width += indent;
+    }
+    lines[0].glyphs.splice(0..0, bullet);
+    lines
 }
 
 /// Append `formula` to `line` as one unbreakable stretch of glyphs.
@@ -560,7 +626,11 @@ fn line_of(glyphs: &[Glyph]) -> Line {
         .rev()
         .find(|g| !g.space)
         .map_or(0.0, |g| g.x + g.advance);
-    Line { glyphs, width }
+    Line {
+        glyphs,
+        width,
+        gap: 0.0,
+    }
 }
 
 #[cfg(test)]
@@ -580,6 +650,16 @@ mod tests {
             text: text.into(),
             font,
             color: Color::BLACK,
+            bullet: false,
+        }
+    }
+
+    fn bullet() -> Run {
+        Run {
+            text: "\u{2022}".into(),
+            font: Font::Sans,
+            color: Color::BLACK,
+            bullet: true,
         }
     }
 
@@ -675,6 +755,7 @@ mod tests {
             text: r"\displaystyle \frac{a+b}{c} + d".into(),
             font: Font::Math,
             color: Color::BLACK,
+            bullet: false,
         };
         let formula = math::layout(&math.text, 20.0, &Fonts::default()).unwrap();
         let alone = layout(&[run("x ", Font::Sans)], 20.0, None);
@@ -883,5 +964,64 @@ mod tests {
                 .iter()
                 .all(|p| (p.x - (100.0 - char * 4.5)).abs() < 1e-9)
         );
+    }
+
+    #[test]
+    fn a_list_item_hangs_its_wrapped_lines_under_its_first_word() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [bullet(), run("aa bb cc dd", Font::Mono)];
+
+        // the text wraps within 8 characters less the indent of 10
+        let l = layout(&runs, 10.0, Some(char * 8.0));
+        assert!(l.block);
+        assert_eq!(l.lines.len(), 2);
+        let first = &l.lines[0];
+        assert_eq!(&l.text[first.glyphs[0].text.clone()], "\u{2022}");
+        assert_eq!(first.glyphs[0].x, 0.0);
+        assert!((first.glyphs[1].x - 10.0).abs() < 1e-9);
+        assert!((first.width - (10.0 + 5.0 * char)).abs() < 1e-9);
+        assert!((l.lines[1].glyphs[0].x - 10.0).abs() < 1e-9);
+        assert!(l.lines.iter().all(|l| l.width <= char * 8.0));
+    }
+
+    #[test]
+    fn a_list_sits_apart_from_its_items_and_the_line_after_it() {
+        let runs = [
+            run("head\n", Font::Sans),
+            bullet(),
+            run("one\n", Font::Mono),
+            bullet(),
+            run("two\nafter", Font::Mono),
+        ];
+        let l = layout(&runs, 10.0, None);
+        assert_eq!(l.lines.len(), 4);
+        assert_eq!(l.lines[0].glyphs[0].x, 0.0);
+        assert_eq!(l.lines[3].glyphs[0].x, 0.0);
+        let starts = l.place(Point::ZERO, HAlign::Left, VAlign::Baseline);
+        let steps: Vec<f64> = starts.windows(2).map(|p| p[1].y - p[0].y).collect();
+        assert!((steps[0] - 13.0).abs() < 1e-9);
+        assert!((steps[1] - 16.0).abs() < 1e-9);
+        assert!((steps[2] - 16.0).abs() < 1e-9);
+        let (top, bottom) = l.extent(Point::ZERO, HAlign::Left, VAlign::Top);
+        assert!((bottom.y - top.y - (l.ascent + 3.0 * 13.0 + 6.0 + l.descent)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_justified_list_item_fills_the_width_but_its_last_line() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [bullet(), run("aa bb cc dd ee ff gg hh", Font::Mono)];
+        let width = 10.0 + char * 12.0;
+        let l = justified(&runs, 10.0, width);
+        let (last, full) = l.lines.split_last().unwrap();
+        assert!(!full.is_empty());
+        for line in full {
+            assert!((line.width - width).abs() < 1e-9);
+            assert!((ink_end(line) - width).abs() < 1e-9);
+        }
+        assert!((full[0].glyphs[1].x - 10.0).abs() < 1e-9);
+        assert!((last.glyphs[0].x - 10.0).abs() < 1e-9);
+        assert!(last.width < width);
+        let spaces = last.glyphs.iter().filter(|g| g.space).count();
+        assert!((last.width - 10.0 - char * (3 * spaces + 2) as f64).abs() < 1e-9);
     }
 }

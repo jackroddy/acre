@@ -296,6 +296,7 @@ fn mono(text: String, color: Color) -> Run {
         text,
         font: Font::Mono,
         color,
+        bullet: false,
     }
 }
 

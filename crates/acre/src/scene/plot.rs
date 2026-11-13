@@ -223,6 +223,7 @@ impl Plot {
                 text: text.to_string(),
                 font: Font::Mono,
                 color: self.text_color,
+                bullet: false,
             }],
             size: self.text_size,
             width: None,
