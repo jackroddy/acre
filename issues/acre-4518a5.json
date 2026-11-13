@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T07:17:44.207595829Z",
+  "updated_at": "2026-11-13T07:23:40.00832379Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -107,6 +107,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Numbered markers (acre-d08f6a) added `marker { at ...; number N; }` and `number N` on `text`. Choices the proposal left open:\n\n- `marker` has no size or color of its own by default. Its look is `style marker { fill; text-color; text-size; font; diameter }`. That one style also dresses numbered `text`, which reads it through the canvas, not by node kind.\n- `at` on a marker reuses the connector end resolution. A point or a bare name puts the circle's center there. A side puts the circle outside that side, touching it, because a circle centered on an edge covers the first cell of a row.\n- Numbered text is `text { number 3; ... }` and not a new `step` node. The badge goes left of the text and the text shifts right by the diameter plus 8. `width` shrinks by the same amount. `align` is rejected on numbered text.\n- The heading digits leave the string: `\"**1. The mask**\"` becomes `number 1` with `\"**The mask**\"`.",
       "commit": "638f24c",
+      "branch": "dev"
+    },
+    {
+      "id": "c0415c4e",
+      "at": "2026-11-13T07:23:40.00832177Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Syntax for user fonts (acre-7101c7). A canvas-level `fonts { NAME \"PATH\"; ... }` registers each file under NAME, and `font NAME` takes it wherever `font` is accepted. Paths resolve relative to the .acre file. The math font is swapped with the reserved name `math` in the same block: `fonts { math \"PATH\"; }`. Reason: the block already maps names to files, and `math` is the name acre uses for that font, so no second keyword is needed. The file needs a MATH table or the build fails naming the file and line. The names mono, sans, sans-bold and sans-italic cannot be registered, so a drawing never changes what they mean. A name is registered once. `\\\\text` and `\\\\mathrm` inside formulas still use the embedded sans, as before.",
+      "commit": "35ad092",
       "branch": "dev"
     }
   ],
