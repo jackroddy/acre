@@ -1,0 +1,28 @@
+{
+  "id": "acre-596647",
+  "title": "A ruler with side left still draws a horizontal scale",
+  "body": "`ruler` takes `side top`, `bottom`, `left` or `right`. At `c846b14`, `ruler { count 120; unit 2; every 20; side left; }` draws a horizontal scale, the same as `side top`. acre gives no error.\n\nThe cloud-search and pipeline figures needed target positions down the left of a 362-row matrix. `gen.py` and `gen_cloud.py` wrote them as `text` nodes at computed heights.\n\n## Proposal\n\n`side left` and `side right` draw a vertical scale, with ticks and numbers on that side. If `side` is meant to place only the numbers, a `direction down` property does the same job. Either way, a ruler can run down a drawing.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-fb60bb",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T19:10:18.223873234Z",
+  "updated_at": "2026-11-13T19:10:18.223873234Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "743a77a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
