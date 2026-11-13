@@ -72,6 +72,10 @@ struct RenderArgs {
     #[arg(long, value_name = "n", default_value_t = 1.0)]
     scale: f64,
 
+    /// The instant to draw, in seconds from the start of the animation
+    #[arg(long, value_name = "seconds", default_value_t = 0.0)]
+    time: f64,
+
     /// The drawing to render
     #[arg(value_name = "file")]
     file: PathBuf,
@@ -193,11 +197,11 @@ fn main() -> anyhow::Result<()> {
                 .out
                 .unwrap_or_else(|| args.file.with_extension(format.extension()));
             let bytes = match format {
-                Format::Png => render::draw_frame(&scene, 0.0, args.scale)
+                Format::Png => render::draw_frame(&scene, args.time, args.scale)
                     .encode_png()
                     .context("cannot encode the image")?,
-                Format::Svg => render::draw_svg(&scene, 0.0, args.scale).into_bytes(),
-                Format::Pdf => render::draw_pdf(&scene, 0.0, args.scale)
+                Format::Svg => render::draw_svg(&scene, args.time, args.scale).into_bytes(),
+                Format::Pdf => render::draw_pdf(&scene, args.time, args.scale)
                     .map_err(|e| anyhow!("cannot write a PDF: {e}"))?,
             };
             fs::write(&out, bytes).with_context(|| format!("cannot write {}", out.display()))?;
