@@ -62,6 +62,13 @@ pub(super) fn next_token(src: &str, i: &mut usize) -> Option<Result<Token, Error
             *i += 1;
             Tok::Semi
         }
+        b'"' if src[start..].starts_with("\"\"\"") => match block(src, start) {
+            Ok((text, end)) => {
+                *i = end;
+                Tok::Str(text)
+            }
+            Err(e) => return Some(Err(e)),
+        },
         b'"' => match string(src, start) {
             Ok((text, end)) => {
                 *i = end;
@@ -174,6 +181,36 @@ fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
     Err(Error::new(span, "string is never closed"))
 }
 
+/// The text of the block string opening with `"""` at `start`, and the
+/// offset just past its closing `"""`. It takes no escapes. A line break
+/// straight after the opening and the last line, when it holds only
+/// spaces, are dropped, and so is the indent its lines share.
+fn block(src: &str, start: usize) -> Result<(String, usize), Error> {
+    let body = start + 3;
+    let Some(len) = src[body..].find("\"\"\"") else {
+        let span = Span { start, end: body };
+        return Err(Error::new(span, "block string is never closed"));
+    };
+    let raw = &src[body..body + len];
+    let raw = raw.strip_prefix('\n').unwrap_or(raw);
+    let mut lines: Vec<&str> = raw.split('\n').collect();
+    if lines.len() > 1 && lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    let indent = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start_matches(' ').len())
+        .min()
+        .unwrap_or(0);
+    let text = lines
+        .iter()
+        .map(|l| l.get(indent..).unwrap_or("").trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok((text, body + len + 3))
+}
+
 fn color(hex: &str, span: Span) -> Result<[u8; 4], Error> {
     let bad = || Error::new(span, "a color is `#rrggbb` or `#rrggbbaa`");
     if hex.len() != 6 && hex.len() != 8 {
@@ -189,6 +226,22 @@ fn color(hex: &str, span: Span) -> Result<[u8; 4], Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_block_string_keeps_its_lines_without_their_shared_indent() {
+        let src = "text \"\"\"\n        fn f() {\n            \\n\n        }\n    \"\"\";";
+        assert_eq!(
+            toks(src),
+            [
+                Tok::Word("text".into()),
+                Tok::Str("fn f() {\n    \\n\n}".into()),
+                Tok::Semi,
+            ]
+        );
+        assert_eq!(toks("\"\"\"one line\"\"\""), [Tok::Str("one line".into())]);
+        let err = tokens("a \"\"\"never closed").unwrap_err();
+        assert_eq!(err.message, "block string is never closed");
+    }
 
     fn toks(src: &str) -> Vec<Tok> {
         tokens(src).unwrap().into_iter().map(|t| t.tok).collect()

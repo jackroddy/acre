@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when everything they name is placed already, and none otherwise.
 - `at` is optional. Without it, a node sits at its group's origin, or at its
   slot in a stack or grid.
+- A string can run over several lines between `"""` and `"""`. It keeps its line
+  breaks, drops the indent its lines share and a break straight after the
+  opening, and takes no escapes. Markup still applies where it is a label.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

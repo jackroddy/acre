@@ -95,6 +95,10 @@ mod tests {
     group {
         at 0 (-u);
         row r { at 0 0; unit u 10; chars \"ab\"; } // a row
+        text { at 0 0; text \"\"\"
+            two lines,
+              the second indented
+        \"\"\"; }
         text { at r 0 (u + 2); text \"`x` {#ff0000 y}\"; style s; }
     }
 }
