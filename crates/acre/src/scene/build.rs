@@ -13,6 +13,8 @@ use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
 const STROKE_WIDTH: f64 = 2.0;
 const TEXT_SIZE: f64 = 16.0;
 const FPS: u32 = 30;
+/// The space `margin` leaves around the drawing of an `auto` canvas.
+const AUTO_MARGIN: f64 = 20.0;
 
 /// The scene a program describes.
 pub fn build(program: &Program) -> Result<Scene, Error> {
@@ -36,7 +38,20 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     let canvas = &canvas;
     let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
-    let [width, height] = size.numbers::<2>()?;
+    let [width, height] = canvas_size(size)?;
+    let margin = match props.get("margin") {
+        Some(p) if width.is_some() && height.is_some() => {
+            return Err(Error::new(p.span, "`margin` needs an `auto` in `size`"));
+        }
+        Some(p) => {
+            let m = p.numbers::<1>()?[0];
+            if m < 0.0 {
+                return Err(p.expected("a number that is not negative"));
+            }
+            m
+        }
+        None => AUTO_MARGIN,
+    };
     let background = match props.get("background") {
         Some(p) => p.color()?,
         None => Color::WHITE,
@@ -53,8 +68,7 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
         codes: HashMap::new(),
     };
 
-    // palettes, then named shapes and rows, so that a node may
-    // name any of them wherever it sits in the file
+    // palettes first, so that a node may name one wherever it sits
     for node in &canvas.children {
         if node.kind.text == "palette" {
             let name = node
@@ -67,8 +81,49 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
             }
         }
     }
+
+    let mut objects = add_canvas_objects(canvas, &names, Point::ZERO)?;
+
+    // an `auto` side is the box around what is drawn plus the margin
+    // on both sides, so the drawing moves to start at the margin
+    let mut offset = Point::ZERO;
+    let mut sides = [width.unwrap_or(0.0), height.unwrap_or(0.0)];
+    if width.is_none() || height.is_none() {
+        let (min, max) = bounds_of(&objects).unwrap_or((Point::ZERO, Point::ZERO));
+        if width.is_none() {
+            sides[0] = (max.x - min.x + 2.0 * margin).ceil();
+            offset.x = margin - min.x;
+        }
+        if height.is_none() {
+            sides[1] = (max.y - min.y + 2.0 * margin).ceil();
+            offset.y = margin - min.y;
+        }
+        objects = add_canvas_objects(canvas, &names, offset)?;
+    }
+
+    Ok(Scene {
+        canvas: Canvas {
+            width: pixels(sides[0], size)?,
+            height: pixels(sides[1], size)?,
+            fps: FPS,
+            duration: 0.0,
+            background,
+        },
+        objects,
+    })
+}
+
+/// The objects of the canvas node, drawn with its origin at `offset`.
+fn add_canvas_objects<'a>(
+    canvas: &'a Node,
+    names: &Names<'a>,
+    offset: Point,
+) -> Result<Vec<Object>, Error> {
+    // named shapes and rows, so that a node may name any of them
+    // wherever it sits in the file
+    let mut names = names.clone();
     let mut places = Places::new();
-    name_things(&canvas.children, Point::ZERO, &mut names, &mut places)?;
+    name_things(&canvas.children, offset, &mut names, &mut places)?;
     let mut objects = Vec::new();
     let mut panels = 0;
     let pass = Pass {
@@ -76,24 +131,22 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
         places: &places,
         measuring: false,
     };
-    add_objects(
-        &canvas.children,
-        Point::ZERO,
-        &pass,
-        &mut panels,
-        &mut objects,
-    )?;
+    add_objects(&canvas.children, offset, &pass, &mut panels, &mut objects)?;
+    Ok(objects)
+}
 
-    Ok(Scene {
-        canvas: Canvas {
-            width: pixels(width, size)?,
-            height: pixels(height, size)?,
-            fps: FPS,
-            duration: 0.0,
-            background,
-        },
-        objects,
-    })
+/// The width and height `size` gives, `None` for each `auto`.
+fn canvas_size(size: &Property) -> Result<[Option<f64>; 2], Error> {
+    let bad = || size.expected("two numbers, or `auto` for either");
+    let [w, h] = size.values.as_slice() else {
+        return Err(bad());
+    };
+    let side = |v: &Value| match &v.kind {
+        ValueKind::Number(n) => Ok(Some(*n)),
+        ValueKind::Word(w) if w == "auto" => Ok(None),
+        _ => Err(bad()),
+    };
+    Ok([side(w)?, side(h)?])
 }
 
 /// Build every named shape and row in `nodes` and the groups among them,
@@ -1987,5 +2040,64 @@ mod tests {
             .2,
             "code `c` has lines 1 to 1"
         );
+    }
+
+    /// The box around everything `s` draws at time 0.
+    fn drawn(s: &Scene) -> (Point, Point) {
+        bounds_of(&s.objects).unwrap()
+    }
+
+    #[test]
+    fn an_auto_height_wraps_the_drawing_in_the_margin() {
+        let s = scene(
+            "canvas { size 300 auto; margin 10;
+                box a { at 40 30; size 100 40; } }",
+        )
+        .unwrap();
+        assert_eq!((s.canvas.width, s.canvas.height), (300, 60));
+        let (min, max) = drawn(&s);
+        // the width is fixed, so the box keeps its x
+        assert_eq!((min.x, min.y), (40.0, 10.0));
+        assert_eq!(max.y, 50.0);
+    }
+
+    #[test]
+    fn two_autos_size_the_canvas_to_the_drawing_and_move_it_to_the_margin() {
+        let s = scene(
+            "canvas { size auto auto;
+                box a { at 100 50; size 100 40; stroke none; fill #ff0000; }
+                arrow { from a; to 400 90; } }",
+        )
+        .unwrap();
+        let (min, max) = drawn(&s);
+        assert_eq!((min.x, min.y), (20.0, 20.0));
+        assert_eq!(s.canvas.width as f64, (max.x + 20.0).ceil());
+        assert_eq!(s.canvas.height as f64, (max.y + 20.0).ceil());
+    }
+
+    #[test]
+    fn auto_placement_moves_named_references_with_the_drawing() {
+        let s = scene(
+            "canvas { size auto auto; margin 0;
+                box a { at 100 100; size 40 40; stroke none; fill #ff0000; }
+                box b { at 200 100; size 40 40; stroke none; fill #ff0000; }
+                arrow { from a; to b; } }",
+        )
+        .unwrap();
+        let Kind::Connector(c) = &s.objects[2].kind else {
+            panic!("expected a connector");
+        };
+        assert_eq!(c.from, Point::new(40.0, 20.0));
+        assert_eq!(c.to, Point::new(100.0, 20.0));
+    }
+
+    #[test]
+    fn a_margin_without_an_auto_size_is_an_error() {
+        let (line, col, message) = scene("canvas { size 10 10; margin 5; }").unwrap_err();
+        assert_eq!((line, col), (1, 22));
+        assert_eq!(message, "`margin` needs an `auto` in `size`");
+        assert!(scene("canvas { size auto 10; margin -1; }").is_err());
+        assert!(scene("canvas { size auto; }").is_err());
+        assert!(scene("canvas { size auto fast; }").is_err());
     }
 }

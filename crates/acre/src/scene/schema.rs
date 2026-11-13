@@ -131,7 +131,16 @@ pub const NODES: &[NodeKind] = &[
         name: "canvas",
         about: "the drawing: its size, and everything on it",
         properties: &[
-            prop("size", "W H", "the width and height in pixels"),
+            prop(
+                "size",
+                "W H",
+                "the width and height in pixels; `auto` for either takes the box around everything drawn",
+            ),
+            prop(
+                "margin",
+                "N",
+                "the space around the drawing when `size` has an `auto`, default 20",
+            ),
             prop("background", "COLOR", "the color behind everything"),
             FONT,
             prop(

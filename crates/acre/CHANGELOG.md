@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it.
 - `lang::context_at` gives the nodes around a byte offset, the property it sits
   in, and the word under it, reading past errors.
+- `size W auto`, `size auto H` and `size auto auto` on the canvas take each
+  `auto` side from the box around everything drawn, as `Scene::bounds`
+  measures it. A new canvas property `margin` sets the space added on both
+  ends of an `auto` side, 20 by default. The drawing moves to start at the
+  margin on each `auto` axis.
 
 ### Changed
 
