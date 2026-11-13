@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T08:08:41.604798606Z",
+  "updated_at": "2026-11-13T08:08:50.486972902Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -121,9 +121,10 @@
       "id": "95d78dbe",
       "at": "2026-11-13T08:08:41.604797206Z",
       "author": "Jack Roddy/ed2a7ee0",
-      "text": "`text-align justify` sets wrapped text flush with both edges of its `width` (acre-2457be). On a box, `justify` joins `left`, `center` and `right` as a value of `text-align`. Each of those sets how the lines sit inside the box, and justify is one more way to set them. On `text` the same property is new and takes only `justify`. `align` there already says where `at` sits along the text, and it lines each line up with `at` as well. A second property kept \"where the text is\" apart from \"how its lines are set\". `text-align left` on `text` is an error that points at `align`. Without `width` the lines have no edge to fill, so `text-align justify` with no `width` is an error too.\n\nOnly justified text uses the new paragraph breaker. Ragged text keeps the greedy breaks, so every existing figure draws exactly as before. A check rendered each of the repository's 32 drawings that render, before and after, as PNG, SVG and PDF, and all 96 files were byte-identical. Even breaks would make ragged text tidier too. The cost would be moving every wrapped label in every existing figure, so that choice belongs to its own decision.",
+      "text": "`text-align justify` sets wrapped text flush with both edges of its `width` (acre-2457be). On a box, `justify` joins `left`, `center` and `right` as a value of `text-align`. Each of those sets how the lines sit inside the box, and justify is one more way to set them. On `text` the same property is new and takes only `justify`. `align` there already says where `at` sits along the text, and it lines each line up with `at` as well. A second property keeps where the text sits apart from how its lines are set. `text-align left` on `text` is an error that points at `align`. Without `width` the lines have no edge to fill, so `text-align justify` with no `width` is an error too.\n\nOnly justified text uses the new paragraph breaker. Ragged text keeps the greedy breaks, so every existing figure draws exactly as before. The repository's 32 drawings that render came out byte-identical before and after the change, as PNG, SVG and PDF. Even breaks would make ragged text tidier too. The cost would be moving every wrapped label in every existing figure, so that choice belongs to its own decision.",
       "commit": "dd3c79a",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-11-13T08:08:50.486972612Z"
     }
   ],
   "stamps": {
