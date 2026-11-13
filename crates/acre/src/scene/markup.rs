@@ -6,8 +6,9 @@ use super::primitive::{Color, Font, Run};
 ///
 /// `` `code` `` sets text in the mono font, `**bold**` in the bold sans
 /// font, and `{NAME text}` colors `text` with the color `colors` gives
-/// `NAME`, or with `{#rrggbb text}`. A backslash takes the character
-/// after it as it is.
+/// `NAME`, or with `{#rrggbb text}`. `$formula$` is LaTeX math, as one
+/// run in the math font. A backslash takes the character after it as it
+/// is, so `\$` is a dollar sign.
 pub fn runs(
     src: &str,
     font: Font,
@@ -54,6 +55,15 @@ pub fn runs(
                 flush(&mut out, &mut text, mono, bold, &stack);
                 mono = !mono;
             }
+            '$' => {
+                flush(&mut out, &mut text, mono, bold, &stack);
+                let formula = formula(&mut chars)?;
+                out.push(Run {
+                    text: formula,
+                    font: Font::Math,
+                    color: stack.last().copied().unwrap_or(color),
+                });
+            }
             '*' if chars.peek() == Some(&'*') => {
                 chars.next();
                 flush(&mut out, &mut text, mono, bold, &stack);
@@ -92,6 +102,32 @@ pub fn runs(
     }
     flush(&mut out, &mut text, mono, bold, &stack);
     Ok(out)
+}
+
+/// The formula after an opening `$`, up to the `$` that closes it, with
+/// its backslashes kept for LaTeX.
+fn formula(chars: &mut impl Iterator<Item = char>) -> Result<String, String> {
+    let mut formula = String::new();
+    loop {
+        match chars.next() {
+            Some('$') => break,
+            Some('\\') => {
+                formula.push('\\');
+                formula.extend(chars.next());
+            }
+            Some(c) => formula.push(c),
+            None => {
+                return Err("a `$` opens a formula that is never closed; \
+                            write `\\$` for a dollar sign"
+                    .into());
+            }
+        }
+    }
+    if formula.trim().is_empty() {
+        return Err("a formula between `$` signs is empty; write `\\$` for a dollar sign".into());
+    }
+    crate::math::parse(&formula).map_err(|e| format!("in `${formula}$`: {e}"))?;
+    Ok(formula)
 }
 
 fn hex_color(hex: &str) -> Option<Color> {
@@ -135,6 +171,34 @@ mod tests {
                 ("e".into(), Font::Mono, RED),
                 (" {f}".into(), Font::Sans, Color::BLACK),
             ]
+        );
+    }
+
+    #[test]
+    fn a_formula_is_one_math_run_in_the_color_around_it() {
+        assert_eq!(
+            styles(r"a $\frac{x}{2}$ {red $y$} \$5"),
+            [
+                ("a ".into(), Font::Sans, Color::BLACK),
+                (r"\frac{x}{2}".into(), Font::Math, Color::BLACK),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("y".into(), Font::Math, RED),
+                (" $5".into(), Font::Sans, Color::BLACK),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_lone_dollar_or_a_bad_formula_is_an_error() {
+        let colors = HashMap::new();
+        let err = |src| runs(src, Font::Sans, Color::BLACK, &colors).unwrap_err();
+        assert_eq!(
+            err("costs $5"),
+            "a `$` opens a formula that is never closed; write `\\$` for a dollar sign"
+        );
+        assert_eq!(
+            err("$x^$"),
+            "in `$x^$`: an argument is missing at the end of the formula"
         );
     }
 

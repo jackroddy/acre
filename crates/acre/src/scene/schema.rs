@@ -122,8 +122,8 @@ const CONNECTOR: &[Property] = &[
 ];
 
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group", "panel",
-    "caption", "stack", "grid", "code",
+    "box", "ellipse", "row", "line", "arrow", "text", "math", "table", "brace", "ruler", "group",
+    "panel", "caption", "stack", "grid", "code",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -150,8 +150,8 @@ pub const NODES: &[NodeKind] = &[
             ),
         ],
         children: &[
-            "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
-            "panel", "caption", "stack", "grid", "code", "palette", "style",
+            "box", "ellipse", "row", "line", "arrow", "text", "math", "table", "brace", "ruler",
+            "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
         ],
     },
     NodeKind {
@@ -248,6 +248,27 @@ pub const NODES: &[NodeKind] = &[
             ),
             prop("width", "N", "the width the text wraps within, at spaces"),
             FONT,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "math",
+        about: "a formula in LaTeX math, set in display style and placed by its top edge",
+        properties: &[
+            AT,
+            prop(
+                "text",
+                "\"\"\"FORMULA\"\"\"",
+                "the formula, such as `\\frac{n}{2}`, without `$` signs",
+            ),
+            prop("size", "N", "the size in pixels"),
+            prop("color", "COLOR", "the color"),
+            prop(
+                "align",
+                "left | center | right",
+                "where `at` sits along the formula",
+            ),
             STYLE,
         ],
         children: &[],

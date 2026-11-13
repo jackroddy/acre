@@ -105,6 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TeXbook*, appendix G, with the constants and glyph variants of the font's
   MATH table. A run in `Font::Math` holds a formula, and `text::layout` sets
   it in its line as one piece that never breaks.
+- `$...$` in any label's markup is a formula in LaTeX math, such as
+  `"takes $\lceil \log_2 5 \rceil$ bits"`. Backslashes inside it need no
+  escape. `\$` is a dollar sign, and a `$` with no partner is an error.
+- A `math` node sets one formula in display style, placed by its top edge like
+  `text`: `math { text """\sum_{i=1}^n i = \frac{n(n+1)}{2}"""; size 24; }`.
 
 ### Changed
 
@@ -112,6 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `text` module lays out and measures text for both `scene` and `render`.
   `Label::size` gives a label's measured size, and `Scene::bounds` measures
   text instead of estimating it.
+- `lang::highlight` keeps a formula between `$` signs as one string, with the
+  `$` signs as markup.
 - `lang::highlight` splits strings at their markup, marks the words a `let`
   defines as `Highlight::Name`, and gives each color, and each `let` name that
   stands for one, as `Highlight::Color` with its value.

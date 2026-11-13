@@ -147,9 +147,23 @@ pub(super) fn next_token(src: &str, i: &mut usize) -> Option<Result<Token, Error
 fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
     let mut text = String::new();
     let mut chars = src[start + 1..].char_indices();
+    let mut math = false;
     while let Some((at, c)) = chars.next() {
         match c {
             '"' => return Ok((text, start + 1 + at + 1)),
+            '$' => {
+                math = !math;
+                text.push('$');
+            }
+
+            // a formula between `$` signs keeps its backslashes, so
+            // `$\nu$` is a LaTeX command and not a line break
+            '\\' if math => {
+                text.push('\\');
+                if let Some((_, c)) = chars.next() {
+                    text.push(c);
+                }
+            }
             '\\' => match chars.next() {
                 Some((_, '"')) => text.push('"'),
                 Some((_, '\\')) => text.push('\\'),
@@ -157,7 +171,7 @@ fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
 
                 // kept with their backslash for the markup in labels
                 // to read
-                Some((_, c @ ('{' | '}' | '`' | '*'))) => {
+                Some((_, c @ ('{' | '}' | '`' | '*' | '$'))) => {
                     text.push('\\');
                     text.push(c);
                 }
@@ -167,7 +181,13 @@ fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
                         start: at - 1,
                         end: at + c.len_utf8(),
                     };
-                    return Err(Error::new(span, format!("unknown escape `\\{c}`")));
+                    return Err(Error::new(
+                        span,
+                        format!(
+                            "unknown escape `\\{c}`; LaTeX goes between `$` signs, or in a \
+                             `\"\"\"` string"
+                        ),
+                    ));
                 }
                 None => break,
             },
@@ -285,6 +305,16 @@ mod tests {
     fn an_unclosed_string_points_at_its_opening_quote() {
         let err = tokens("text \"abc").unwrap_err();
         assert_eq!(err.span, Span { start: 5, end: 6 });
+    }
+
+    #[test]
+    fn a_formula_keeps_its_backslashes_and_a_dollar_escape_is_kept_for_markup() {
+        assert_eq!(
+            toks(r#""$\nu \frac12$\n\$""#),
+            [Tok::Str("$\\nu \\frac12$\n\\$".into())]
+        );
+        let err = tokens(r#""\frac""#).unwrap_err();
+        assert!(err.message.starts_with("unknown escape `\\f`"));
     }
 
     #[test]

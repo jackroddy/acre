@@ -275,6 +275,7 @@ fn add_objects(
                 None => Kind::Code(code(node, names, offset)?),
             },
             "text" => Kind::Text(text(node, names, offset)?),
+            "math" => Kind::Text(math(node, names, offset)?),
             "table" => {
                 for t in table(node, names, offset)? {
                     out.push(Object::new(Kind::Text(t)).from_source(node.span));
@@ -292,7 +293,7 @@ fn add_objects(
                     node.kind.span,
                     format!(
                         "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
+                         text, math, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
                          palette and style"
                     ),
                 ));
@@ -987,15 +988,7 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
         Some(p) => at(p, names, offset)?,
         None => offset,
     };
-    let align = match props.get("align") {
-        None => HAlign::Left,
-        Some(p) => match p.word()? {
-            "left" => HAlign::Left,
-            "center" => HAlign::Center,
-            "right" => HAlign::Right,
-            _ => return Err(Error::new(p.span, "`align` is left, center or right")),
-        },
-    };
+    let align = props.align()?;
     let mut label = props
         .label("text", "size", "color", names)?
         .ok_or_else(|| Error::new(node.kind.span, "`text` needs `text`"))?;
@@ -1006,6 +999,32 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
         origin,
         label,
         align,
+    })
+}
+
+/// A formula in display style, placed by its top edge like a `text`.
+fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
+    let props = Props::new(node, &keys("math"), false)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
+    let p = props.require("text")?;
+    let formula = p.string()?;
+    crate::math::parse(&formula).map_err(|message| Error::new(p.span, message))?;
+    let run = Run {
+        text: format!("\\displaystyle {formula}"),
+        font: Font::Math,
+        color: props.color_or("color", Color::BLACK)?,
+    };
+    Ok(Text {
+        origin,
+        label: Label {
+            runs: vec![run],
+            size: props.number_or("size", TEXT_SIZE)?,
+            width: None,
+        },
+        align: props.align()?,
     })
 }
 
@@ -1517,6 +1536,18 @@ impl<'a> Props<'a> {
         }
     }
 
+    fn align(&self) -> Result<HAlign, Error> {
+        let Some(p) = self.get("align") else {
+            return Ok(HAlign::Left);
+        };
+        match p.word()? {
+            "left" => Ok(HAlign::Left),
+            "center" => Ok(HAlign::Center),
+            "right" => Ok(HAlign::Right),
+            _ => Err(Error::new(p.span, "`align` is left, center or right")),
+        }
+    }
+
     fn font_or(&self, default: Font) -> Result<Font, Error> {
         match self.get("font") {
             Some(p) => font(p),
@@ -1700,6 +1731,23 @@ mod tests {
                  box a { at 0 0; size 2 2; } }"
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_math_node_sets_its_formula_in_display_style() {
+        let s =
+            scene(r#"canvas { size 100 100; math { at 5 6; text """\sum_i x_i"""; size 20; } }"#)
+                .unwrap();
+        let Kind::Text(t) = &s.objects[0].kind else {
+            panic!("expected text");
+        };
+        assert_eq!(t.origin, Point::new(5.0, 6.0));
+        assert_eq!(t.label.runs[0].font, Font::Math);
+        assert_eq!(t.label.runs[0].text, r"\displaystyle \sum_i x_i");
+        assert_eq!(
+            scene("canvas { size 10 10;\n  math { text \"\\\\fra\"; } }").unwrap_err(),
+            (2, 10, "`\\fra` is not a command acre knows".into())
         );
     }
 

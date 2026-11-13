@@ -136,7 +136,7 @@ pub enum Highlight {
     Name,
     Number,
     Str,
-    /// A markup sign inside a string: `` ` ``, `**`, `{name` or `}`.
+    /// A markup sign inside a string: `` ` ``, `**`, `{name`, `}` or `$`.
     Markup,
     /// A color, or a `let` name that stands for one, with its value.
     Color([u8; 4]),
@@ -257,6 +257,19 @@ fn markup(src: &str, span: Span, out: &mut Vec<(Span, Highlight)>) {
         let (len, class) = match bytes[k] {
             b'\\' => (2.min(bytes.len() - k), Highlight::Str),
             b'`' | b'}' => (1, Highlight::Markup),
+            b'$' => {
+                // a formula's braces and backslashes are LaTeX, not
+                // markup, so it stays one `Str` between its `$` signs
+                let mut end = k + 1;
+                while end < bytes.len() && bytes[end] != b'$' {
+                    end += if bytes[end] == b'\\' { 2 } else { 1 };
+                }
+                let end = end.min(bytes.len());
+                push(k, k + 1, Highlight::Markup);
+                push(k + 1, end, Highlight::Str);
+                k = end;
+                (1.min(bytes.len() - end), Highlight::Markup)
+            }
             b'*' if bytes.get(k + 1) == Some(&b'*') => (2, Highlight::Markup),
             b'{' => {
                 let name = bytes[k..]
@@ -657,6 +670,30 @@ mod tests {
                 ("\"", Highlight::Str),
                 ("color", Highlight::Key),
                 ("ink", ink),
+            ]
+        );
+    }
+
+    #[test]
+    fn highlight_keeps_a_formula_whole_between_its_dollar_signs() {
+        let src = r#"text "a $\frac{x}{y}$ {ink b}";"#;
+        let classes: Vec<(&str, Highlight)> = highlight(src)
+            .into_iter()
+            .map(|(span, class)| (&src[span.start..span.end], class))
+            .filter(|(_, c)| *c != Highlight::Punct && *c != Highlight::Key)
+            .collect();
+        assert_eq!(
+            classes,
+            [
+                ("\"a ", Highlight::Str),
+                ("$", Highlight::Markup),
+                (r"\frac{x}{y}", Highlight::Str),
+                ("$", Highlight::Markup),
+                (" ", Highlight::Str),
+                ("{ink", Highlight::Markup),
+                (" b", Highlight::Str),
+                ("}", Highlight::Markup),
+                ("\"", Highlight::Str),
             ]
         );
     }
