@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T05:55:29.490718602Z",
+  "updated_at": "2026-11-13T05:55:29.498532063Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -63,9 +63,10 @@
       "id": "fbf27f84",
       "at": "2026-11-13T01:18:07.344749096Z",
       "author": "Jack Roddy/cd2d1020",
-      "text": "v2 makes a figure the size of the `PrefixEncoder` one writable by hand. `crates/acre/examples/prefix-encoder.acre` is now hand-written in 171 lines. The generated version was 229 lines of absolute coordinates.\n\n- `let NAME VALUES;` on the canvas. A bare word equal to a let name stands for its values in any property. The substitution runs before `scene` reads a node, in `scene/expand.rs`. It has no scoping, so a let name shadows any word value of the same spelling, such as `right` or `show`.\n- `style NAME { ... }` and `style A B;` on a node. A node's own property wins over a style's, and a later style over an earlier one. Styles reach nested nodes such as a row's `cell` children.\n- `group { at X Y; ... }` moves the numbers in every `at`, `from` and `to` inside it. Names stay global, and an end that names a thing uses where that thing already is.\n- `at NAME DX DY` starts from a shape's or a row's top-left corner, and `at ROW N DX DY` from a cell's. A row name followed by exactly one number reads as a cell, so `at row -60 14` has to give both numbers.\n- `chars \"GATC\"` adds a cell per character.\n- `repeat N` on `line` and `arrow` draws N copies, adding one to every cell index on each copy. The 20 lines of the roll panel are one node.\n- A palette `symbol` takes a text color after its note, for white text on dark cells.\n\nThe derived-values box still takes 15 `text` nodes for a three-column table. A `table` node, or text that mixes colours within a line, would shorten it. Neither is built.",
+      "text": "v2 makes a figure the size of the `PrefixEncoder` one writable by hand. the PrefixEncoder figure, kept outside git is now hand-written in 171 lines. The generated version was 229 lines of absolute coordinates.\n\n- `let NAME VALUES;` on the canvas. A bare word equal to a let name stands for its values in any property. The substitution runs before `scene` reads a node, in `scene/expand.rs`. It has no scoping, so a let name shadows any word value of the same spelling, such as `right` or `show`.\n- `style NAME { ... }` and `style A B;` on a node. A node's own property wins over a style's, and a later style over an earlier one. Styles reach nested nodes such as a row's `cell` children.\n- `group { at X Y; ... }` moves the numbers in every `at`, `from` and `to` inside it. Names stay global, and an end that names a thing uses where that thing already is.\n- `at NAME DX DY` starts from a shape's or a row's top-left corner, and `at ROW N DX DY` from a cell's. A row name followed by exactly one number reads as a cell, so `at row -60 14` has to give both numbers.\n- `chars \"GATC\"` adds a cell per character.\n- `repeat N` on `line` and `arrow` draws N copies, adding one to every cell index on each copy. The 20 lines of the roll panel are one node.\n- A palette `symbol` takes a text color after its note, for white text on dark cells.\n\nThe derived-values box still takes 15 `text` nodes for a three-column table. A `table` node, or text that mixes colours within a line, would shorten it. Neither is built.",
       "commit": "38a8b36",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-11-13T05:55:29.498531843Z"
     },
     {
       "id": "e23ee12b",
