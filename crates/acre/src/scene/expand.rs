@@ -183,6 +183,7 @@ fn apply(
     Ok(Node {
         kind: node.kind.clone(),
         name: node.name.clone(),
+        head: node.head.clone(),
         properties,
         children,
         span: node.span,

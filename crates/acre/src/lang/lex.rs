@@ -4,6 +4,8 @@ use super::{Error, Span};
 pub(super) enum Tok {
     Word(String),
     Number(f64),
+    /// A number of seconds, written with an `s` straight after it.
+    Time(f64),
     Str(String),
     Color([u8; 4]),
     Open,
@@ -112,9 +114,20 @@ pub(super) fn next_token(src: &str, i: &mut usize) -> Option<Result<Token, Error
             while *i < bytes.len() && (bytes[*i].is_ascii_digit() || bytes[*i] == b'.') {
                 *i += 1;
             }
-            let span = Span { start, end: *i };
             let text = &src[start..*i];
+            let seconds = bytes.get(*i) == Some(&b's')
+                && !bytes
+                    .get(*i + 1)
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-');
+            let span = Span {
+                start,
+                end: *i + seconds as usize,
+            };
             match text.parse() {
+                Ok(value) if seconds => {
+                    *i += 1;
+                    Tok::Time(value)
+                }
                 Ok(value) => Tok::Number(value),
                 Err(_) => return Some(Err(Error::new(span, format!("`{text}` is not a number")))),
             }
@@ -315,6 +328,20 @@ mod tests {
         );
         let err = tokens(r#""\frac""#).unwrap_err();
         assert!(err.message.starts_with("unknown escape `\\f`"));
+    }
+
+    #[test]
+    fn a_number_with_an_s_after_it_is_a_time() {
+        assert_eq!(
+            toks("0s 1.5s 2 3sx"),
+            [
+                Tok::Time(0.0),
+                Tok::Time(1.5),
+                Tok::Number(2.0),
+                Tok::Number(3.0),
+                Tok::Word("sx".into()),
+            ]
+        );
     }
 
     #[test]

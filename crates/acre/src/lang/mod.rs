@@ -7,6 +7,13 @@
 //! box lang { at 40 76; size 120 48; text "lang"; }
 //! ```
 //!
+//! A node may open with times instead of a kind, as an entry of a
+//! timeline does:
+//!
+//! ```text
+//! 0s to 1s { scale a 1.5; }
+//! ```
+//!
 //! The parser gives no node kind or property a meaning. `scene` does.
 
 mod format;
@@ -34,8 +41,13 @@ pub struct Program {
 /// A kind, an optional name, and a braced body.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
+    /// The first word, or an empty word for a node that opens with a
+    /// time.
     pub kind: Word,
     pub name: Option<Word>,
+    /// The values before `{` of a node that opens with a time, the
+    /// time first.
+    pub head: Vec<Value>,
     pub properties: Vec<Property>,
     pub children: Vec<Node>,
     /// From the kind to the closing brace.
@@ -66,6 +78,8 @@ pub struct Value {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Number(f64),
+    /// A number of seconds, such as `1.5s`.
+    Time(f64),
     Str(String),
     /// `#rrggbb` or `#rrggbbaa`, with alpha 255 when absent.
     Color([u8; 4]),
@@ -182,7 +196,7 @@ pub fn highlight(src: &str) -> Vec<(Span, Highlight)> {
                 Some(None) => Highlight::Name,
                 None => Highlight::Word,
             },
-            Tok::Number(_) => Highlight::Number,
+            Tok::Number(_) | Tok::Time(_) => Highlight::Number,
             Tok::Str(_) => {
                 markup(src, token.span, &mut out);
                 item_start = false;
@@ -388,6 +402,7 @@ impl Parser<'_> {
                     self.pos += 1;
                     self.item(key, &mut properties, &mut nodes)?;
                 }
+                Tok::Time(_) => nodes.push(self.timed()?),
                 _ => {
                     return Err(Error::new(
                         token.span,
@@ -421,6 +436,7 @@ impl Parser<'_> {
             let kind = match &token.tok {
                 Tok::Comment => continue,
                 Tok::Number(n) => ValueKind::Number(*n),
+                Tok::Time(n) => ValueKind::Time(*n),
                 Tok::Str(s) => ValueKind::Str(s.clone()),
                 Tok::Color(c) => ValueKind::Color(*c),
                 Tok::Word(w) => ValueKind::Word(w.clone()),
@@ -474,6 +490,7 @@ impl Parser<'_> {
                         },
                         kind: key,
                         name,
+                        head: Vec::new(),
                         properties: props,
                         children,
                     });
@@ -496,6 +513,54 @@ impl Parser<'_> {
 }
 
 impl Parser<'_> {
+    /// The node that opens with the time at the current token: the
+    /// values up to `{`, then its body.
+    fn timed(&mut self) -> Result<Node, Error> {
+        let start = self.tokens[self.pos].span;
+        let mut head = Vec::new();
+        loop {
+            let Some(token) = self.tokens.get(self.pos) else {
+                return Err(Error::new(start, "expected `{` after the times"));
+            };
+            self.pos += 1;
+            let kind = match &token.tok {
+                Tok::Time(n) => ValueKind::Time(*n),
+                Tok::Number(n) => ValueKind::Number(*n),
+                Tok::Word(w) => ValueKind::Word(w.clone()),
+                Tok::Open => break,
+                other => {
+                    return Err(Error::new(
+                        token.span,
+                        format!("expected `{{` after the times, found {}", describe(other)),
+                    ));
+                }
+            };
+            head.push(Value {
+                kind,
+                span: token.span,
+            });
+        }
+        let open = self.tokens[self.pos - 1].span;
+        let (properties, children) = self.body(Some(open))?;
+        Ok(Node {
+            kind: Word {
+                text: String::new(),
+                span: Span {
+                    start: start.start,
+                    end: start.start,
+                },
+            },
+            name: None,
+            head,
+            properties,
+            children,
+            span: Span {
+                start: start.start,
+                end: self.tokens[self.pos - 1].span.end,
+            },
+        })
+    }
+
     /// The values up to the `)` matching `open`, as one group.
     fn group(&mut self, open: Span) -> Result<Value, Error> {
         let mut values = Vec::new();
@@ -543,6 +608,7 @@ fn describe(tok: &Tok) -> &'static str {
     match tok {
         Tok::Word(_) => "a word",
         Tok::Number(_) => "a number",
+        Tok::Time(_) => "a time",
         Tok::Str(_) => "a string",
         Tok::Color(_) => "a color",
         Tok::Open => "`{`",
@@ -610,6 +676,39 @@ mod tests {
         assert_eq!(
             err_at("box a b {}"),
             (1, 7, "a node takes at most one name before `{`".into())
+        );
+    }
+
+    #[test]
+    fn a_node_may_open_with_times_and_words() {
+        let src = "timeline { 0s to 1.5s ease linear { scale a 2; } 2s { show b; } }";
+        let timeline = &parse(src).unwrap().nodes[0];
+        let [span, instant] = timeline.children.as_slice() else {
+            panic!("expected two entries");
+        };
+        assert_eq!(span.kind.text, "");
+        assert_eq!(
+            span.head.iter().map(|v| v.kind.clone()).collect::<Vec<_>>(),
+            [
+                ValueKind::Time(0.0),
+                ValueKind::Word("to".into()),
+                ValueKind::Time(1.5),
+                ValueKind::Word("ease".into()),
+                ValueKind::Word("linear".into()),
+            ]
+        );
+        assert_eq!(span.properties[0].key.text, "scale");
+        assert_eq!(&src[instant.span.start..instant.span.end], "2s { show b; }");
+        let time = &instant.head[0];
+        assert_eq!(time.kind, ValueKind::Time(2.0));
+        assert_eq!(&src[time.span.start..time.span.end], "2s");
+    }
+
+    #[test]
+    fn times_must_open_a_body() {
+        assert_eq!(
+            err_at("timeline {\n  1s;\n}"),
+            (2, 5, "expected `{` after the times, found `;`".into())
         );
     }
 

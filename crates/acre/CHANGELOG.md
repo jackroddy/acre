@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `lang` reads a number with `s` straight after it, such as `1.5s`, as a time,
+  `ValueKind::Time`. A node may open with a time in place of a kind, as in
+  `0s to 1s { ... }`. Its `kind` is then empty, and the new `Node::head` holds
+  the values before `{`.
 - `render::draw_svg` writes a scene as SVG, and `render::draw_pdf` writes it
   as a one-page PDF. Both draw the same primitives as the PNG renderer and put
   text where it does. `draw_svg` writes text as glyph outlines, so a viewer

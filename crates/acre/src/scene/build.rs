@@ -1282,6 +1282,7 @@ impl Badge {
         let node = Node {
             kind: word("marker"),
             name: None,
+            head: Vec::new(),
             properties,
             children: Vec::new(),
             span,
