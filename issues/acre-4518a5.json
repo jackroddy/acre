@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T08:08:50.486972902Z",
+  "updated_at": "2026-11-13T08:40:15.709563231Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -125,6 +125,14 @@
       "commit": "dd3c79a",
       "branch": "dev",
       "edited_at": "2026-11-13T08:08:50.486972612Z"
+    },
+    {
+      "id": "276c935e",
+      "at": "2026-11-13T08:40:15.709561681Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Bulleted lists (acre-aa0d7f). In a text's string, a line that starts with `- ` is a list item. Markup reads it, so the lexer and the parser stay as they are, and a node's text stays one string. A dash at the start of a line that is not a bullet is written `\\-`, with the backslash escape that markup already uses for `\\$`. The leading dash is how lists are written in plain text and in Markdown, so the source reads as the list it draws. A child node per item would split one block of text across several nodes.",
+      "commit": "df2b59e",
+      "branch": "dev"
     }
   ],
   "stamps": {
