@@ -3,26 +3,29 @@
   "title": "Text can be justified",
   "body": "`text::wrap` in `crates/acre/src/text.rs` breaks a paragraph greedily: each line takes words until the next one would pass `width`. The right edge is ragged, and a bad break can leave one short word alone on the last line. A line already breaks outside an inline code span when it can. `text` takes `width N` to wrap. A box takes `width` and `text-align left | center | right`. On `text`, `align` is where `at` sits along the text.\n\n## Proposal\n\n- `text-align justify` on `text` and on a box's text. It needs `width`. `text` gets a `text-align` property because `align` already means where `at` sits.\n- Justified text breaks its lines for the whole paragraph at once, as Knuth and Plass describe and TeX does. The breaker minimises the total badness, so the lines come out about the same length. The last line of a paragraph may be short. A line that would need very wide spaces is a bad break. A break inside a code span stays the last resort, taken only when the span alone is wider than `width`.\n- Every line but the last of a paragraph has its spaces widened until it fills `width`. Spaces inside a code span keep their width. A line that ends at `\\n` and a line of one word keep their natural spacing.\n- Inline math is one unbreakable box, like a word.\n- PNG, SVG and PDF all take glyph positions from `text::layout`, so the three justify the same way.\n- Ragged text keeps the greedy breaker, so no existing figure moves.\n\n## Out of scope\n\nHyphenation goes to its own issue.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T08:23:41.594531945Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T08:08:21.635435383Z",
-  "updated_at": "2026-11-13T08:08:41.594531945Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T08:09:06.850569265Z",
+  "closed_at": "2026-11-13T08:09:06.850569265Z",
+  "close_reason": "Landed in fb017ab: `text-align justify` on `text` and on a box, with the even breaker in `text::even_breaks`. The syntax and the choice to leave ragged text alone are in the note on acre-4518a5. Hyphenation went to acre-7b3a3b.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "dd3c79a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "fb017ab",
+      "branch": "dev"
+    }
   }
 }
