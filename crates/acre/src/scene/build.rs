@@ -5,6 +5,7 @@ use super::connector::{self, End, Follow};
 use super::expand::expand;
 use super::markup;
 use super::schema;
+use super::timeline;
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Object, Point,
     Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Text,
@@ -209,12 +210,35 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
         objects = add_canvas_objects(canvas, &names, offset)?;
     }
 
+    let last = timeline::apply(canvas, &mut objects, &fonts)?;
+    let duration = match props.get("duration") {
+        Some(p) => {
+            let d = match p.values.as_slice() {
+                [
+                    Value {
+                        kind: ValueKind::Time(d),
+                        ..
+                    },
+                ] if *d >= 0.0 => *d,
+                _ => return Err(p.expected("a time in seconds, such as `4s`")),
+            };
+            if d < last {
+                return Err(Error::new(
+                    p.span,
+                    format!("the timeline runs to {last}s, past this `duration`"),
+                ));
+            }
+            d
+        }
+        None => last,
+    };
+
     Ok(Scene {
         canvas: Canvas {
             width: pixels(sides[0], size)?,
             height: pixels(sides[1], size)?,
             fps: FPS,
-            duration: 0.0,
+            duration,
             background,
         },
         objects,
@@ -331,7 +355,7 @@ fn add_objects(
     for node in nodes {
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
-            "palette" | "fonts" => continue,
+            "palette" | "fonts" | "timeline" => continue,
             "caption" => {
                 // a caption goes under everything before it
                 let below = bounds_of(&names.fonts, out).map_or(offset.y, |(_, max)| max.y);
@@ -2117,7 +2141,7 @@ mod tests {
                 17,
                 "`box` has no property `colour`; it takes at, size, fill, stroke, \
                  stroke-width, dash, radius, text, text-size, text-color, font, width, \
-                 padding, text-align, style"
+                 padding, text-align, anchor, style"
                     .into()
             )
         );

@@ -16,6 +16,7 @@ pub mod plot;
 pub mod primitive;
 pub mod row;
 pub mod schema;
+mod timeline;
 pub mod track;
 
 pub use build::{FontFile, build, font_files};

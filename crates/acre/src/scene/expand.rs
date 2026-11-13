@@ -19,6 +19,16 @@ const RESERVED: &[&str] = &[
     "sans",
     "sans-bold",
     "sans-italic",
+    "in",
+    "out",
+    "to",
+    "ease",
+    "linear",
+    "in-out",
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
 ];
 
 /// The canvas, the colors its lets name, and the `marker` style's

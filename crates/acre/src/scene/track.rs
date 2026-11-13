@@ -137,7 +137,9 @@ fn sample<T: Lerp>(keys: &[Keyframe<T>], t: f64) -> T {
         (Some(first), Some(last)) => (first, last),
         _ => panic!("a keyframe track needs at least one keyframe"),
     };
-    if t <= first.time {
+    // at the first keyframe's time itself the search below runs, so
+    // a later keyframe at the same time takes over there
+    if t < first.time {
         return first.value.clone();
     }
     if t >= last.time {
@@ -238,6 +240,16 @@ mod tests {
         let track = Track::from_to(0.0, "a".to_string(), 1.0, "b".to_string());
         assert_eq!(track.at(0.5), "a");
         assert_eq!(track.at(1.0), "b");
+    }
+
+    #[test]
+    fn coincident_first_keyframes_take_the_later_value_at_their_time() {
+        let track = Track::keyframes(vec![
+            key(1.0, 0.0, Easing::Linear),
+            key(1.0, 1.0, Easing::Hold),
+        ]);
+        assert_eq!(track.at(0.5), 0.0);
+        assert_eq!(track.at(1.0), 1.0);
     }
 
     #[test]

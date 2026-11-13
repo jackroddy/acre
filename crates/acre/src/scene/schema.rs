@@ -72,6 +72,11 @@ const FROM: Property = prop(
 );
 const TO: Property = prop("to", "X Y | NAME [SIDE] | ROW N [SIDE]", "where it ends");
 const STYLE: Property = prop("style", "NAME...", "the styles whose properties it takes");
+const ANCHOR: Property = prop(
+    "anchor",
+    "center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right",
+    "the point of its box that stays put when a timeline scales it; the default is center",
+);
 
 const SHAPE: &[Property] = &[
     AT,
@@ -100,6 +105,7 @@ const SHAPE: &[Property] = &[
         "left | center | right | justify",
         "the text from the top inside the padding; without it, the text is centered; justify stretches or shrinks the spaces so each wrapped line fills `width`, all but the last line of a paragraph",
     ),
+    ANCHOR,
     STYLE,
 ];
 
@@ -143,6 +149,7 @@ const CONNECTOR: &[Property] = &[
     TEXT_SIZE,
     TEXT_COLOR,
     FONT,
+    ANCHOR,
     STYLE,
 ];
 
@@ -167,6 +174,11 @@ pub const NODES: &[NodeKind] = &[
                 "the space around the drawing when `size` has an `auto`, default 20",
             ),
             prop("background", "COLOR", "the color behind everything"),
+            prop(
+                "duration",
+                "Ts",
+                "how long the animation runs, in seconds such as `4s`; at least until the timeline's last change, which is the default",
+            ),
             FONT,
             prop(
                 "let",
@@ -177,7 +189,7 @@ pub const NODES: &[NodeKind] = &[
         children: &[
             "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace",
             "ruler", "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
-            "fonts",
+            "fonts", "timeline",
         ],
     },
     NodeKind {
@@ -227,6 +239,7 @@ pub const NODES: &[NodeKind] = &[
                 "mono | sans | sans-bold | sans-italic",
                 "the notes' font",
             ),
+            ANCHOR,
             STYLE,
         ],
         children: &["cell"],
@@ -284,6 +297,7 @@ pub const NODES: &[NodeKind] = &[
                 "a badge with this number to the left of the text, drawn as `style marker` sets; the text is aligned left",
             ),
             FONT,
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -303,6 +317,7 @@ pub const NODES: &[NodeKind] = &[
             TEXT_SIZE,
             TEXT_COLOR,
             FONT,
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -324,6 +339,7 @@ pub const NODES: &[NodeKind] = &[
                 "left | center | right",
                 "where `at` sits along the formula",
             ),
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -348,6 +364,7 @@ pub const NODES: &[NodeKind] = &[
                 "\"TEXT\"...",
                 "one row, a string per column; repeat for each row",
             ),
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -373,6 +390,7 @@ pub const NODES: &[NodeKind] = &[
             TEXT_SIZE,
             TEXT_COLOR,
             FONT,
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -393,6 +411,7 @@ pub const NODES: &[NodeKind] = &[
             TEXT_SIZE,
             TEXT_COLOR,
             FONT,
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -523,6 +542,7 @@ pub const NODES: &[NodeKind] = &[
             prop("number-color", "COLOR", "the color of numbers"),
             prop("line-number-color", "COLOR", "the color of line numbers"),
             prop("emphasis", "COLOR", "the background of emphasized lines"),
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -537,6 +557,7 @@ pub const NODES: &[NodeKind] = &[
             prop("color", "COLOR", "the color"),
             FONT,
             prop("gap", "N", "the space above it"),
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -564,6 +585,56 @@ pub const NODES: &[NodeKind] = &[
                 "math",
                 "\"PATH\"",
                 "sets formulas in the font file at PATH instead of Noto Sans Math; the file needs an OpenType MATH table",
+            ),
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "timeline",
+        about: "what happens to named nodes, and when; it holds entries, each an instant `Ts { ACTION...; }` \
+                or a span `Ts to Ts [ease linear | in | out | in-out] { ACTION...; }`; a span eases in-out \
+                unless it names another, and an action at an instant takes effect at once; an action changes a \
+                thing from where it stands to its value, and two actions may not change one thing at once",
+        properties: &[
+            prop(
+                "scale",
+                "NAME F",
+                "draw the node F times the size layout gave it, strokes and text included, about its `anchor`; neighbours stay put",
+            ),
+            prop(
+                "move",
+                "NAME DX DY",
+                "draw the node DX across and DY down from where layout put it; `move NAME 0 0` takes it back",
+            ),
+            prop(
+                "fade",
+                "NAME in | out | F",
+                "fade the node to fully drawn, to gone, or to opacity F from 0 to 1; a node whose first change of opacity is `fade NAME in` starts hidden",
+            ),
+            prop(
+                "show",
+                "NAME",
+                "draw the node from this instant, and only at an instant; a node whose first change of opacity is `show` starts hidden",
+            ),
+            prop(
+                "hide",
+                "NAME",
+                "stop drawing the node from this instant, and only at an instant",
+            ),
+            prop(
+                "fill",
+                "NAME COLOR | ROW N COLOR",
+                "change the fill of a box, an ellipse, a marker, a code block or a row's cell N",
+            ),
+            prop(
+                "stroke",
+                "NAME COLOR | ROW N COLOR",
+                "change the outline of a node that has one, a line's or an arrow's color, or a row's cell N's outline",
+            ),
+            prop(
+                "text-color",
+                "NAME COLOR | ROW N COLOR",
+                "change the color of every run of a node's text, or of a row's cell N",
             ),
         ],
         children: &[],

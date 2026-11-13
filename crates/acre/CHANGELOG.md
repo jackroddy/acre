@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `timeline` node in the canvas animates named nodes. An entry is an
+  instant, `2s { ... }`, or a span, `0s to 1s { ... }`. A span eases in and
+  out unless it names `ease linear`, `ease in`, `ease out` or `ease in-out`.
+  The actions are `scale NAME F`, `move NAME DX DY`, `fade NAME in|out|F`,
+  `show NAME` and `hide NAME`, and `fill`, `stroke` and `text-color` with a
+  node or a row's cell (`ROW N`) and a color. Each action takes one thing of a
+  node from where it stands to its value. Two actions on one thing at once are
+  an error. A node that a timeline first shows or fades in starts hidden.
+  `acre reference timeline` lists the actions.
+- `anchor` on a drawn node names the point of its box that stays put as it
+  scales: `center` by default, a side such as `top`, or a corner such as
+  `top-left`.
+- A scene's `duration` runs to the timeline's last change. `duration 5s` on the
+  canvas lengthens it, and one shorter than the timeline is an error.
 - `lang` reads a number with `s` straight after it, such as `1.5s`, as a time,
   `ValueKind::Time`. A node may open with a time in place of a kind, as in
   `0s to 1s { ... }`. Its `kind` is then empty, and the new `Node::head` holds
@@ -162,6 +176,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- At the time of its first keyframe, a `Track` takes the last keyframe at that
+  time, as it already did at any later time. An instant at the start of a
+  track takes effect at that instant.
+- A `let` may not take the name `in`, `out`, `to`, `ease`, `linear`, `in-out`,
+  `top-left`, `top-right`, `bottom-left` or `bottom-right`.
 - `text::Glyph` is `Clone` and no longer `Copy`, since it holds a range.
 - Text is shaped with rustybuzz, so kerning and other font rules apply. The new
   `text` module lays out and measures text for both `scene` and `render`.
