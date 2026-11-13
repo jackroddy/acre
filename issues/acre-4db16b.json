@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-12T21:53:33.950694153Z",
-  "updated_at": "2026-11-13T02:40:23.448300044Z",
+  "updated_at": "2026-11-13T05:04:37.157488383Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -33,6 +33,15 @@
       "text": "Filed in decade as decade-7091e6.",
       "commit": "38a8b36",
       "branch": "dev"
+    },
+    {
+      "id": "7745fe66",
+      "at": "2026-11-13T05:04:37.157487673Z",
+      "author": "Jack Roddy/f5ffdd3d",
+      "text": "This note's conclusion is wrong. decade answers frame callbacks only after it renders, and it renders only while its viewer window is on screen. Jack had probably switched Hyprland to another workspace during this run. A reproduction in decade-7091e6 froze a viewer for 4 s, and frame callbacks to the panes stopped for the same 4 s. With decade on screen, acre-gui should get its callbacks.\n\ndecade-7091e6 now covers a related decade bug. A pane screenshot taken while no viewer is on screen shows a frame the app has not redrawn. That bug explains why the screenshots in this issue showed the first frame. Nobody has explained why the first frame was drawn at the wrong size. That may be a bug of its own.",
+      "commit": "14a1746",
+      "branch": "dev",
+      "reply_to": "99e8c309"
     }
   ],
   "stamps": {
