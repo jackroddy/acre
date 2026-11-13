@@ -1,0 +1,30 @@
+{
+  "id": "acre-5c2644",
+  "title": "stack and grid nodes place their children from measured sizes",
+  "body": "Every node is placed by `at`: two numbers in its group's coordinates, or a named thing's corner plus an offset. `key-schemes.acre` places its sections at `at 0 790`, `at 0 1090`, `at 0 1520` and so on. Growing one section means moving every one after it by hand.\n\n## Proposal\n\n- `stack { direction down; gap N; align left; ... }` places each child after the one before, down or across, with a gap.\n- `grid { columns N; gap X Y; ... }` places children in cells of a grid, each cell as large as its row's tallest and its column's widest child.\n- Both measure their children: shapes and rows by their geometry, text by the shaping issue's measure, panels and nested stacks by their contents.\n- A child's own `at` inside a stack or grid becomes an offset from its place.\n\n## Open\n\n- How `at NAME dx dy` resolves when the named thing sits inside a stack: the builder has to lay out before it resolves names, so name resolution moves after layout.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "acre-e77413",
+  "blocked_by": [
+    "acre-c27e66"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T05:49:59.069874081Z",
+  "updated_at": "2026-11-13T05:49:59.069874081Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f4067bd",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
