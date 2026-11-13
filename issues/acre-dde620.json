@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T05:55:41.26688354Z",
+  "updated_at": "2026-11-13T06:31:10.38183783Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -42,6 +42,14 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "The figure is at figures/key-schemes.acre in the acre checkout, which .git/info/exclude keeps out of git. Jack wants it refined as the milestone acre-e77413 lands, as a test case for each new feature. Section 4 explains masked keys in eight steps with a bit-level diagram, and all its text follows the deslop rules and the main ASD-STE100 rules. tmp-claude/2026-11-13-key-schemes/model.py checks every key value it shows.",
       "commit": "934e4ef",
+      "branch": "dev"
+    },
+    {
+      "id": "31e21614",
+      "at": "2026-11-13T06:31:10.3818372Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "State after the code node (6866c55): figures/key-schemes.acre draws its five sections as white cards (style panel with fill, stroke, padding 28 and width 1820) in one stack on a grey page. Section 1's type diagram is nested stacks, section 4's steps wrap to width 600, and section 4 ends with the real MaskedKeys::masked_key_pext in a code block. The canvas height, 3310, is still set by hand. tmp-claude/2026-11-13-key-schemes/model.py checks every key value the figure shows. Run acre fmt and acre render on it only from a fresh build: a stale binary that predates block strings rewrote its triple quotes once.",
+      "commit": "6866c55",
       "branch": "dev"
     }
   ],
