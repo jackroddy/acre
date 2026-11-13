@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use rustybuzz::{Face, UnicodeBuffer};
 
-use crate::math::MathFont;
+use crate::math::{self, MathFont};
 use crate::scene::{Color, Font, HAlign, Point, Run, VAlign};
 
 static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
@@ -34,11 +34,20 @@ pub fn face(font: Font) -> &'static Face<'static> {
     }
 }
 
+/// What a glyph draws.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mark {
+    /// Glyph `id` of `font`, set at `size` pixels to the em.
+    Outline { font: Font, id: u16, size: f64 },
+    /// A filled rectangle with its bottom-left corner on the glyph's
+    /// position, such as the bar of a fraction.
+    Rule { width: f64, height: f64 },
+}
+
 /// One shaped glyph, placed from the start of its line's baseline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Glyph {
-    pub font: Font,
-    pub id: u16,
+    pub mark: Mark,
     pub x: f64,
     /// Up from the baseline is negative, as on the canvas.
     pub y: f64,
@@ -53,7 +62,8 @@ pub struct Glyph {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
     pub glyphs: Vec<Glyph>,
-    /// The sum of the glyphs' advances.
+    /// The distance from the start of the line to the end of its last
+    /// glyph's advance.
     pub width: f64,
 }
 
@@ -62,9 +72,11 @@ pub struct Line {
 pub struct Layout {
     pub lines: Vec<Line>,
     pub size: f64,
-    /// The height above the baseline of the first run's font.
+    /// The height above the baseline of the first run's font, or of the
+    /// formulas on the first line where they are taller.
     pub ascent: f64,
-    /// The depth below the baseline of the first run's font, positive.
+    /// The depth below the baseline of the first run's font, positive,
+    /// or of the formulas on the last line where they are deeper.
     pub descent: f64,
     /// The height of a capital in the first run's font.
     pub cap_height: f64,
@@ -131,14 +143,33 @@ impl Layout {
 /// and at spaces to keep lines within `width` when it is given. A word
 /// wider than `width` takes a line of its own.
 pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
-    let first = face(runs.first().map_or(Font::Mono, |r| r.font));
+    let first = match runs.first().map_or(Font::Mono, |r| r.font) {
+        Font::Math => face(Font::Sans),
+        font => face(font),
+    };
     let per_unit = |face: &Face| size / face.units_per_em() as f64;
     let mut lines = vec![Line {
         glyphs: Vec::new(),
         width: 0.0,
     }];
     for run in runs {
-        let face = face(run.font);
+        if run.font == Font::Math
+            && let Ok(formula) = math::layout(&run.text, size, MathFont::noto())
+        {
+            let line = lines.last_mut().expect("there is always a line");
+            push_formula(line, formula, run.color);
+            continue;
+        }
+
+        // a formula that does not parse is set as its source, which
+        // markup has already refused, so only a run made in code gets
+        // here
+        let font = if run.font == Font::Math {
+            Font::Sans
+        } else {
+            run.font
+        };
+        let face = face(font);
         let scale = per_unit(face);
         for (k, piece) in run.text.split('\n').enumerate() {
             if k > 0 {
@@ -157,8 +188,11 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
             for (info, pos) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
                 let advance = pos.x_advance as f64 * scale;
                 line.glyphs.push(Glyph {
-                    font: run.font,
-                    id: info.glyph_id as u16,
+                    mark: Mark::Outline {
+                        font,
+                        id: info.glyph_id as u16,
+                        size,
+                    },
                     x: line.width + pos.x_offset as f64 * scale,
                     y: -pos.y_offset as f64 * scale,
                     advance,
@@ -173,13 +207,74 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
         lines = lines.into_iter().flat_map(|l| wrap(l, width)).collect();
     }
     let scale = per_unit(first);
+    let ascent = lines.first().map_or(0.0, |l| -ink(l).0);
+    let descent = lines.last().map_or(0.0, |l| ink(l).1);
     Layout {
         lines,
         size,
-        ascent: first.ascender() as f64 * scale,
-        descent: -(first.descender() as f64) * scale,
+        ascent: (first.ascender() as f64 * scale).max(ascent),
+        descent: (-(first.descender() as f64) * scale).max(descent),
         cap_height: first.capital_height().unwrap_or(first.ascender()) as f64 * scale,
     }
+}
+
+/// Append `formula` to `line` as one unbreakable stretch of glyphs.
+fn push_formula(line: &mut Line, formula: math::MathBox, color: Color) {
+    let start = line.width;
+    let end = start + formula.width;
+
+    // every glyph of the formula advances to its right edge, so a line
+    // that ends in it is measured to there whatever order its glyphs
+    // are in, and an empty rule at its left edge comes first, so a line
+    // that starts with it starts there
+    let marker = math::Piece {
+        x: 0.0,
+        y: 0.0,
+        mark: Mark::Rule {
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    for piece in std::iter::once(marker).chain(formula.pieces) {
+        let x = start + piece.x;
+        line.glyphs.push(Glyph {
+            mark: piece.mark,
+            x,
+            y: piece.y,
+            advance: end - x,
+            space: false,
+            color,
+        });
+    }
+    line.width = end;
+}
+
+/// The top and bottom of the ink of the formulas in `line`, from its
+/// baseline with down positive, or zeros when it holds none.
+fn ink(line: &Line) -> (f64, f64) {
+    let mut top: f64 = 0.0;
+    let mut bottom: f64 = 0.0;
+    for g in &line.glyphs {
+        let (high, low) = match g.mark {
+            Mark::Rule { height, .. } => (height, 0.0),
+            Mark::Outline {
+                font: Font::Math,
+                id,
+                size,
+            } => {
+                let face = face(Font::Math);
+                let scale = size / face.units_per_em() as f64;
+                match face.glyph_bounding_box(ttf_parser::GlyphId(id)) {
+                    Some(b) => (b.y_max as f64 * scale, b.y_min as f64 * scale),
+                    None => continue,
+                }
+            }
+            Mark::Outline { .. } => continue,
+        };
+        top = top.min(g.y - high);
+        bottom = bottom.max(g.y - low);
+    }
+    (top, bottom)
 }
 
 /// `line` broken at spaces into lines no wider than `width`, greedily.
@@ -188,14 +283,22 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
 /// goes there only when no other space is on the line.
 fn wrap(line: Line, width: f64) -> Vec<Line> {
     let glyphs = line.glyphs;
-    let has_code =
-        glyphs.iter().any(|g| g.font == Font::Mono) && glyphs.iter().any(|g| g.font != Font::Mono);
+    let mono = |g: &Glyph| {
+        matches!(
+            g.mark,
+            Mark::Outline {
+                font: Font::Mono,
+                ..
+            }
+        )
+    };
+    let has_code = glyphs.iter().any(mono) && !glyphs.iter().all(mono);
     let in_code = |i: usize| {
         has_code
             && i > 0
             && glyphs.get(i + 1).is_some()
-            && glyphs[i - 1].font == Font::Mono
-            && glyphs[i + 1].font == Font::Mono
+            && mono(&glyphs[i - 1])
+            && mono(&glyphs[i + 1])
     };
     let mut out = Vec::new();
     let mut start = 0;
@@ -291,7 +394,13 @@ mod tests {
         assert_eq!(l.lines.len(), 2);
         let first = &l.lines[0];
         assert_eq!(first.glyphs.len(), 3);
-        assert_eq!(first.glyphs[2].font, Font::Sans);
+        assert!(matches!(
+            first.glyphs[2].mark,
+            Mark::Outline {
+                font: Font::Sans,
+                ..
+            }
+        ));
         assert!((first.glyphs[2].x - unkerned("ab", Font::Mono, 20.0)).abs() < 1e-9);
         assert_eq!(l.lines[1].glyphs.len(), 2);
     }
@@ -308,7 +417,13 @@ mod tests {
         let texts: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
         assert_eq!(texts, [7, 3, 8]);
         assert!(l.lines[0].width <= char * 7.5);
-        assert_eq!(l.lines[1].glyphs[0].font, Font::Sans);
+        assert!(matches!(
+            l.lines[1].glyphs[0].mark,
+            Mark::Outline {
+                font: Font::Sans,
+                ..
+            }
+        ));
         assert_eq!(l.lines[1].glyphs[0].x, 0.0);
         // the last word is wider than the width, so it overflows alone
         assert!(l.lines[2].width > char * 7.5);
@@ -331,6 +446,26 @@ mod tests {
         let l = layout(&runs, 10.0, Some(char * 4.0));
         let widths: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
         assert_eq!(widths, [2, 2, 2, 2]);
+    }
+
+    #[test]
+    fn a_formula_takes_its_width_in_the_line_and_never_breaks() {
+        let math = Run {
+            text: r"\displaystyle \frac{a+b}{c} + d".into(),
+            font: Font::Math,
+            color: Color::BLACK,
+        };
+        let formula = math::layout(&math.text, 20.0, MathFont::noto()).unwrap();
+        let alone = layout(&[run("x ", Font::Sans)], 20.0, None);
+        let l = layout(&[run("x ", Font::Sans), math.clone()], 20.0, None);
+        assert!((l.width() - (alone.lines[0].width + formula.width)).abs() < 1e-9);
+        assert!(
+            l.ascent > alone.ascent,
+            "the fraction is taller than the text"
+        );
+        let narrow = layout(&[run("x ", Font::Sans), math], 20.0, Some(1.0));
+        assert_eq!(narrow.lines.len(), 2);
+        assert!((narrow.lines[1].width - formula.width).abs() < 1e-9);
     }
 
     #[test]

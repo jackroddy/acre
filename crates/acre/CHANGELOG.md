@@ -101,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names it.
 - `math::parse` reads a formula in a subset of LaTeX math into a list of atoms,
   each with a class that sets the space around it.
+- `math::layout` sets a formula into glyphs and rules by the rules of *The
+  TeXbook*, appendix G, with the constants and glyph variants of the font's
+  MATH table. A run in `Font::Math` holds a formula, and `text::layout` sets
+  it in its line as one piece that never breaks.
 
 ### Changed
 
@@ -116,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A line of wrapped text breaks at a space outside a mono code span when the
   line has one. It breaks at a space inside a span only when the span alone is
   wider than the width.
+- `text::Glyph` holds a `text::Mark` in place of its font and glyph id. A mark
+  is a glyph's outline at its own size, or a filled rule such as a fraction
+  bar.
 
 ### Removed
 

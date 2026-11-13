@@ -7,7 +7,7 @@ use tiny_skia as sk;
 use ttf_parser::{GlyphId, OutlineBuilder};
 
 use crate::scene::{Color, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
-use crate::text;
+use crate::text::{self, Mark};
 
 /// The scene at time `t`, drawn onto a pixmap of `scale` pixels to each
 /// canvas pixel.
@@ -244,15 +244,31 @@ fn text_paths(
                 out.push((path, color.unwrap()));
             }
             color = Some(glyph.color);
-            let face = text::face(glyph.font);
-            let mut outline = Outline {
-                builder,
-                x: (start.x + glyph.x) as f32,
-                y: (start.y + glyph.y) as f32,
-                scale: (size / face.units_per_em() as f64) as f32,
-            };
-            face.outline_glyph(GlyphId(glyph.id), &mut outline);
-            builder = outline.builder;
+            let (x, y) = (start.x + glyph.x, start.y + glyph.y);
+            match glyph.mark {
+                Mark::Outline { font, id, size } => {
+                    let face = text::face(font);
+                    let mut outline = Outline {
+                        builder,
+                        x: x as f32,
+                        y: y as f32,
+                        scale: (size / face.units_per_em() as f64) as f32,
+                    };
+                    face.outline_glyph(GlyphId(id), &mut outline);
+                    builder = outline.builder;
+                }
+                Mark::Rule { width, height } => {
+                    let rect = sk::Rect::from_xywh(
+                        x as f32,
+                        (y - height) as f32,
+                        width as f32,
+                        height as f32,
+                    );
+                    if let Some(rect) = rect {
+                        builder.push_rect(rect);
+                    }
+                }
+            }
         }
     }
     if let (Some(path), Some(color)) = (builder.finish(), color) {
