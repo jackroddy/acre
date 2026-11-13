@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-08T21:39:51.729443319Z",
-  "updated_at": "2026-11-09T23:27:03.900411286Z",
+  "updated_at": "2026-11-13T19:15:01.358726886Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "204bd4e7",
+      "at": "2026-11-13T19:15:01.358726316Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Commit 456e6c9 draws a cell that is moved or scaled at an instant after the last row, above every cell that is not. A character that travels across a row, or from one row into another, now stays visible over the cells it passes. This does not fix the swap. Both cells of a swap move, so both are drawn late, and the one with the higher index still covers the other at the midpoint. The language can now write a swap as two `move ROW N DX DY` actions, so the bug reaches the language, as this issue said it would. The `swap` helper in `crates/acre/tests/scene_examples.rs` builds a `Grid`, which the commit does not touch.",
+      "commit": "456e6c9",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "4dfac0c",
