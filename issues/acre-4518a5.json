@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T07:09:54.044904476Z",
+  "updated_at": "2026-11-13T07:14:17.504609754Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -91,6 +91,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Math syntax, from acre-3f9f94 (commits 7f31032 to 070e175 on dev).\n\n- `$...$` in any label's markup is a formula in LaTeX math. `$` always opens one, and `\\$` is a dollar sign. A `$` with no partner is an error that tells the writer to use `\\$`. I rejected a rule that guesses from context, as pandoc does (no space after the opening `$`, no digit after the closing one). It lets most lone dollars through, but a label would change meaning when someone adds a second `$` to it. The error catches every case at build time instead. In DNA figures the `$` sits in row cells, `chars` and palette symbols, which take no markup, so `figures/key-schemes.acre` builds unchanged.\n- Inside `$...$` in a quoted string, the lexer keeps every backslash with the character after it. Otherwise `$\\nu$` would read `\\n` as a line break, and `\\frac` would be an unknown escape. The lexer already kept `\\{`, `\\}`, `` \\` `` and `\\*` for markup, and now also knows `$`.\n- `math { at; text \"\"\"FORMULA\"\"\"; size; color; align; }` sets one formula in display style, placed by its top edge like `text`. Its formula has no `$` signs, so in a quoted string `\\frac` would need `\\\\frac`. A `\"\"\"` string takes no escapes and is the form to write. The node builds a `Text` whose one run, in `Font::Math`, is `\\displaystyle` followed by the formula.\n- `\\displaystyle`, `\\textstyle`, `\\scriptstyle` and `\\scriptscriptstyle` work anywhere in a formula, so inline math can ask for display style.\n- An unknown command is an error, not text. The subset is the tables `GREEK`, `SYMBOLS`, `LARGE_OPS` and `OPERATOR_NAMES` in `crates/acre/src/math/parse.rs`, plus `\\frac`, `\\sqrt`, `\\left`, `\\right`, `\\text`, `\\mathrm`, `\\operatorname`, `\\limits`, `\\nolimits` and the spaces `\\,`, `\\:`, `\\;`, `\\!`, `\\quad`, `\\qquad`.",
       "commit": "070e175",
+      "branch": "dev"
+    },
+    {
+      "id": "6b67b987",
+      "at": "2026-11-13T07:14:17.504608414Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Syntax chosen for connectors.\n\n- `route straight | elbow | curve`. An elbow has three segments and turns halfway along the longer of the two distances between the ends. A curve is a cubic whose handles run along that same axis, so it leaves and arrives like the elbow does. It is drawn as 24 straight segments.\n- `head` and `tail` take `none | triangle | open | dot`. An `arrow` defaults to a triangle head and a `line` to none, so existing files draw as before.\n- `label-side above | left | right` and `label-at F`, two properties. A single property such as `label left 0.3` would mix a word and a number. `left` and `right` are as seen going from `from` to `to`, so they flip when the ends swap. `above` is the default: the normal that faces up, or right on a vertical line. On a horizontal line it is the old position.\n- The label's box is measured with the text layout and centered on the normal at `gap + half its extent along the normal`. Descenders are ignored when measuring the bottom, which keeps a horizontal line's label where it was.\n\nNot done: routing around shapes in the way. Elbow and curve use only the two ends.",
+      "commit": "6e74f14",
       "branch": "dev"
     }
   ],
