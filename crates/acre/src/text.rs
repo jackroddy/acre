@@ -181,28 +181,45 @@ pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
 }
 
 /// `line` broken at spaces into lines no wider than `width`, greedily.
-/// The space at a break is dropped.
+/// The space at a break is dropped. A space between mono glyphs in a
+/// line that also holds other fonts is inside a code span, and a break
+/// goes there only when no other space is on the line.
 fn wrap(line: Line, width: f64) -> Vec<Line> {
     let glyphs = line.glyphs;
+    let has_code =
+        glyphs.iter().any(|g| g.font == Font::Mono) && glyphs.iter().any(|g| g.font != Font::Mono);
+    let in_code = |i: usize| {
+        has_code
+            && i > 0
+            && glyphs.get(i + 1).is_some()
+            && glyphs[i - 1].font == Font::Mono
+            && glyphs[i + 1].font == Font::Mono
+    };
     let mut out = Vec::new();
     let mut start = 0;
     let mut last_space = None;
+    let mut last_code_space = None;
     let mut i = 0;
     while i < glyphs.len() {
         let left = glyphs[start].x;
         let end = glyphs[i].x + glyphs[i].advance - left;
         if end > width
             && !glyphs[i].space
-            && let Some(space) = last_space
+            && let Some(space) = last_space.or(last_code_space)
         {
             out.push(line_of(&glyphs[start..space]));
             start = space + 1;
             last_space = None;
+            last_code_space = None;
             i = start;
             continue;
         }
         if glyphs[i].space {
-            last_space = Some(i);
+            if in_code(i) {
+                last_code_space = Some(i);
+            } else {
+                last_space = Some(i);
+            }
         }
         i += 1;
     }
@@ -293,6 +310,25 @@ mod tests {
         assert_eq!(l.lines[1].glyphs[0].x, 0.0);
         // the last word is wider than the width, so it overflows alone
         assert!(l.lines[2].width > char * 7.5);
+    }
+
+    #[test]
+    fn a_line_breaks_outside_a_code_span_before_inside_one() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [run("xx ", Font::Sans), run("a b c", Font::Mono)];
+        // "xx a b" would fit, but the break goes before the span
+        let l = layout(&runs, 10.0, Some(char * 6.0));
+        let widths: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(widths, [2, 5]);
+    }
+
+    #[test]
+    fn a_code_span_wider_than_the_width_breaks_at_its_own_spaces() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [run("xx ", Font::Sans), run("aa bb cc", Font::Mono)];
+        let l = layout(&runs, 10.0, Some(char * 4.0));
+        let widths: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(widths, [2, 2, 2, 2]);
     }
 
     #[test]

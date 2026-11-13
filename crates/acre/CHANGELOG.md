@@ -103,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stands for one, as `Highlight::Color` with its value.
 - `render::draw_frame` takes a scale, the number of image pixels to each canvas
   pixel.
+- A line of wrapped text breaks at a space outside a mono code span when the
+  line has one. It breaks at a space inside a span only when the span alone is
+  wider than the width.
 
 ### Removed
 
