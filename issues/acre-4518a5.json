@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T01:18:07.344750056Z",
+  "updated_at": "2026-11-13T02:09:34.54211642Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -63,6 +63,14 @@
       "at": "2026-11-13T01:18:07.344749096Z",
       "author": "Jack Roddy/cd2d1020",
       "text": "v2 makes a figure the size of the `PrefixEncoder` one writable by hand. `crates/acre/examples/prefix-encoder.acre` is now hand-written in 171 lines. The generated version was 229 lines of absolute coordinates.\n\n- `let NAME VALUES;` on the canvas. A bare word equal to a let name stands for its values in any property. The substitution runs before `scene` reads a node, in `scene/expand.rs`. It has no scoping, so a let name shadows any word value of the same spelling, such as `right` or `show`.\n- `style NAME { ... }` and `style A B;` on a node. A node's own property wins over a style's, and a later style over an earlier one. Styles reach nested nodes such as a row's `cell` children.\n- `group { at X Y; ... }` moves the numbers in every `at`, `from` and `to` inside it. Names stay global, and an end that names a thing uses where that thing already is.\n- `at NAME DX DY` starts from a shape's or a row's top-left corner, and `at ROW N DX DY` from a cell's. A row name followed by exactly one number reads as a cell, so `at row -60 14` has to give both numbers.\n- `chars \"GATC\"` adds a cell per character.\n- `repeat N` on `line` and `arrow` draws N copies, adding one to every cell index on each copy. The 20 lines of the roll panel are one node.\n- A palette `symbol` takes a text color after its note, for white text on dark cells.\n\nThe derived-values box still takes 15 `text` nodes for a three-column table. A `table` node, or text that mixes colours within a line, would shorten it. Neither is built.",
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    {
+      "id": "e23ee12b",
+      "at": "2026-11-13T02:09:34.5421155Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "v3 adds arithmetic, markup in text and a `table` node. `crates/acre/examples/prefix-encoder.acre` is now 160 lines with no number worked out by hand.\n\n- `(a + b * c)` is a number. The parser keeps a parenthesized run as a group, and `scene/expand.rs` evaluates it after it substitutes `let` names, so `let u 15;` and `at key (64 * u + 76) 8` work. `-` between terms needs spaces, because `a-b` lexes as one word and `-1` as a number. A negative number straight after a term reads as subtraction, so `(x -1)` is `x - 1`.\n- Markup in every label: `` `code` `` for mono, `**bold**`, `{NAME text}` for a `let` color, `{#rrggbb text}`. A `Label` and `Primitive::Text` now hold runs of font and color, and the renderer lays a line out across runs. The figure uses it for every code name in prose and for the coloured formula in the roll panel.\n- `table { at; columns X...; align ...; row \"a\" \"b\" \"c\"; ... }` lowers to one text per cell. The derived-values box went from 15 nodes to one.\n- `let left 230` broke `align left`, as the v2 note warned. A `let` name may no longer be one of the words properties read as they are (`left`, `right`, `top`, `bottom`, `center`, `none`, `show`, `hide`, `curly`, `square` and the font names). That list sits in `RESERVED` in `scene/expand.rs` and has to grow with the vocabulary.\n\nOpen: mono text inside a bold title is set in regular weight, since acre embeds no bold mono face. The markup has no italic mark.",
       "commit": "38a8b36",
       "branch": "dev"
     }
