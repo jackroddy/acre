@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before it.
 - A style named after a node kind, such as `style panel { ... }`, applies to
   every node of that kind.
+- A `stack` node places its children one after another, down or to the right,
+  with a `gap`, and `align` sets where a narrower child sits. A `grid` node
+  places its children row by row in `columns`, each column as wide as its
+  widest child and each row as tall as its tallest. Both are optional: `at`
+  works as before everywhere else. Lines, arrows and braces take no room in
+  either, so they can name things anywhere in the file.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

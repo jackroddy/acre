@@ -65,13 +65,19 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
             }
         }
     }
-    name_things(&canvas.children, Point::ZERO, &mut names)?;
+    let mut places = Places::new();
+    name_things(&canvas.children, Point::ZERO, &mut names, &mut places)?;
     let mut objects = Vec::new();
     let mut panels = 0;
+    let pass = Pass {
+        names: &names,
+        places: &places,
+        measuring: false,
+    };
     add_objects(
         &canvas.children,
         Point::ZERO,
-        &names,
+        &pass,
         &mut panels,
         &mut objects,
     )?;
@@ -90,16 +96,29 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
 
 /// Build every named shape and row in `nodes` and the groups among them,
 /// in source order, into `names`.
-fn name_things<'a>(nodes: &'a [Node], offset: Point, names: &mut Names<'a>) -> Result<(), Error> {
+fn name_things<'a>(
+    nodes: &'a [Node],
+    offset: Point,
+    names: &mut Names<'a>,
+    places: &mut Places,
+) -> Result<(), Error> {
     for node in nodes {
         if node.kind.text == "group" {
             let at = group_at(node, names, offset)?;
-            name_things(&node.children, at, names)?;
+            name_things(&node.children, at, names, places)?;
             continue;
         }
         if node.kind.text == "panel" {
             let place = panel_place(node, names, offset, None)?;
-            name_things(&node.children, place.contents, names)?;
+            name_things(&node.children, place.contents, names, places)?;
+            continue;
+        }
+        if node.kind.text == "stack" || node.kind.text == "grid" {
+            let slots = lay_out(node, offset, names, places)?;
+            for (child, slot) in node.children.iter().zip(slots) {
+                places.insert(child.span.start, slot);
+                name_things(std::slice::from_ref(child), slot, names, places)?;
+            }
             continue;
         }
         let Some(name) = &node.name else { continue };
@@ -128,11 +147,15 @@ fn name_things<'a>(nodes: &'a [Node], offset: Point, names: &mut Names<'a>) -> R
 fn add_objects(
     nodes: &[Node],
     offset: Point,
-    names: &Names,
+    pass: &Pass,
     panels: &mut usize,
     out: &mut Vec<Object>,
 ) -> Result<(), Error> {
+    let names = pass.names;
     for node in nodes {
+        if pass.measuring && matches!(node.kind.text.as_str(), "line" | "arrow" | "brace") {
+            continue;
+        }
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
             "palette" => continue,
@@ -145,11 +168,18 @@ fn add_objects(
             }
             "group" => {
                 let at = group_at(node, names, offset)?;
-                add_objects(&node.children, at, names, panels, out)?;
+                add_objects(&node.children, at, pass, panels, out)?;
                 continue;
             }
             "panel" => {
-                add_panel(node, names, offset, panels, out)?;
+                add_panel(node, pass, offset, panels, out)?;
+                continue;
+            }
+            "stack" | "grid" => {
+                for child in &node.children {
+                    let slot = pass.places[&child.span.start];
+                    add_objects(std::slice::from_ref(child), slot, pass, panels, out)?;
+                }
                 continue;
             }
             "line" | "arrow" => {
@@ -187,7 +217,8 @@ fn add_objects(
                     node.kind.span,
                     format!(
                         "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, table, row, brace, ruler, group, panel, caption, palette and style"
+                         text, table, row, brace, ruler, group, panel, caption, stack, grid, palette \
+                         and style"
                     ),
                 ));
             }
@@ -263,11 +294,12 @@ fn panel_place(
 /// Append a panel's heading, frame, contents and captions to `out`.
 fn add_panel(
     node: &Node,
-    names: &Names,
+    pass: &Pass,
     offset: Point,
     panels: &mut usize,
     out: &mut Vec<Object>,
 ) -> Result<(), Error> {
+    let names = pass.names;
     let props = Props::new(node, &keys("panel"), true)?;
     let numbered = match props.get("number") {
         Some(p) => p.word()? != "none",
@@ -290,7 +322,7 @@ fn add_panel(
     let (captions, contents): (Vec<&Node>, Vec<&Node>) =
         node.children.iter().partition(|c| c.kind.text == "caption");
     let contents: Vec<Node> = contents.into_iter().cloned().collect();
-    add_objects(&contents, place.contents, names, panels, out)?;
+    add_objects(&contents, place.contents, pass, panels, out)?;
 
     let Some((min, max)) = bounds_of(&out[start..]) else {
         return Ok(());
@@ -356,6 +388,159 @@ fn bounds_of(objects: &[Object]) -> Option<(Point, Point)> {
     super::primitive::bounds(&prims)
 }
 
+/// The slot of each child of a stack or a grid, by where the child's
+/// node starts in the source.
+type Places = HashMap<usize, Point>;
+
+/// What a pass that adds objects reads.
+struct Pass<'p, 'a> {
+    names: &'p Names<'a>,
+    places: &'p Places,
+    /// Whether the pass only measures, and so leaves out lines, arrows
+    /// and braces, which may name things not placed yet.
+    measuring: bool,
+}
+
+/// The box around what `node` draws with its origin at `slot`, without
+/// its lines, arrows and braces, from a copy of the names so far.
+fn measure<'a>(
+    node: &'a Node,
+    slot: Point,
+    names: &Names<'a>,
+    places: &Places,
+) -> Result<Option<(Point, Point)>, Error> {
+    let mut names = names.clone();
+    let mut places = places.clone();
+    let node = std::slice::from_ref(node);
+    name_things(node, slot, &mut names, &mut places)?;
+    let pass = Pass {
+        names: &names,
+        places: &places,
+        measuring: true,
+    };
+    let mut objects = Vec::new();
+    add_objects(node, slot, &pass, &mut 0, &mut objects)?;
+    Ok(bounds_of(&objects))
+}
+
+/// The slot of each child of `node`, a stack or a grid. A child's size
+/// runs from its slot to the far edge of what it draws, so a child's own
+/// `at` adds space before it.
+fn lay_out<'a>(
+    node: &'a Node,
+    offset: Point,
+    names: &Names<'a>,
+    places: &Places,
+) -> Result<Vec<Point>, Error> {
+    let props = Props::new(node, &keys(&node.kind.text), true)?;
+    let at = match props.get("at") {
+        Some(p) => self::at(p, names, offset)?,
+        None => offset,
+    };
+    let align = match props.get("align") {
+        None => 0.0,
+        Some(p) => match p.word()? {
+            "start" => 0.0,
+            "center" => 0.5,
+            "end" => 1.0,
+            _ => return Err(Error::new(p.span, "`align` is start, center or end")),
+        },
+    };
+    let size_at = |child: &'a Node, slot: Point| -> Result<Point, Error> {
+        Ok(match measure(child, slot, names, places)? {
+            Some((_, max)) => Point::new((max.x - slot.x).max(0.0), (max.y - slot.y).max(0.0)),
+            None => Point::ZERO,
+        })
+    };
+
+    if node.kind.text == "stack" {
+        let across = match props.get("direction") {
+            None => false,
+            Some(p) => match p.word()? {
+                "down" => false,
+                "right" => true,
+                _ => return Err(Error::new(p.span, "`direction` is down or right")),
+            },
+        };
+        let gap = props.number_or("gap", 0.0)?;
+        let sizes = node
+            .children
+            .iter()
+            .map(|c| size_at(c, at))
+            .collect::<Result<Vec<_>, _>>()?;
+        let breadth = |s: &Point| if across { s.y } else { s.x };
+        let widest = sizes.iter().map(breadth).fold(0.0, f64::max);
+        let mut along = 0.0;
+        let mut slots = Vec::new();
+        for size in &sizes {
+            let side = (widest - breadth(size)) * align;
+            slots.push(if across {
+                at + Point::new(along, side)
+            } else {
+                at + Point::new(side, along)
+            });
+            along += if across { size.x } else { size.y } + gap;
+        }
+        return Ok(slots);
+    }
+
+    // a grid: cells row by row, each column as wide as its widest
+    // child and each row as tall as its tallest
+    let columns = props.count_or("columns", 1)?.max(1);
+    let gap = match props.get("gap") {
+        None => Point::ZERO,
+        Some(p) => match p.values.len() {
+            1 => {
+                let [n] = p.numbers::<1>()?;
+                Point::new(n, n)
+            }
+            _ => {
+                let [x, y] = p.numbers::<2>()?;
+                Point::new(x, y)
+            }
+        },
+    };
+    let sizes = node
+        .children
+        .iter()
+        .map(|c| size_at(c, at))
+        .collect::<Result<Vec<_>, _>>()?;
+    let rows = sizes.len().div_ceil(columns);
+    let mut widths = vec![0.0f64; columns];
+    let mut heights = vec![0.0f64; rows];
+    for (k, size) in sizes.iter().enumerate() {
+        widths[k % columns] = widths[k % columns].max(size.x);
+        heights[k / columns] = heights[k / columns].max(size.y);
+    }
+    let lefts: Vec<f64> = widths
+        .iter()
+        .scan(0.0, |x, w| {
+            let left = *x;
+            *x += w + gap.x;
+            Some(left)
+        })
+        .collect();
+    let tops: Vec<f64> = heights
+        .iter()
+        .scan(0.0, |y, h| {
+            let top = *y;
+            *y += h + gap.y;
+            Some(top)
+        })
+        .collect();
+    Ok(sizes
+        .iter()
+        .enumerate()
+        .map(|(k, size)| {
+            let (c, r) = (k % columns, k / columns);
+            at + Point::new(
+                lefts[c] + (widths[c] - size.x) * align,
+                tops[r] + (heights[r] - size.y) * align,
+            )
+        })
+        .collect())
+}
+
 /// Where a group puts the origin of the nodes in it.
 fn group_at(node: &Node, names: &Names, offset: Point) -> Result<Point, Error> {
     let props = Props::new(node, &keys("group"), true)?;
@@ -404,6 +589,7 @@ fn keys(kind: &str) -> Vec<&'static str> {
 
 /// What the nodes of a canvas may refer to by name, and the canvas's
 /// default font.
+#[derive(Clone)]
 struct Names<'a> {
     font: Font,
     /// The `let` names that stand for one color, for markup.
@@ -416,6 +602,7 @@ struct Names<'a> {
 /// How a palette draws each cell text it lists.
 type Palette = HashMap<String, Symbol>;
 
+#[derive(Clone)]
 struct Symbol {
     fill: Color,
     note: Option<String>,
@@ -1524,5 +1711,63 @@ mod tests {
         };
         assert_eq!(caption.origin.y, frame.origin.y + frame.size.y + 4.0);
         assert_eq!(heading(6).1, "aside");
+    }
+
+    #[test]
+    fn a_stack_places_each_child_after_the_one_before() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                arrow { from 0 0; to b left; }
+                stack { at 10 20; gap 5; align center;
+                    box a { at 0 0; size 100 20; }
+                    box b { at 0 0; size 40 10; }
+                    box { at 0 3; size 60 10; }
+                } }"#,
+        )
+        .unwrap();
+        let origin = |i: usize| match &s.objects[i].kind {
+            Kind::Shape(b) => b.origin,
+            other => panic!("expected a box, got {other:?}"),
+        };
+        assert_eq!(origin(1), Point::new(10.0, 20.0));
+        assert_eq!(origin(2), Point::new(40.0, 45.0));
+        // a child's own `at` adds to its slot, and its size runs from
+        // the slot, so the gap before it is the same
+        assert_eq!(origin(3), Point::new(30.0, 63.0));
+        let Kind::Connector(arrow) = &s.objects[0].kind else {
+            panic!("expected the arrow");
+        };
+        assert_eq!(arrow.to, Point::new(40.0, 50.0));
+    }
+
+    #[test]
+    fn a_grid_sizes_columns_and_rows_by_their_largest_child() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                grid { at 0 0; columns 2; gap 10;
+                    box { at 0 0; size 30 10; }
+                    box { at 0 0; size 10 40; }
+                    box { at 0 0; size 50 10; }
+                    box { at 0 0; size 10 10; }
+                } }"#,
+        )
+        .unwrap();
+        let origins: Vec<Point> = s
+            .objects
+            .iter()
+            .map(|o| match &o.kind {
+                Kind::Shape(b) => b.origin,
+                other => panic!("expected a box, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            origins,
+            [
+                Point::new(0.0, 0.0),
+                Point::new(60.0, 0.0),
+                Point::new(0.0, 50.0),
+                Point::new(60.0, 50.0),
+            ]
+        );
     }
 }

@@ -122,7 +122,7 @@ const CONNECTOR: &[Property] = &[
 
 const DRAWN: &[&str] = &[
     "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group", "panel",
-    "caption",
+    "caption", "stack", "grid",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -141,7 +141,7 @@ pub const NODES: &[NodeKind] = &[
         ],
         children: &[
             "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
-            "panel", "caption", "palette", "style",
+            "panel", "caption", "stack", "grid", "palette", "style",
         ],
     },
     NodeKind {
@@ -355,6 +355,46 @@ pub const NODES: &[NodeKind] = &[
                 "the space between the frame and what it holds",
             ),
             RADIUS,
+            STYLE,
+        ],
+        children: DRAWN,
+    },
+    NodeKind {
+        name: "stack",
+        about: "children placed one after another, each from where the one before ends",
+        properties: &[
+            prop(
+                "at",
+                "X Y | NAME [DX DY]",
+                "where the first child's slot starts",
+            ),
+            prop("direction", "down | right", "which way the children go"),
+            prop("gap", "N", "the space between children"),
+            prop(
+                "align",
+                "start | center | end",
+                "where a narrower child sits across the stack",
+            ),
+            STYLE,
+        ],
+        children: DRAWN,
+    },
+    NodeKind {
+        name: "grid",
+        about: "children placed row by row in columns; lines, arrows and braces take no room",
+        properties: &[
+            prop(
+                "at",
+                "X Y | NAME [DX DY]",
+                "the top-left corner of the first cell",
+            ),
+            prop("columns", "N", "how many cells across"),
+            prop("gap", "N | X Y", "the space between cells"),
+            prop(
+                "align",
+                "start | center | end",
+                "where a smaller child sits in its cell",
+            ),
             STYLE,
         ],
         children: DRAWN,
