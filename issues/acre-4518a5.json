@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T07:23:40.00832379Z",
+  "updated_at": "2026-11-13T08:08:41.604798606Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -115,6 +115,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Syntax for user fonts (acre-7101c7). A canvas-level `fonts { NAME \"PATH\"; ... }` registers each file under NAME, and `font NAME` takes it wherever `font` is accepted. Paths resolve relative to the .acre file. The math font is swapped with the reserved name `math` in the same block: `fonts { math \"PATH\"; }`. Reason: the block already maps names to files, and `math` is the name acre uses for that font, so no second keyword is needed. The file needs a MATH table or the build fails naming the file and line. The names mono, sans, sans-bold and sans-italic cannot be registered, so a drawing never changes what they mean. A name is registered once. `\\\\text` and `\\\\mathrm` inside formulas still use the embedded sans, as before.",
       "commit": "35ad092",
+      "branch": "dev"
+    },
+    {
+      "id": "95d78dbe",
+      "at": "2026-11-13T08:08:41.604797206Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "`text-align justify` sets wrapped text flush with both edges of its `width` (acre-2457be). On a box, `justify` joins `left`, `center` and `right` as a value of `text-align`. Each of those sets how the lines sit inside the box, and justify is one more way to set them. On `text` the same property is new and takes only `justify`. `align` there already says where `at` sits along the text, and it lines each line up with `at` as well. A second property kept \"where the text is\" apart from \"how its lines are set\". `text-align left` on `text` is an error that points at `align`. Without `width` the lines have no edge to fill, so `text-align justify` with no `width` is an error too.\n\nOnly justified text uses the new paragraph breaker. Ragged text keeps the greedy breaks, so every existing figure draws exactly as before. A check rendered each of the repository's 32 drawings that render, before and after, as PNG, SVG and PDF, and all 96 files were byte-identical. Even breaks would make ragged text tidier too. The cost would be moving every wrapped label in every existing figure, so that choice belongs to its own decision.",
+      "commit": "dd3c79a",
       "branch": "dev"
     }
   ],
