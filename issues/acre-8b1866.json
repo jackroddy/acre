@@ -13,9 +13,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T02:24:29.443368079Z",
-  "updated_at": "2026-11-13T02:30:59.896487465Z",
+  "updated_at": "2026-11-13T05:08:59.464063822Z",
   "closed_at": "2026-11-13T02:30:59.896487465Z",
-  "close_reason": "Landed uncommitted on dev: crates/acre-gui/src/view.rs draws the render with render::draw_view at the pane's own pixels, with zoom, pan, fit and actual size, and app.rs reloads the file from disk. A trace confirmed the reload and the zoom inside decade, but decade withholds frame callbacks, so the window shows them only after input. The cause is noted on acre-4db16b.",
+  "close_reason": "Landed in 43c5f60: crates/acre-gui/src/view.rs draws the render with render::draw_view at the pane's own pixels, with zoom, pan, fit and actual size, and app.rs reloads the file from disk. A trace confirmed the reload and the zoom in App's state. The window did not show them during that session because decade was off screen, as the reply on acre-4db16b explains.",
   "resolution": "done",
   "notes": [],
   "stamps": {
