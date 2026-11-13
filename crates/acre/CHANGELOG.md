@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widest child and each row as tall as its tallest. Both are optional: `at`
   works as before everywhere else. Lines, arrows and braces take no room in
   either, so they can name things anywhere in the file.
+- `at` is optional. Without it, a node sits at its group's origin, or at its
+  slot in a stack or grid.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

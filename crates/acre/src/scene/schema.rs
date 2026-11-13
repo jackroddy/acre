@@ -44,7 +44,8 @@ const fn prop(name: &'static str, takes: &'static str, about: &'static str) -> P
 const AT: Property = prop(
     "at",
     "X Y | NAME [DX DY] | ROW N [DX DY]",
-    "the top-left corner, in the group's coordinates or from a named thing's corner",
+    "the top-left corner, in the group's coordinates or from a named thing's corner; \
+     without it, the group's origin, or the node's slot in a stack or grid",
 );
 const FILL: Property = prop("fill", "COLOR | none", "the inside color");
 const STROKE: Property = prop("stroke", "COLOR | none", "the outline color");

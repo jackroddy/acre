@@ -660,7 +660,10 @@ fn palette(node: &Node) -> Result<Palette, Error> {
 
 fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     let props = Props::new(node, &keys("box"), false)?;
-    let origin = at(props.require("at")?, names, offset)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
     let fill = match props.get("fill") {
         Some(p) => p.color_or_none()?,
         None => Some(Color::WHITE),
@@ -719,7 +722,10 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
 
 fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     let props = Props::new(node, &keys("row"), true)?;
-    let origin = at(props.require("at")?, names, offset)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
     let [unit_w, unit_h] = props.require("unit")?.numbers::<2>()?;
     let span = props.count_or("span", 1)?;
     let palette = match props.get("palette") {
@@ -877,7 +883,10 @@ fn connector(
 
 fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
     let props = Props::new(node, &keys("text"), false)?;
-    let origin = at(props.require("at")?, names, offset)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
     let align = match props.get("align") {
         None => HAlign::Left,
         Some(p) => match p.word()? {
@@ -910,7 +919,10 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
         ..node.clone()
     };
     let props = Props::new(&settings, &keys("table"), false)?;
-    let origin = at(props.require("at")?, names, offset)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
     let columns = props.require("columns")?;
     let xs: Vec<f64> = columns
         .values
@@ -1024,7 +1036,10 @@ fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
 
 fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
     let props = Props::new(node, &keys("ruler"), false)?;
-    let origin = at(props.require("at")?, names, offset)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
     Ok(Ruler {
         origin,
         unit: props.require("unit")?.numbers::<1>()?[0],
@@ -1496,8 +1511,8 @@ mod tests {
             (2, 9, "`at` takes 2 numbers".into())
         );
         assert_eq!(
-            scene("canvas { size 10 10;\n  box { size 2 2; } }").unwrap_err(),
-            (2, 3, "`box` needs `at`".into())
+            scene("canvas { size 10 10;\n  text { size 2; } }").unwrap_err(),
+            (2, 3, "`text` needs `text`".into())
         );
         assert_eq!(
             scene("canvas { size 10.5 10; }").unwrap_err(),
