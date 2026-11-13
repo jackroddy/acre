@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T05:55:29.498532063Z",
+  "updated_at": "2026-11-13T05:55:29.506357314Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -72,9 +72,10 @@
       "id": "e23ee12b",
       "at": "2026-11-13T02:09:34.5421155Z",
       "author": "Jack Roddy/cd2d1020",
-      "text": "v3 adds arithmetic, markup in text and a `table` node. `crates/acre/examples/prefix-encoder.acre` is now 160 lines with no number worked out by hand.\n\n- `(a + b * c)` is a number. The parser keeps a parenthesized run as a group, and `scene/expand.rs` evaluates it after it substitutes `let` names, so `let u 15;` and `at key (64 * u + 76) 8` work. `-` between terms needs spaces, because `a-b` lexes as one word and `-1` as a number. A negative number straight after a term reads as subtraction, so `(x -1)` is `x - 1`.\n- Markup in every label: `` `code` `` for mono, `**bold**`, `{NAME text}` for a `let` color, `{#rrggbb text}`. A `Label` and `Primitive::Text` now hold runs of font and color, and the renderer lays a line out across runs. The figure uses it for every code name in prose and for the coloured formula in the roll panel.\n- `table { at; columns X...; align ...; row \"a\" \"b\" \"c\"; ... }` lowers to one text per cell. The derived-values box went from 15 nodes to one.\n- `let left 230` broke `align left`, as the v2 note warned. A `let` name may no longer be one of the words properties read as they are (`left`, `right`, `top`, `bottom`, `center`, `none`, `show`, `hide`, `curly`, `square` and the font names). That list sits in `RESERVED` in `scene/expand.rs` and has to grow with the vocabulary.\n\nOpen: mono text inside a bold title is set in regular weight, since acre embeds no bold mono face. The markup has no italic mark.",
+      "text": "v3 adds arithmetic, markup in text and a `table` node. the PrefixEncoder figure, kept outside git is now 160 lines with no number worked out by hand.\n\n- `(a + b * c)` is a number. The parser keeps a parenthesized run as a group, and `scene/expand.rs` evaluates it after it substitutes `let` names, so `let u 15;` and `at key (64 * u + 76) 8` work. `-` between terms needs spaces, because `a-b` lexes as one word and `-1` as a number. A negative number straight after a term reads as subtraction, so `(x -1)` is `x - 1`.\n- Markup in every label: `` `code` `` for mono, `**bold**`, `{NAME text}` for a `let` color, `{#rrggbb text}`. A `Label` and `Primitive::Text` now hold runs of font and color, and the renderer lays a line out across runs. The figure uses it for every code name in prose and for the coloured formula in the roll panel.\n- `table { at; columns X...; align ...; row \"a\" \"b\" \"c\"; ... }` lowers to one text per cell. The derived-values box went from 15 nodes to one.\n- `let left 230` broke `align left`, as the v2 note warned. A `let` name may no longer be one of the words properties read as they are (`left`, `right`, `top`, `bottom`, `center`, `none`, `show`, `hide`, `curly`, `square` and the font names). That list sits in `RESERVED` in `scene/expand.rs` and has to grow with the vocabulary.\n\nOpen: mono text inside a bold title is set in regular weight, since acre embeds no bold mono face. The markup has no italic mark.",
       "commit": "38a8b36",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-11-13T05:55:29.506357094Z"
     }
   ],
   "stamps": {
