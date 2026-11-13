@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T01:14:46.971389521Z",
-  "updated_at": "2026-11-13T05:49:59.13070872Z",
+  "updated_at": "2026-11-13T05:49:59.139440421Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "e42182b5",
+      "at": "2026-11-13T05:49:59.139439931Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "Jack asked on 2026-11-13 to plan this with the milestone acre-e77413. PDF matters as much as SVG for papers. Text can go out as outlines from the shaped glyphs of acre-ea949d, which avoids embedding fonts. Embedding them keeps text selectable and is the better default for PDF.",
+      "commit": "f4067bd",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "38a8b36",
