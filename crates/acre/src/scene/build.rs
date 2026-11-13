@@ -483,6 +483,7 @@ fn panel_place(
                 runs,
                 size: props.number_or("title-size", 18.0)?,
                 width: None,
+                justify: false,
                 fonts: names.fonts.clone(),
             })
         }
@@ -911,6 +912,26 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
             }
         },
     };
+    let text_align = match props.get("text-align") {
+        None => None,
+        Some(p) => Some(match p.word()? {
+            "left" => HAlign::Left,
+            "center" => HAlign::Center,
+            "right" => HAlign::Right,
+            "justify" => {
+                if let Some(label) = &mut label {
+                    justify(p, label)?;
+                }
+                HAlign::Left
+            }
+            _ => {
+                return Err(Error::new(
+                    p.span,
+                    "`text-align` is left, center, right or justify",
+                ));
+            }
+        }),
+    };
     let size = match (props.get("size"), &label) {
         (Some(p), _) => {
             let [w, h] = p.numbers::<2>()?;
@@ -924,15 +945,7 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
             ));
         }
     };
-    let text_align = match props.get("text-align") {
-        None => None,
-        Some(p) => Some(match p.word()? {
-            "left" => HAlign::Left,
-            "center" => HAlign::Center,
-            "right" => HAlign::Right,
-            _ => return Err(Error::new(p.span, "`text-align` is left, center or right")),
-        }),
-    };
+
     Ok(Shape {
         origin,
         size,
@@ -1159,6 +1172,17 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
     if let Some(p) = props.get("width") {
         label.width = Some(p.numbers::<1>()?[0]);
     }
+    if let Some(p) = props.get("text-align") {
+        match p.word()? {
+            "justify" => justify(p, &mut label)?,
+            _ => {
+                return Err(Error::new(
+                    p.span,
+                    "`text-align` on `text` is justify; `align` places the text",
+                ));
+            }
+        }
+    }
     let mut origin = origin;
     let mut badge = None;
     if let Some(p) = props.get("number") {
@@ -1183,6 +1207,15 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
             align,
         },
     ))
+}
+
+/// Set `label` to stretch its lines to its width, as `p` asks.
+fn justify(p: &Property, label: &mut Label) -> Result<(), Error> {
+    if label.width.is_none() {
+        return Err(Error::new(p.span, "`text-align justify` needs `width`"));
+    }
+    label.justify = true;
+    Ok(())
 }
 
 /// A number in a filled circle, centered on the point `at` names.
@@ -1298,6 +1331,7 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
             runs: vec![run],
             size: props.number_or("size", TEXT_SIZE)?,
             width: None,
+            justify: false,
             fonts: names.fonts.clone(),
         },
         align: props.align()?,
@@ -1371,6 +1405,7 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
                     runs,
                     size,
                     width: None,
+                    justify: false,
                     fonts: names.fonts.clone(),
                 },
                 align: aligns[column],
@@ -1899,6 +1934,7 @@ impl<'a> Props<'a> {
             runs,
             size: self.number_or(size, TEXT_SIZE)?,
             width: None,
+            justify: false,
             fonts: names.fonts.clone(),
         }))
     }
@@ -2257,6 +2293,34 @@ mod tests {
         assert!(
             scene("canvas { size 10 10; box { at 0 0; } }").is_err(),
             "a box needs a size or text"
+        );
+    }
+
+    #[test]
+    fn text_align_justify_sets_a_box_or_text_to_justify_within_its_width() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                box { at 0 0; text "one two three four"; width 60; text-align justify; }
+                text { at 0 100; text "one two three four"; width 60; text-align justify; } }"#,
+        )
+        .unwrap();
+        let Kind::Shape(b) = &s.objects[0].kind else {
+            panic!("expected a box");
+        };
+        assert!(b.label.as_ref().unwrap().justify);
+        assert_eq!(b.text_align, Some(HAlign::Left));
+        let Kind::Text(t) = &s.objects[1].kind else {
+            panic!("expected text");
+        };
+        assert!(t.label.justify);
+        let err = |src: &str| scene(src).unwrap_err().2;
+        assert_eq!(
+            err(r#"canvas { size 9 9; text { at 0 0; text "a"; text-align justify; } }"#),
+            "`text-align justify` needs `width`"
+        );
+        assert_eq!(
+            err(r#"canvas { size 9 9; text { at 0 0; text "a"; width 5; text-align left; } }"#),
+            "`text-align` on `text` is justify; `align` places the text"
         );
     }
 

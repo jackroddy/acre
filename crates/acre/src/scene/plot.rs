@@ -226,6 +226,7 @@ impl Plot {
             }],
             size: self.text_size,
             width: None,
+            justify: false,
             h_align,
             v_align,
         }

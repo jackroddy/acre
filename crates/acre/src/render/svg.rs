@@ -4,7 +4,7 @@ use std::fmt::{self, Display, Write};
 use ttf_parser::{GlyphId, OutlineBuilder};
 
 use crate::fonts::Fonts;
-use crate::scene::{Color, Font, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
+use crate::scene::{Color, Font, HAlign, Point, Primitive, Scene, Stroke, VAlign};
 use crate::text::{self, Mark};
 
 /// The scene at time `t` as an SVG document, `scale` CSS pixels to each
@@ -122,9 +122,13 @@ impl Svg<'_> {
                 runs,
                 size,
                 width,
+                justify,
                 h_align,
                 v_align,
-            } => self.text(runs, *origin, *size, *width, *h_align, *v_align),
+            } => {
+                let layout = text::layout(self.fonts, runs, *size, *width, *justify);
+                self.text(&layout, *origin, *h_align, *v_align);
+            }
         }
     }
 
@@ -196,16 +200,7 @@ impl Svg<'_> {
         out.push_str("/>\n");
     }
 
-    fn text(
-        &mut self,
-        runs: &[Run],
-        origin: Point,
-        size: f64,
-        width: Option<f64>,
-        h_align: HAlign,
-        v_align: VAlign,
-    ) {
-        let layout = text::layout(self.fonts, runs, size, width);
+    fn text(&mut self, layout: &text::Layout, origin: Point, h_align: HAlign, v_align: VAlign) {
         let starts = layout.place(origin, h_align, v_align);
         let mut color = None;
         for (line, start) in layout.lines.iter().zip(starts) {

@@ -97,6 +97,7 @@ impl Grid {
                 }],
                 size: self.text_size,
                 width: None,
+                justify: false,
                 h_align: HAlign::Center,
                 v_align: VAlign::Middle,
             });

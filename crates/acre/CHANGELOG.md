@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `line` none.
 - `label-side` (`above`, `left` or `right`) and `label-at` (a fraction from 0
   to 1) place a connector's label beside the line or part way along it.
+- `text-align justify` on `text` and on a box's text sets each wrapped line
+  flush with both edges. It needs `width`. acre chooses a justified paragraph's
+  breaks to keep the total looseness of its lines low, so the lines come out
+  about the same length. Only the spaces outside code spans widen. The last line of a
+  paragraph, a line that ends at `\n` and a line of one word keep their natural
+  spacing. Ragged text breaks as before.
 - A first version of the acre language, for still drawings. A file holds one
   `canvas`, and the canvas holds `box`, `ellipse`, `line`, `arrow` and `text`
   nodes. `examples/layers.acre` uses each of them.
@@ -165,6 +171,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   horizontal line's label is where it was.
 - `scene::Connector` holds a `route`, a `head` and a `tail` of type `Head`, and
   a `label_side` and `label_at`. `head` was a `bool`.
+- `text::layout` takes a `justify` argument. `Primitive::Text`, `scene::Label`
+  and `text::Layout` have a `justify` field. `Layout::place` gives the lines of
+  justified text one left edge.
 
 ### Removed
 

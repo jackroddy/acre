@@ -9,6 +9,8 @@ pub struct Label {
     pub size: f64,
     /// The width lines wrap within, at spaces.
     pub width: Option<f64>,
+    /// Whether wrapped lines are stretched to fill `width`.
+    pub justify: bool,
     /// The fonts the runs are set in.
     pub fonts: Fonts,
 }
@@ -287,6 +289,7 @@ impl Label {
             }],
             size,
             width: None,
+            justify: false,
             fonts: fonts.clone(),
         }
     }
@@ -294,7 +297,8 @@ impl Label {
     /// The width and height the text takes when set, from the first
     /// line's ascent to the last line's descent.
     pub fn size(&self) -> Point {
-        let layout = crate::text::layout(&self.fonts, &self.runs, self.size, self.width);
+        let layout =
+            crate::text::layout(&self.fonts, &self.runs, self.size, self.width, self.justify);
         let (min, max) = layout.extent(Point::ZERO, HAlign::Left, VAlign::Top);
         max - min
     }
@@ -325,6 +329,7 @@ impl Label {
             runs: self.runs.clone(),
             size: self.size,
             width: self.width,
+            justify: self.justify,
             h_align,
             v_align,
         }

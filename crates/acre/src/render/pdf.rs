@@ -119,10 +119,11 @@ impl Pdf<'_> {
                 runs,
                 size,
                 width,
+                justify,
                 h_align,
                 v_align,
             } => {
-                let layout = text::layout(self.fonts, runs, *size, *width);
+                let layout = text::layout(self.fonts, runs, *size, *width, *justify);
                 let starts = layout.place(*origin, *h_align, *v_align);
                 for (line, start) in layout.lines.iter().zip(starts) {
                     self.line(surface, &line.glyphs, &layout.text, start);

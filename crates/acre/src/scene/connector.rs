@@ -218,7 +218,13 @@ impl Connector {
         };
         // the box runs from the first line's ascent down to the
         // baseline, so a descender may hang past it as it always has
-        let layout = crate::text::layout(&label.fonts, &label.runs, label.size, label.width);
+        let layout = crate::text::layout(
+            &label.fonts,
+            &label.runs,
+            label.size,
+            label.width,
+            label.justify,
+        );
         let (min, max) = layout.extent(Point::ZERO, HAlign::Center, VAlign::Baseline);
         let (half_w, ascent) = ((max.x - min.x) / 2.0, -min.y);
         let reach = LABEL_GAP + normal.x.abs() * half_w + normal.y.abs() * ascent / 2.0;
@@ -378,13 +384,14 @@ mod tests {
             runs,
             size,
             width,
+            justify,
             h_align,
             v_align,
         }) = out.last()
         else {
             panic!("expected the label last, got {out:?}");
         };
-        let (min, max) = crate::text::layout(&Fonts::default(), runs, *size, *width)
+        let (min, max) = crate::text::layout(&Fonts::default(), runs, *size, *width, *justify)
             .extent(*origin, *h_align, *v_align);
         // the box stops at the baseline, as the placement does
         (min, Point::new(max.x, origin.y))

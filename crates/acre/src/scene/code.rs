@@ -198,6 +198,7 @@ impl Code {
                     &[mono("0".repeat(digits), Color::BLACK)],
                     self.size,
                     None,
+                    false,
                 )
                 .width()
                     + self.size
@@ -210,7 +211,7 @@ impl Code {
         let widest = self
             .lines
             .iter()
-            .map(|runs| text::layout(&self.fonts, runs, self.size, None).width())
+            .map(|runs| text::layout(&self.fonts, runs, self.size, None, false).width())
             .fold(0.0, f64::max);
         Point::new(
             widest + self.gutter() + 2.0 * self.padding.x,
@@ -281,6 +282,7 @@ impl Code {
                     runs: runs.clone(),
                     size: self.size,
                     width: None,
+                    justify: false,
                     h_align: HAlign::Left,
                     v_align: VAlign::Baseline,
                 });

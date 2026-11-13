@@ -168,6 +168,8 @@ pub enum Primitive {
         size: f64,
         /// The width lines wrap within, at spaces.
         width: Option<f64>,
+        /// Whether wrapped lines are stretched to fill `width`.
+        justify: bool,
         h_align: HAlign,
         v_align: VAlign,
     },
@@ -212,10 +214,11 @@ pub fn bounds(fonts: &Fonts, prims: &[Primitive]) -> Option<(Point, Point)> {
                 runs,
                 size,
                 width,
+                justify,
                 h_align,
                 v_align,
             } => {
-                let (min, max) = crate::text::layout(fonts, runs, *size, *width)
+                let (min, max) = crate::text::layout(fonts, runs, *size, *width, *justify)
                     .extent(*origin, *h_align, *v_align);
                 add(min, 0.0);
                 add(max, 0.0);

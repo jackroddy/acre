@@ -97,8 +97,8 @@ const SHAPE: &[Property] = &[
     ),
     prop(
         "text-align",
-        "left | center | right",
-        "the text from the top inside the padding; without it, the text is centered",
+        "left | center | right | justify",
+        "the text from the top inside the padding; without it, the text is centered; justify stretches the spaces so each wrapped line fills `width`, all but the last line of a paragraph",
     ),
     STYLE,
 ];
@@ -273,6 +273,11 @@ pub const NODES: &[NodeKind] = &[
                 "where `at` sits along the text",
             ),
             prop("width", "N", "the width the text wraps within, at spaces"),
+            prop(
+                "text-align",
+                "justify",
+                "stretch the spaces so each wrapped line fills `width`, all but the last line of a paragraph",
+            ),
             prop(
                 "number",
                 "N",

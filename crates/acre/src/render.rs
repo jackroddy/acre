@@ -11,7 +11,7 @@ use tiny_skia as sk;
 use ttf_parser::{GlyphId, OutlineBuilder};
 
 use crate::fonts::Fonts;
-use crate::scene::{Color, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
+use crate::scene::{Color, HAlign, Point, Primitive, Scene, Stroke, VAlign};
 use crate::text::{self, Mark};
 
 pub use pdf::draw_pdf;
@@ -135,12 +135,12 @@ fn draw_primitives(
                 runs,
                 size,
                 width,
+                justify,
                 h_align,
                 v_align,
             } => {
-                for (path, color) in
-                    text_paths(fonts, runs, *origin, *size, *width, *h_align, *v_align)
-                {
+                let layout = text::layout(fonts, runs, *size, *width, *justify);
+                for (path, color) in text_paths(fonts, &layout, *origin, *h_align, *v_align) {
                     paint_path(pixmap, &path, Some(color), None);
                 }
             }
@@ -241,19 +241,15 @@ fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
     builder.finish()
 }
 
-/// The outline of `runs` laid out by [`text::layout`] and placed so
-/// `origin` sits where the alignments say, as one path per stretch of
-/// glyphs in one color.
+/// The outline of `layout` placed so `origin` sits where the
+/// alignments say, as one path per stretch of glyphs in one color.
 fn text_paths(
     fonts: &Fonts,
-    runs: &[Run],
+    layout: &text::Layout,
     origin: Point,
-    size: f64,
-    width: Option<f64>,
     h_align: HAlign,
     v_align: VAlign,
 ) -> Vec<(sk::Path, Color)> {
-    let layout = text::layout(fonts, runs, size, width);
     let starts = layout.place(origin, h_align, v_align);
     let mut out = Vec::new();
     let mut builder = sk::PathBuilder::new();
@@ -346,7 +342,7 @@ impl OutlineBuilder for Outline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::Font;
+    use crate::scene::{Font, Run};
 
     const RED: Color = Color::rgb(1.0, 0.0, 0.0);
 
@@ -437,6 +433,7 @@ mod tests {
             }],
             size: 40.0,
             width: None,
+            justify: false,
             h_align: HAlign::Center,
             v_align: VAlign::Middle,
         };
@@ -467,6 +464,7 @@ mod tests {
             }],
             size: 30.0,
             width: None,
+            justify: false,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };
@@ -516,13 +514,14 @@ mod tests {
             font: Font::Sans,
             color: Color::BLACK,
         }];
-        let width = text::layout(&Fonts::default(), &runs, 30.0, None).width();
+        let width = text::layout(&Fonts::default(), &runs, 30.0, None, false).width();
         let mut pixmap = blank(300, 60);
         let label = Primitive::Text {
             origin: Point::new(10.0, 40.0),
             runs,
             size: 30.0,
             width: None,
+            justify: false,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };

@@ -65,6 +65,9 @@ pub struct Layout {
     pub descent: f64,
     /// The height of a capital in the first run's font.
     pub cap_height: f64,
+    /// Whether the lines were wrapped and justified, so they align as
+    /// one block.
+    pub justify: bool,
 }
 
 impl Layout {
@@ -79,8 +82,10 @@ impl Layout {
     /// The left end of each line's baseline when the text's `origin`
     /// sits where `h_align` and `v_align` say: `Top` at the first line's
     /// ascent, `Middle` at half the capital height of the middle of the
-    /// lines, `Baseline` on the first baseline.
+    /// lines, `Baseline` on the first baseline. Justified lines share
+    /// one left edge.
     pub fn place(&self, origin: Point, h_align: HAlign, v_align: VAlign) -> Vec<Point> {
+        let block = self.width();
         let lines = self.lines.len().max(1) as f64;
         let first_baseline = origin.y
             + match v_align {
@@ -96,11 +101,12 @@ impl Layout {
             .iter()
             .enumerate()
             .map(|(k, line)| {
+                let width = if self.justify { block } else { line.width };
                 let x = origin.x
                     - match h_align {
                         HAlign::Left => 0.0,
-                        HAlign::Center => line.width / 2.0,
-                        HAlign::Right => line.width,
+                        HAlign::Center => width / 2.0,
+                        HAlign::Right => width,
                     };
                 Point::new(x, first_baseline + k as f64 * self.line_height())
             })
@@ -126,8 +132,9 @@ impl Layout {
 
 /// `runs` set in `fonts`, shaped at `size` pixels and broken into lines at each `\n`,
 /// and at spaces to keep lines within `width` when it is given. A word
-/// wider than `width` takes a line of its own.
-pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Layout {
+/// wider than `width` takes a line of its own. With `justify`, the
+/// wrapped lines are stretched to fill `width`, as [`wrap`] says.
+pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justify: bool) -> Layout {
     let first = match runs.first().map_or(Font::Mono, |r| r.font) {
         Font::Math => fonts.face(Font::Sans),
         font => fonts.face(font),
@@ -208,7 +215,10 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
         }
     }
     if let Some(width) = width {
-        lines = lines.into_iter().flat_map(|l| wrap(l, width)).collect();
+        lines = lines
+            .into_iter()
+            .flat_map(|l| wrap(l, width, justify))
+            .collect();
     }
     let scale = per_unit(first);
     let ascent = lines.first().map_or(0.0, |l| -ink(fonts, l).0);
@@ -220,6 +230,7 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>) -> Lay
         ascent: (first.ascender() as f64 * scale).max(ascent),
         descent: (-(first.descender() as f64) * scale).max(descent),
         cap_height: first.capital_height().unwrap_or(first.ascender()) as f64 * scale,
+        justify: justify && width.is_some(),
     }
 }
 
@@ -283,11 +294,16 @@ fn ink(fonts: &Fonts, line: &Line) -> (f64, f64) {
     (top, bottom)
 }
 
-/// `line` broken at spaces into lines no wider than `width`, greedily.
-/// The space at a break is dropped. A space between mono glyphs in a
-/// line that also holds other fonts is inside a code span, and a break
-/// goes there only when no other space is on the line.
-fn wrap(line: Line, width: f64) -> Vec<Line> {
+/// `line` broken at spaces into lines no wider than `width`. The space
+/// at a break is dropped. A space between mono glyphs in a line that
+/// also holds other fonts is inside a code span, and a break goes there
+/// only when the line has no other place to break.
+///
+/// Without `justify` the breaks are greedy. With it they are chosen
+/// for the whole line at once by [`even_breaks`], and every line but
+/// the last has its spaces outside code spans stretched to fill
+/// `width`.
+fn wrap(line: Line, width: f64, justify: bool) -> Vec<Line> {
     let glyphs = line.glyphs;
     let mono = |g: &Glyph| {
         matches!(
@@ -299,13 +315,38 @@ fn wrap(line: Line, width: f64) -> Vec<Line> {
         )
     };
     let has_code = glyphs.iter().any(mono) && !glyphs.iter().all(mono);
-    let in_code = |i: usize| {
-        has_code
-            && i > 0
-            && glyphs.get(i + 1).is_some()
-            && mono(&glyphs[i - 1])
-            && mono(&glyphs[i + 1])
+    let code: Vec<bool> = (0..glyphs.len())
+        .map(|i| {
+            has_code
+                && glyphs[i].space
+                && i > 0
+                && i + 1 < glyphs.len()
+                && mono(&glyphs[i - 1])
+                && mono(&glyphs[i + 1])
+        })
+        .collect();
+    let breaks = if justify {
+        even_breaks(&glyphs, &code, width)
+    } else {
+        greedy_breaks(&glyphs, &code, width)
     };
+    let mut out = Vec::new();
+    let mut start = 0;
+    for space in breaks {
+        let mut line = line_of(&glyphs[start..space]);
+        if justify {
+            stretch(&mut line, &code[start..space], width);
+        }
+        out.push(line);
+        start = space + 1;
+    }
+    out.push(line_of(&glyphs[start..]));
+    out
+}
+
+/// The spaces to break `glyphs` at, each line filled as far as it fits
+/// in `width` before the next starts.
+fn greedy_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut last_space = None;
@@ -318,7 +359,7 @@ fn wrap(line: Line, width: f64) -> Vec<Line> {
             && !glyphs[i].space
             && let Some(space) = last_space.or(last_code_space)
         {
-            out.push(line_of(&glyphs[start..space]));
+            out.push(space);
             start = space + 1;
             last_space = None;
             last_code_space = None;
@@ -326,7 +367,7 @@ fn wrap(line: Line, width: f64) -> Vec<Line> {
             continue;
         }
         if glyphs[i].space {
-            if in_code(i) {
+            if code[i] {
                 last_code_space = Some(i);
             } else {
                 last_space = Some(i);
@@ -334,8 +375,152 @@ fn wrap(line: Line, width: f64) -> Vec<Line> {
         }
         i += 1;
     }
-    out.push(line_of(&glyphs[start..]));
     out
+}
+
+/// How far a space may stretch, as a share of its width.
+//
+// TeX's Computer Modern sets a space of 1/3 em with a stretch of 1/6 em
+const STRETCH: f64 = 0.5;
+
+/// The badness of a line that cannot stretch to fill the width, or
+/// that overflows it.
+//
+// TeX's `inf_bad` is 10000, but here a stretched line's badness is not
+// capped there, and a line of one word set ragged inside a justified
+// paragraph reads worse than a line whose spaces are stretched to
+// about 12 times their width, where 100 r^3 = 1e6
+const INF_BAD: f64 = 1e6;
+
+/// The demerits every line adds, as TeX's `\linepenalty`, so that of
+/// two sets of breaks equally even the one with fewer lines costs less.
+const LINE_PENALTY: f64 = 10.0;
+
+/// The penalty for a break inside a code span, far above any number of
+/// lines at [`INF_BAD`].
+const CODE_BREAK: f64 = 1e9;
+
+/// The penalty for a last line holding one word under longer lines.
+//
+// at 150 the breaker takes a lone last word rather than stretch an
+// earlier line's spaces to about 1.6 times their width
+const LONE_WORD: f64 = 150.0;
+
+/// The spaces to break `glyphs` at so the lines come out about as long
+/// as one another within `width`, by the method of Knuth and Plass,
+/// "Breaking Paragraphs into Lines" (1981).
+///
+/// The last line costs nothing for being short, but a lone word on it
+/// pays [`LONE_WORD`]. A line wider than `width` is allowed only when
+/// no break inside it exists.
+fn even_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
+    let n = glyphs.len();
+
+    // a line ends at the first space of a run of spaces, or at the end
+    let mut ends: Vec<usize> = (1..n)
+        .filter(|&i| glyphs[i].space && !glyphs[i - 1].space)
+        .collect();
+    ends.push(n);
+
+    // what: the fewest demerits that reach each end, and the end the
+    //       line before it ended at, or `None` when it is the first
+    // why: every line runs forward, so `best[k]` is final by the time
+    //      the lines that start after end `k` are tried
+    let mut best = vec![f64::INFINITY; ends.len()];
+    let mut before: Vec<Option<usize>> = vec![None; ends.len()];
+    for from in std::iter::once(None).chain((0..ends.len() - 1).map(Some)) {
+        let (start, reached) = match from {
+            None => (0, 0.0),
+            Some(k) => (ends[k] + 1, best[k]),
+        };
+        if reached.is_infinite() {
+            continue;
+        }
+        for (k, &end) in ends.iter().enumerate().skip(from.map_or(0, |k| k + 1)) {
+            let line = &glyphs[start..end];
+            let natural = natural_width(line);
+            let first = from.map_or(k == 0, |f| k == f + 1);
+            if natural > width && !first {
+                break;
+            }
+            let last = end == n;
+            let gaps: f64 = gaps(line, &code[start..end]).map(|i| line[i].advance).sum();
+            let shortfall = width - natural;
+            let badness = if natural > width {
+                INF_BAD
+            } else if last || shortfall <= 1e-9 {
+                0.0
+            } else if gaps > 0.0 {
+                // uncapped, unlike TeX, so that of two loose lines the
+                // looser costs more: spaces never shrink here, and a
+                // narrow width can leave no break without one
+                100.0 * (shortfall / (gaps * STRETCH)).powi(3)
+            } else {
+                INF_BAD
+            };
+            let mut demerits = (LINE_PENALTY + badness).powi(2);
+            if !last && code[end] {
+                demerits += CODE_BREAK * CODE_BREAK;
+            }
+            if last && from.is_some() && gaps == 0.0 {
+                demerits += LONE_WORD * LONE_WORD;
+            }
+            if reached + demerits < best[k] {
+                best[k] = reached + demerits;
+                before[k] = from;
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut k = before[ends.len() - 1];
+    while let Some(b) = k {
+        out.push(ends[b]);
+        k = before[b];
+    }
+    out.reverse();
+    out
+}
+
+/// The width of `glyphs` set from the first one's place to the end of
+/// the last one that is not a space.
+fn natural_width(glyphs: &[Glyph]) -> f64 {
+    let left = glyphs.first().map_or(0.0, |g| g.x);
+    glyphs
+        .iter()
+        .rev()
+        .find(|g| !g.space)
+        .map_or(0.0, |g| g.x + g.advance - left)
+}
+
+/// The indices of the spaces in `glyphs` that justifying stretches:
+/// those between its first and last glyphs that are not spaces, and
+/// not inside a code span.
+fn gaps<'a>(glyphs: &'a [Glyph], code: &'a [bool]) -> impl Iterator<Item = usize> + 'a {
+    let first = glyphs.iter().position(|g| !g.space).unwrap_or(0);
+    let last = glyphs.iter().rposition(|g| !g.space).unwrap_or(0);
+    (first..last).filter(move |&i| glyphs[i].space && !code[i])
+}
+
+/// Widen the spaces of `line` that [`gaps`] picks, each in proportion
+/// to its width, so the line fills `width`.
+fn stretch(line: &mut Line, code: &[bool], width: f64) {
+    let gaps: Vec<usize> = gaps(&line.glyphs, code).collect();
+    let total: f64 = gaps.iter().map(|&i| line.glyphs[i].advance).sum();
+    let extra = width - line.width;
+    if total <= 0.0 || extra <= 0.0 {
+        return;
+    }
+    let mut shift = 0.0;
+    let mut next = gaps.iter().peekable();
+    for (i, g) in line.glyphs.iter_mut().enumerate() {
+        g.x += shift;
+        if next.next_if_eq(&&i).is_some() {
+            let more = extra * g.advance / total;
+            g.advance += more;
+            shift += more;
+        }
+    }
+    line.width = width;
 }
 
 /// A line of `glyphs` moved to start at 0, without trailing spaces in
@@ -362,7 +547,11 @@ mod tests {
     use super::*;
 
     fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
-        super::layout(&Fonts::default(), runs, size, width)
+        super::layout(&Fonts::default(), runs, size, width, false)
+    }
+
+    fn justified(runs: &[Run], size: f64, width: f64) -> Layout {
+        super::layout(&Fonts::default(), runs, size, Some(width), true)
     }
 
     fn run(text: &str, font: Font) -> Run {
@@ -504,5 +693,111 @@ mod tests {
         assert!((starts[0].x - (100.0 - l.lines[0].width / 2.0)).abs() < 1e-9);
         assert!((starts[1].x - (100.0 - l.lines[1].width / 2.0)).abs() < 1e-9);
         assert_eq!(starts[1].y - starts[0].y, 13.0);
+    }
+
+    /// The right end of the last glyph of `line` that is not a space.
+    fn ink_end(line: &Line) -> f64 {
+        let g = line.glyphs.iter().rev().find(|g| !g.space).unwrap();
+        g.x + g.advance
+    }
+
+    #[test]
+    fn justified_lines_fill_the_width_but_the_last() {
+        let text = "the quick brown fox jumps over the lazy dog and then runs far away";
+        let l = justified(&[run(text, Font::Sans)], 10.0, 120.0);
+        assert!(l.lines.len() > 2);
+        let (last, full) = l.lines.split_last().unwrap();
+        for line in full {
+            assert!((line.width - 120.0).abs() < 1e-9);
+            assert!((ink_end(line) - 120.0).abs() < 1e-9);
+        }
+        assert!(last.width < 120.0);
+        let words = l.text.split(' ').collect::<Vec<_>>();
+        let tail =
+            words[words.len() - last.glyphs.iter().filter(|g| g.space).count() - 1..].join(" ");
+        let natural = layout(&[run(&tail, Font::Sans)], 10.0, None).width();
+        assert!((last.width - natural).abs() < 1e-9);
+    }
+
+    #[test]
+    fn justifying_leaves_the_spaces_in_a_code_span_alone() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [
+            run("see ", Font::Sans),
+            run("a b", Font::Mono),
+            run(" for it and more words after it", Font::Sans),
+        ];
+        let l = justified(&runs, 10.0, 100.0);
+        let first = &l.lines[0];
+        assert!((first.width - 100.0).abs() < 1e-9);
+        let space = first.glyphs.iter().position(|g| g.space).unwrap();
+        let code = space + 2;
+        assert!(first.glyphs[code].space);
+        assert!((first.glyphs[code].advance - char).abs() < 1e-9);
+        assert!((first.glyphs[code + 1].x - first.glyphs[code].x - char).abs() < 1e-9);
+        assert!(first.glyphs[space].advance > unkerned(" ", Font::Sans, 10.0));
+    }
+
+    #[test]
+    fn the_even_breaker_keeps_a_short_word_off_the_last_line() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [run("aa bb cc dd ee f g", Font::Mono)];
+
+        // the greedy breaks fill the first line and leave `g` alone
+        let ragged = layout(&runs, 10.0, Some(char * 16.0));
+        let counts: Vec<usize> = ragged.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(counts, [16, 1]);
+
+        // spreading two characters over four spaces costs less
+        let even = justified(&runs, 10.0, char * 16.0);
+        let counts: Vec<usize> = even.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(counts, [14, 3]);
+        assert!((even.lines[0].width - char * 16.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_even_breaker_breaks_inside_a_code_span_only_when_it_must() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let counts = |runs: &[Run], width: f64| -> Vec<usize> {
+            let l = justified(runs, 10.0, width);
+            l.lines.iter().map(|l| l.glyphs.len()).collect()
+        };
+        let fits = [run("xx ", Font::Sans), run("a b c", Font::Mono)];
+        assert_eq!(counts(&fits, char * 6.0), [2, 5]);
+        let wide = [run("xx ", Font::Sans), run("aa bb cc", Font::Mono)];
+        assert_eq!(counts(&wide, char * 4.0), [2, 2, 2, 2]);
+    }
+
+    #[test]
+    fn a_justified_line_ending_at_a_newline_keeps_its_spacing() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [run("aa bb\ncc dd ee ff gg hh", Font::Mono)];
+        let l = justified(&runs, 10.0, char * 12.0);
+        let widths: Vec<f64> = l.lines.iter().map(|l| l.width / char).collect();
+        assert_eq!(l.lines.len(), 3);
+        assert!((widths[0] - 5.0).abs() < 1e-9);
+        assert!((widths[1] - 12.0).abs() < 1e-9);
+        assert!(widths[2] < 12.0);
+        assert!((l.lines[2].glyphs[3].x - 3.0 * char).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_justified_line_of_one_word_stays_at_its_width() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let l = justified(&[run("aaaaaa bbbbbbbbb", Font::Mono)], 10.0, char * 10.0);
+        assert_eq!(l.lines.len(), 2);
+        assert!((l.lines[0].width - 6.0 * char).abs() < 1e-9);
+    }
+
+    #[test]
+    fn justified_lines_share_a_left_edge_when_centered() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let l = justified(&[run("aa bb cc dd ee ff", Font::Mono)], 10.0, char * 9.0);
+        let starts = l.place(Point::new(100.0, 0.0), HAlign::Center, VAlign::Baseline);
+        assert!(
+            starts
+                .iter()
+                .all(|p| (p.x - (100.0 - char * 4.5)).abs() < 1e-9)
+        );
     }
 }
