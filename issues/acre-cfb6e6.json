@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-09T23:27:03.909462022Z",
-  "updated_at": "2026-11-13T02:24:33.444397341Z",
+  "updated_at": "2026-11-13T06:31:24.947039412Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "b7d77812",
+      "at": "2026-11-13T06:31:24.947038892Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "acre-gui no longer holds the source since 934e4ef: neovim edits it through the plugin in editors/nvim. A drag would have to send an edit back over the --stdio link, as a new message the plugin applies to the buffer, not rewrite text inside acre-gui.",
+      "commit": "6866c55",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "38a8b36",
