@@ -3,26 +3,29 @@
   "title": "acre-gui edits like a code editor and knows each node's properties",
   "body": "`acre-gui` uses egui's plain code editor: no line numbers, no auto-indent, no brace matching, no find. The properties each node kind takes live as string lists inside the functions of `crates/acre/src/scene/build.rs`, so nothing outside the builder can list them.\n\n## Proposal\n\n- Line numbers, auto-indent on Enter and on `}`, the matching brace shown, comment toggling, find and replace.\n- One table in `scene` of node kinds, their properties and the values each takes. The builder checks against it, the editor completes property names from it, and a reference panel in the GUI lists it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/cd2d1020",
-  "lease_expires": "2026-11-13T02:47:23.131478245Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T02:24:29.460356156Z",
-  "updated_at": "2026-11-13T02:32:23.131478245Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T02:36:26.767485225Z",
+  "closed_at": "2026-11-13T02:36:26.767485225Z",
+  "close_reason": "Landed uncommitted on dev: scene::schema drives the builder's property checks, lang::context_at reads the cursor's node and property, and crates/acre-gui/src/editor.rs holds auto-indent, comment toggling, brace matching and completion, with line numbers, find and replace, and a reference panel in app.rs. The pure edits have tests. The GUI pieces were not tried by hand, since inside decade the window repaints only on input (acre-4db16b).",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "38a8b36",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "38a8b36",
+      "branch": "dev"
+    }
   }
 }
