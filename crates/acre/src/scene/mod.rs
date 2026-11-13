@@ -20,13 +20,15 @@ pub mod track;
 
 pub use build::{FontFile, build, font_files};
 pub use code::Code;
-pub use connector::{Connector, Head, LabelSide, Route};
+pub use connector::{Connector, End, Follow, Head, LabelSide, Route};
 pub use diagram::{Brace, Label, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
-pub use primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
+pub use primitive::{Color, Font, HAlign, Motion, Point, Primitive, Run, Stroke, VAlign};
 pub use row::{Row, RowCell};
 pub use track::{Easing, Keyframe, Lerp, Track};
+
+use std::borrow::Cow;
 
 use crate::fonts::Fonts;
 use crate::lang::Span;
@@ -69,6 +71,14 @@ pub struct Scene {
 pub struct Object {
     pub kind: Kind,
     pub opacity: Track<f64>,
+    /// The size of the drawing relative to the size layout gave it.
+    pub scale: Track<f64>,
+    /// The point the object scales about.
+    pub pivot: Point,
+    /// How far the drawing is from where layout put it.
+    pub offset: Track<Point>,
+    /// Changes to the object's colors, applied in order.
+    pub paints: Vec<Paint>,
     /// When the object is on the canvas; absent means always.
     pub lifetime: Option<Lifetime>,
     /// The node in the source that made the object, or an empty span
@@ -90,6 +100,26 @@ pub enum Kind {
     Code(Code),
 }
 
+/// A color of an object that changes over time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Paint {
+    pub part: Part,
+    /// The row cell it colors, or `None` for the whole object.
+    pub cell: Option<usize>,
+    pub color: Track<Color>,
+    /// The time from which the track's color replaces the object's.
+    pub start: f64,
+}
+
+/// Which color of an object a [`Paint`] changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Part {
+    Fill,
+    Stroke,
+    /// Every run of its text.
+    Text,
+}
+
 /// A half-open interval of seconds, `start..end`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Lifetime {
@@ -109,6 +139,10 @@ impl Object {
         Object {
             kind: kind.into(),
             opacity: Track::Constant(1.0),
+            scale: Track::Constant(1.0),
+            pivot: Point::ZERO,
+            offset: Track::Constant(Point::ZERO),
+            paints: Vec::new(),
             lifetime: None,
             source: Span::default(),
         }
@@ -119,17 +153,21 @@ impl Object {
         Object { source, ..self }
     }
 
-    /// Append this object at time `t` to `out`.
+    /// How the object is moved and scaled at time `t`.
+    pub fn motion(&self, t: f64) -> Motion {
+        Motion {
+            pivot: self.pivot,
+            scale: self.scale.at(t),
+            offset: self.offset.at(t),
+        }
+    }
+}
+
+impl Kind {
+    /// Append what this kind draws at time `t` to `out`, where layout
+    /// put it.
     pub fn draw(&self, t: f64, out: &mut Vec<Primitive>) {
-        if self.lifetime.is_some_and(|l| !l.contains(t)) {
-            return;
-        }
-        let opacity = self.opacity.at(t);
-        if opacity <= 0.0 {
-            return;
-        }
-        let start = out.len();
-        match &self.kind {
+        match self {
             Kind::Grid(grid) => grid.draw(t, out),
             Kind::Plot(plot) => plot.draw(t, out),
             Kind::Shape(shape) => shape.draw(out),
@@ -140,10 +178,92 @@ impl Object {
             Kind::Ruler(ruler) => ruler.draw(out),
             Kind::Code(code) => code.draw(out),
         }
-        if opacity < 1.0 {
-            for prim in &mut out[start..] {
-                prim.fade(opacity);
+    }
+
+    /// The color `part` of `cell`, or of the whole object when `cell` is
+    /// `None`, at build time: `None` for a fill it does not have. The
+    /// error says why the object has no such color to change.
+    pub fn color(&self, part: Part, cell: Option<usize>) -> Result<Option<Color>, &'static str> {
+        let text = |label: &Option<Label>| match label {
+            Some(label) => Ok(label.runs.first().map(|r| r.color)),
+            None => Err("has no text"),
+        };
+        let stroke = |stroke: &Option<Stroke>| match stroke {
+            Some(s) => Ok(Some(s.color)),
+            None => Err("has no outline"),
+        };
+        if cell.is_some() && !matches!(self, Kind::Row(_)) {
+            return Err("has no cells; only a row does");
+        }
+        match (self, part) {
+            (Kind::Shape(s), Part::Fill) => Ok(s.fill),
+            (Kind::Shape(s), Part::Stroke) => stroke(&s.stroke),
+            (Kind::Shape(s), Part::Text) => text(&s.label),
+            (Kind::Text(t), Part::Text) => Ok(t.label.runs.first().map(|r| r.color)),
+            (Kind::Connector(c), Part::Stroke) => Ok(Some(c.stroke.color)),
+            (Kind::Connector(c), Part::Text) => text(&c.label),
+            (Kind::Row(r), _) => {
+                let Some(i) = cell else {
+                    return Err("is a row, whose colors change by cell: `NAME N`");
+                };
+                let Some(cell) = r.cells.get(i) else {
+                    return Err("has no such cell");
+                };
+                match part {
+                    Part::Fill => Ok(cell.fill),
+                    Part::Stroke => stroke(&cell.stroke),
+                    Part::Text => text(&cell.label),
+                }
             }
+            (Kind::Brace(b), Part::Stroke) => Ok(Some(b.stroke.color)),
+            (Kind::Brace(b), Part::Text) => text(&b.label),
+            (Kind::Ruler(r), Part::Stroke) => Ok(Some(r.stroke.color)),
+            (Kind::Ruler(r), Part::Text) => Ok(r.label.runs.first().map(|r| r.color)),
+            (Kind::Code(c), Part::Fill) => Ok(c.fill),
+            (Kind::Code(c), Part::Stroke) => stroke(&c.stroke),
+            (_, Part::Fill) => Err("has no fill"),
+            (_, Part::Stroke) => Err("has no outline"),
+            (_, Part::Text) => Err("has no text"),
+        }
+    }
+
+    /// Set the color `part` of `cell`, or of the whole object, to
+    /// `color`, where [`Kind::color`] finds one.
+    pub fn repaint(&mut self, part: Part, cell: Option<usize>, color: Color) {
+        let text = |label: &mut Label| {
+            for run in &mut label.runs {
+                run.color = color;
+            }
+        };
+        let stroke = |stroke: &mut Option<Stroke>| {
+            if let Some(s) = stroke {
+                s.color = color;
+            }
+        };
+        match (self, part) {
+            (Kind::Shape(s), Part::Fill) => s.fill = Some(color),
+            (Kind::Shape(s), Part::Stroke) => stroke(&mut s.stroke),
+            (Kind::Shape(s), Part::Text) => s.label.iter_mut().for_each(text),
+            (Kind::Text(t), Part::Text) => text(&mut t.label),
+            (Kind::Connector(c), Part::Stroke) => c.stroke.color = color,
+            (Kind::Connector(c), Part::Text) => c.label.iter_mut().for_each(text),
+            (Kind::Row(r), part) => {
+                let Some(cell) = cell.and_then(|i| r.cells.get_mut(i)) else {
+                    return;
+                };
+                match part {
+                    Part::Fill => cell.fill = Some(color),
+                    Part::Stroke => stroke(&mut cell.stroke),
+                    Part::Text => cell.label.iter_mut().for_each(text),
+                }
+            }
+            (Kind::Brace(b), Part::Stroke) => b.stroke.color = color,
+            (Kind::Brace(b), Part::Text) => b.label.iter_mut().for_each(text),
+            (Kind::Ruler(r), Part::Stroke) => r.stroke.color = color,
+            (Kind::Ruler(r), Part::Text) => text(&mut r.label),
+            (Kind::Code(c), Part::Fill) => c.fill = Some(color),
+            (Kind::Code(c), Part::Stroke) => stroke(&mut c.stroke),
+            _ => {}
         }
     }
 }
@@ -165,9 +285,69 @@ impl Scene {
     pub fn draw(&self, t: f64) -> Vec<Primitive> {
         let mut out = Vec::new();
         for object in &self.objects {
-            object.draw(t, &mut out);
+            self.draw_object(object, t, &mut out);
         }
         out
+    }
+
+    /// Append `object` at time `t` to `out`.
+    fn draw_object(&self, object: &Object, t: f64, out: &mut Vec<Primitive>) {
+        if object.lifetime.is_some_and(|l| !l.contains(t)) {
+            return;
+        }
+        let opacity = object.opacity.at(t);
+        if opacity <= 0.0 {
+            return;
+        }
+        let start = out.len();
+        let mut kind = Cow::Borrowed(&object.kind);
+        for paint in object.paints.iter().filter(|p| t >= p.start) {
+            kind.to_mut()
+                .repaint(paint.part, paint.cell, paint.color.at(t));
+        }
+        match &*kind {
+            Kind::Connector(c) if c.follow.iter().any(Option::is_some) => {
+                let motions = c.follow.each_ref().map(|f| match f {
+                    Some(f) => self.motion_of(f.target, t),
+                    None => Motion::NONE,
+                });
+                if motions.iter().all(Motion::is_none) {
+                    c.draw(out);
+                } else {
+                    c.followed(motions).draw(out);
+                }
+            }
+            Kind::Brace(b) if b.follow.is_some_and(|f| !self.motion_of(f, t).is_none()) => {
+                let motion = self.motion_of(b.follow.unwrap(), t);
+                let moved = Brace {
+                    from: motion.apply(b.from),
+                    to: motion.apply(b.to),
+                    ..b.clone()
+                };
+                moved.draw(out);
+            }
+            kind => kind.draw(t, out),
+        }
+        let motion = object.motion(t);
+        if !motion.is_none() {
+            for prim in &mut out[start..] {
+                prim.transform(motion);
+            }
+        }
+        if opacity < 1.0 {
+            for prim in &mut out[start..] {
+                prim.fade(opacity);
+            }
+        }
+    }
+
+    /// How the object made by the node at `source` is moved and scaled
+    /// at time `t`.
+    fn motion_of(&self, source: Span, t: f64) -> Motion {
+        self.objects
+            .iter()
+            .find(|o| o.source == source)
+            .map_or(Motion::NONE, |o| o.motion(t))
     }
 
     /// The box around what object `index` draws at time `t`, as its
@@ -175,7 +355,7 @@ impl Scene {
     /// nothing.
     pub fn bounds(&self, index: usize, t: f64) -> Option<(Point, Point)> {
         let mut prims = Vec::new();
-        self.objects[index].draw(t, &mut prims);
+        self.draw_object(&self.objects[index], t, &mut prims);
         primitive::bounds(&self.fonts, &prims)
     }
 
@@ -245,6 +425,81 @@ mod tests {
         assert!(scene.draw(0.5).is_empty());
         assert_eq!(scene.draw(1.0).len(), 2);
         assert!(scene.draw(2.0).is_empty());
+    }
+
+    #[test]
+    fn a_connector_follows_the_moved_and_scaled_edge_of_its_target() {
+        let shape = Shape {
+            origin: Point::new(0.0, 0.0),
+            size: Point::new(100.0, 40.0),
+            oval: false,
+            radius: 0.0,
+            fill: None,
+            stroke: Some(Stroke::solid(Color::BLACK, 2.0)),
+            label: None,
+            padding: Point::ZERO,
+            text_align: None,
+        };
+        let source = Span { start: 1, end: 2 };
+        let mut target = Object::new(Kind::Shape(shape.clone())).from_source(source);
+        target.pivot = Point::new(0.0, 20.0);
+        target.scale = Track::from_to(0.0, 1.0, 1.0, 2.0);
+        target.offset = Track::from_to(0.0, Point::ZERO, 1.0, Point::new(0.0, 100.0));
+        let line = Connector {
+            from: Point::new(300.0, 20.0),
+            to: Point::new(100.0, 20.0),
+            from_dir: None,
+            to_dir: None,
+            stroke: Stroke::solid(Color::BLACK, 2.0),
+            route: Route::Straight,
+            head: Head::None,
+            tail: Head::None,
+            label: None,
+            label_side: LabelSide::Above,
+            label_at: 0.5,
+            follow: [
+                None,
+                Some(Box::new(Follow {
+                    target: source,
+                    end: End::Side {
+                        at: Point::new(100.0, 20.0),
+                        out: Point::new(1.0, 0.0),
+                    },
+                })),
+            ],
+        };
+        let scene = Scene {
+            canvas: canvas(),
+            objects: vec![target, Object::new(Kind::Connector(line))],
+            fonts: Fonts::default(),
+        };
+        let ends = |t: f64| match scene.draw(t)[1] {
+            Primitive::Line { from, to, .. } => (from, to),
+            ref other => panic!("expected a line, got {other:?}"),
+        };
+        assert_eq!(
+            ends(0.0),
+            (Point::new(300.0, 20.0), Point::new(100.0, 20.0))
+        );
+        assert_eq!(
+            ends(1.0),
+            (Point::new(300.0, 20.0), Point::new(200.0, 120.0))
+        );
+        match scene.draw(1.0)[0] {
+            Primitive::Rect {
+                origin,
+                size,
+                stroke,
+                ..
+            } => {
+                assert_eq!(
+                    (origin, size),
+                    (Point::new(0.0, 80.0), Point::new(200.0, 80.0))
+                );
+                assert_eq!(stroke.unwrap().width, 4.0);
+            }
+            ref other => panic!("expected a rect, got {other:?}"),
+        }
     }
 
     #[test]

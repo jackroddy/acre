@@ -193,6 +193,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `text::Line` has a `gap` field. It holds the space above the line beyond one
   line height.
 
+- An `Object` holds a `scale` track, the `pivot` it scales about, an `offset`
+  track that moves it from where layout put it, and `paints`, the colors that
+  change over time. `Scene::draw` moves and scales an object's primitives with
+  `Primitive::transform`, its stroke widths, dashes, radii and text sizes
+  included, so every renderer draws the change.
+- A `Connector` keeps the thing each end is attached to in `follow`, and a
+  `Brace` keeps the thing it is over. `Scene::draw` puts the end on the
+  attached thing's moved and scaled edge at every instant. A drawing with no
+  motion draws as before.
+- `Kind::draw` draws a kind where layout put it. It replaces `Object::draw`,
+  since only the scene knows where an object's attached things are.
+
 ### Removed
 
 - The `acre` command. It now comes from the `acre-cli` crate, and this crate is

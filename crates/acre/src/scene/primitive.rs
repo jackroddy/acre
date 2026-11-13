@@ -69,6 +69,32 @@ impl Color {
     }
 }
 
+/// A uniform scale about a fixed point, then a move.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Motion {
+    /// The point the scale leaves where it is.
+    pub pivot: Point,
+    pub scale: f64,
+    pub offset: Point,
+}
+
+impl Motion {
+    pub const NONE: Motion = Motion {
+        pivot: Point::ZERO,
+        scale: 1.0,
+        offset: Point::ZERO,
+    };
+
+    pub fn is_none(&self) -> bool {
+        self.scale == 1.0 && self.offset == Point::ZERO
+    }
+
+    /// Where the motion takes `p`.
+    pub fn apply(&self, p: Point) -> Point {
+        self.pivot + (p - self.pivot) * self.scale + self.offset
+    }
+}
+
 /// How a line or an outline is drawn.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stroke {
@@ -232,6 +258,77 @@ pub fn bounds(fonts: &Fonts, prims: &[Primitive]) -> Option<(Point, Point)> {
 }
 
 impl Primitive {
+    /// Move and scale the primitive by `motion`, its stroke widths,
+    /// dashes, radii and text sizes along with its points.
+    pub fn transform(&mut self, motion: Motion) {
+        let s = motion.scale;
+        let scale_stroke = |stroke: &mut Stroke| {
+            stroke.width *= s;
+            if let Some(dash) = &mut stroke.dash {
+                *dash = dash.map(|d| d * s);
+            }
+        };
+        match self {
+            Primitive::Rect {
+                origin,
+                size,
+                radius,
+                stroke,
+                ..
+            } => {
+                *origin = motion.apply(*origin);
+                *size = *size * s;
+                *radius *= s;
+                if let Some(stroke) = stroke {
+                    scale_stroke(stroke);
+                }
+            }
+            Primitive::Ellipse {
+                center,
+                radius,
+                stroke,
+                ..
+            } => {
+                *center = motion.apply(*center);
+                *radius = *radius * s;
+                if let Some(stroke) = stroke {
+                    scale_stroke(stroke);
+                }
+            }
+            Primitive::Line { from, to, stroke } => {
+                *from = motion.apply(*from);
+                *to = motion.apply(*to);
+                scale_stroke(stroke);
+            }
+            Primitive::Polyline { points, stroke } => {
+                for p in points {
+                    *p = motion.apply(*p);
+                }
+                scale_stroke(stroke);
+            }
+            Primitive::Polygon { points, stroke, .. } => {
+                for p in points {
+                    *p = motion.apply(*p);
+                }
+                if let Some(stroke) = stroke {
+                    scale_stroke(stroke);
+                }
+            }
+            Primitive::Text {
+                origin,
+                size,
+                width,
+                ..
+            } => {
+                *origin = motion.apply(*origin);
+                *size *= s;
+                if let Some(w) = width {
+                    *w *= s;
+                }
+            }
+        }
+    }
+
     /// Multiply every color's alpha by `opacity`.
     pub fn fade(&mut self, opacity: f64) {
         let fade_stroke = |s: &mut Option<Stroke>| {

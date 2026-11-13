@@ -1,5 +1,6 @@
 use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 use crate::fonts::Fonts;
+use crate::lang::Span;
 
 /// Text in runs of font and color at one size, placed by whatever
 /// holds it.
@@ -70,6 +71,9 @@ impl Side {
 pub struct Brace {
     pub from: Point,
     pub to: Point,
+    /// The source of the thing the brace is over, which it follows as
+    /// that thing moves and scales.
+    pub follow: Option<Span>,
     pub side: Side,
     pub depth: f64,
     pub square: bool,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::code::{self, Code};
+use super::connector::{self, End, Follow};
 use super::expand::expand;
 use super::markup;
 use super::schema;
@@ -172,6 +173,7 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
         shapes: HashMap::new(),
         rows: HashMap::new(),
         codes: HashMap::new(),
+        sources: HashMap::new(),
     };
 
     // palettes first, so that a node may name one wherever it sits
@@ -308,6 +310,9 @@ fn name_things<'a>(
         };
         if taken {
             return Err(twice("things", name));
+        }
+        if matches!(node.kind.text.as_str(), "box" | "ellipse" | "row" | "code") {
+            names.sources.insert(key, node.span);
         }
     }
     Ok(())
@@ -607,7 +612,7 @@ fn caption(node: &Node, names: &Names, above: Point) -> Result<Text, Error> {
 fn bounds_of(fonts: &Fonts, objects: &[Object]) -> Option<(Point, Point)> {
     let mut prims = Vec::new();
     for o in objects {
-        o.draw(0.0, &mut prims);
+        o.kind.draw(0.0, &mut prims);
     }
     super::primitive::bounds(fonts, &prims)
 }
@@ -825,6 +830,19 @@ struct Names<'a> {
     shapes: HashMap<&'a str, Shape>,
     rows: HashMap<&'a str, Row>,
     codes: HashMap<&'a str, Code>,
+    /// The node of each named shape, row and code.
+    sources: HashMap<&'a str, Span>,
+}
+
+impl Names<'_> {
+    /// The node of the shape, row or code `name` names, which
+    /// [`target`] has found.
+    fn source_of(&self, name: &Value) -> Span {
+        match &name.kind {
+            ValueKind::Word(word) => self.sources[word.as_str()],
+            _ => unreachable!("a target is named by a word"),
+        }
+    }
 }
 
 /// How a palette draws each cell text it lists.
@@ -1101,30 +1119,20 @@ fn connector(
     shift: usize,
 ) -> Result<Connector, Error> {
     let props = Props::new(node, &keys("line"), false)?;
-    let from = end(props.require("from")?, names, offset, shift)?;
-    let to = end(props.require("to")?, names, offset, shift)?;
-    let center = |end: &End| match end {
-        End::Point(p) => *p,
-        End::Side { at, .. } => *at,
-        End::Box(s) => s.center(),
-    };
-    let on_edge = |end: &End, other: &End| match end {
-        End::Point(p) => *p,
-        End::Side { at, .. } => *at,
-        End::Box(s) => s.edge_toward(center(other)),
-    };
-    let facing = |end: &End| match end {
-        End::Side { out, .. } => Some(*out),
-        _ => None,
-    };
+    let (from, from_target) = end(props.require("from")?, names, offset, shift)?;
+    let (to, to_target) = end(props.require("to")?, names, offset, shift)?;
+    let ([from_at, to_at], [from_dir, to_dir]) = connector::place(&from, &to);
+    let follow =
+        |end: End, target: Option<Span>| target.map(|target| Box::new(Follow { target, end }));
     let stroke = props
         .stroke(Some(Color::BLACK))?
         .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
     Ok(Connector {
-        from: on_edge(&from, &to),
-        to: on_edge(&to, &from),
-        from_dir: facing(&from),
-        to_dir: facing(&to),
+        from: from_at,
+        to: to_at,
+        from_dir,
+        to_dir,
+        follow: [follow(from, from_target), follow(to, to_target)],
         stroke,
         route: props.choice(
             "route",
@@ -1224,7 +1232,7 @@ fn marker(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     let props = Props::new(node, &keys("marker"), false)?;
     let at = props.require("at")?;
     let badge = Badge::read(&props, &names.fonts)?;
-    let mut center = match end(at, names, offset, 0)? {
+    let mut center = match end(at, names, offset, 0)?.0 {
         End::Point(p) => p,
         End::Side { at, .. } => at,
         End::Box(s) => s.center(),
@@ -1519,9 +1527,11 @@ fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
         None => Side::Top,
     };
     let gap = props.number_or("gap", 4.0)?;
+    let mut follow = None;
     let (from, to) = match props.get("over") {
         Some(p) => {
-            let [left, top, right, bottom] = bounds(p, names)?;
+            let ([left, top, right, bottom], source) = bounds(p, names)?;
+            follow = Some(source);
             match side {
                 Side::Top => (Point::new(left, top - gap), Point::new(right, top - gap)),
                 Side::Bottom => (
@@ -1552,6 +1562,7 @@ fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
     Ok(Brace {
         from,
         to,
+        follow,
         side,
         depth: props.number_or("depth", 10.0)?,
         square,
@@ -1592,32 +1603,27 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
     })
 }
 
-/// Where a connector ends: a point, or the outline of a box it stops at.
-enum End {
-    Point(Point),
-    Box(Shape),
-    /// The middle of a side of a box, and the direction that points
-    /// out of the box there.
-    Side {
-        at: Point,
-        out: Point,
-    },
-}
-
-/// The end a connector's `from` or `to` names. It is two numbers, a
-/// shape's name, or a row's name and a cell's index. A side after a
-/// name puts the end at the middle of that side, facing out of it.
-fn end(p: &Property, names: &Names, offset: Point, shift: usize) -> Result<End, Error> {
+/// The end a connector's `from` or `to` names, and the source of the
+/// thing it names. It is two numbers, a shape's name, or a row's name
+/// and a cell's index. A side after a name puts the end at the middle
+/// of that side, facing out of it.
+fn end(
+    p: &Property,
+    names: &Names,
+    offset: Point,
+    shift: usize,
+) -> Result<(End, Option<Span>), Error> {
     if let [first, ..] = p.values.as_slice()
         && let ValueKind::Number(_) = first.kind
     {
         return p
             .numbers::<2>()
-            .map(|[x, y]| End::Point(offset + Point::new(x, y)));
+            .map(|[x, y]| (End::Point(offset + Point::new(x, y)), None));
     }
     let (thing, rest) = target(p, &p.values, names, shift)?;
-    match rest {
-        [] => Ok(End::Box(thing)),
+    let source = names.source_of(&p.values[0]);
+    let end = match rest {
+        [] => End::Box(thing),
         [v] => match &v.kind {
             ValueKind::Word(w) => {
                 let [left, top, right, bottom] = [
@@ -1634,17 +1640,19 @@ fn end(p: &Property, names: &Names, offset: Point, shift: usize) -> Result<End, 
                     "right" => (Point::new(right, cy), Point::new(1.0, 0.0)),
                     _ => return Err(Error::new(v.span, "a side is top, bottom, left or right")),
                 };
-                Ok(End::Side { at, out })
+                End::Side { at, out }
             }
-            _ => Err(Error::new(v.span, "expected a side")),
+            _ => return Err(Error::new(v.span, "expected a side")),
         },
-        [_, extra, ..] => Err(Error::new(extra.span, "too many values")),
-    }
+        [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
+    };
+    Ok((end, Some(source)))
 }
 
 /// The left, top, right and bottom of what `over` names: a shape, a
-/// whole row, or a row's cells from one index to another.
-fn bounds(p: &Property, names: &Names) -> Result<[f64; 4], Error> {
+/// whole row, or a row's cells from one index to another, and the
+/// source of the thing.
+fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Span), Error> {
     let corners = |s: &Shape| {
         [
             s.origin.x,
@@ -1667,7 +1675,7 @@ fn bounds(p: &Property, names: &Names) -> Result<[f64; 4], Error> {
         }
         [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
     }
-    Ok([left, top, right, bottom])
+    Ok(([left, top, right, bottom], names.source_of(&p.values[0])))
 }
 
 /// The box that the leading values of `values` name, as a shape, and

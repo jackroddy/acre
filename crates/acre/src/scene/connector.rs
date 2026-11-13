@@ -1,5 +1,6 @@
-use super::diagram::Label;
-use super::primitive::{HAlign, Point, Primitive, Stroke, VAlign};
+use super::diagram::{Label, Shape};
+use super::primitive::{HAlign, Motion, Point, Primitive, Stroke, VAlign};
+use crate::lang::Span;
 
 /// The path a connector takes from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -59,6 +60,81 @@ pub struct Connector {
     /// How far along the route the label sits, from 0 at `from` to 1
     /// at `to`.
     pub label_at: f64,
+    /// The things `from` and `to` are attached to, which they follow as
+    /// those things move and scale.
+    pub follow: [Option<Box<Follow>>; 2],
+}
+
+/// Where a connector ends: a point, or the outline of a box it stops at.
+#[derive(Debug, Clone, PartialEq)]
+pub enum End {
+    Point(Point),
+    Box(Shape),
+    /// The middle of a side of a box, and the direction that points
+    /// out of the box there.
+    Side {
+        at: Point,
+        out: Point,
+    },
+}
+
+/// An end attached to a thing in the scene.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Follow {
+    /// The source of the object the end is attached to.
+    pub target: Span,
+    /// The end where layout put the object.
+    pub end: End,
+}
+
+impl End {
+    fn moved(&self, motion: Motion) -> End {
+        match self {
+            End::Point(p) => End::Point(*p),
+            End::Box(shape) => End::Box(Shape {
+                origin: motion.apply(shape.origin),
+                size: shape.size * motion.scale,
+                ..shape.clone()
+            }),
+            End::Side { at, out } => End::Side {
+                at: motion.apply(*at),
+                out: *out,
+            },
+        }
+    }
+
+    fn center(&self) -> Point {
+        match self {
+            End::Point(p) => *p,
+            End::Side { at, .. } => *at,
+            End::Box(s) => s.center(),
+        }
+    }
+
+    /// Where the line touches this end, coming from `other`.
+    fn on_edge(&self, other: &End) -> Point {
+        match self {
+            End::Box(s) => s.edge_toward(other.center()),
+            _ => self.center(),
+        }
+    }
+
+    /// The direction out of the side the end sits on, when it names one.
+    fn facing(&self) -> Option<Point> {
+        match self {
+            End::Side { out, .. } => Some(*out),
+            _ => None,
+        }
+    }
+}
+
+/// The points and directions of a connector from `from` to `to`, as
+/// `[from, to]` and `[from_dir, to_dir]`.
+pub fn place(from: &End, to: &End) -> ([Point; 2], [Option<Point>; 2]) {
+    (
+        [from.on_edge(to), to.on_edge(from)],
+        [from.facing(), to.facing()],
+    )
 }
 
 /// The gap between the line and its label.
@@ -76,6 +152,23 @@ fn length(p: Point) -> f64 {
 }
 
 impl Connector {
+    /// This connector with each attached end where `motions` take the
+    /// thing it is attached to.
+    pub fn followed(&self, motions: [Motion; 2]) -> Connector {
+        let [from, to] = [0, 1].map(|i| match &self.follow[i] {
+            Some(f) => f.end.moved(motions[i]),
+            None => End::Point([self.from, self.to][i]),
+        });
+        let ([from_at, to_at], [from_dir, to_dir]) = place(&from, &to);
+        Connector {
+            from: from_at,
+            to: to_at,
+            from_dir,
+            to_dir,
+            ..self.clone()
+        }
+    }
+
     pub fn draw(&self, out: &mut Vec<Primitive>) {
         let path = self.path();
         if path.len() < 2 {
@@ -360,6 +453,7 @@ mod tests {
             label: None,
             label_side: LabelSide::Above,
             label_at: 0.5,
+            follow: [None, None],
         }
     }
 
