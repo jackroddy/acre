@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T05:55:41.247774019Z",
+  "updated_at": "2026-11-13T06:50:40.120648079Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -76,6 +76,14 @@
       "commit": "38a8b36",
       "branch": "dev",
       "edited_at": "2026-11-13T05:55:41.247773789Z"
+    },
+    {
+      "id": "352d16a5",
+      "at": "2026-11-13T06:50:40.120647419Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Canvas `size` takes `auto` for either side (acre-abc054, commit below on dev).\n\n- `size 1900 auto` fixes the width. `size auto auto` fixes neither. `size auto 800` also works, since each side is read on its own.\n- An `auto` side is the box around everything drawn, measured by the same code as `Scene::bounds`, plus `margin` on both ends. The scene is built once to measure and once more shifted so the drawing starts at the margin on each `auto` axis. A fixed side is not shifted.\n- `margin N` is one number on the canvas, default 20. One number keeps it as small as the plan allows. A default of 0 would leave text touching the edge of the image. 20 matches the padding most figures give their panels.\n- `margin` on a canvas with no `auto` is an error, because it would be ignored otherwise.\n- Bounds are taken at time 0 only, which is all the language has today. Revisit when animation lands.",
+      "commit": "3506122",
+      "branch": "dev"
     }
   ],
   "stamps": {
