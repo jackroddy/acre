@@ -1,3 +1,4 @@
+use super::Target;
 use super::diagram::Label;
 use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
 
@@ -14,6 +15,9 @@ pub struct Row {
     /// The radius of each cell's rounded corners.
     pub radius: f64,
     pub cells: Vec<RowCell>,
+    /// The row cell its `at` names, which it follows as that cell moves
+    /// and scales.
+    pub follow: Option<Target>,
 }
 
 /// One cell of a row.
@@ -41,43 +45,49 @@ impl Row {
     }
 
     pub fn draw(&self, out: &mut Vec<Primitive>) {
-        for (i, cell) in self.cells.iter().enumerate() {
-            let (origin, size) = self.cell_rect(i);
-            if cell.fill.is_some() || cell.stroke.is_some() {
-                out.push(Primitive::Rect {
-                    origin,
-                    size,
-                    radius: self.radius,
-                    fill: cell.fill,
-                    stroke: cell.stroke,
-                });
-            }
-            let center = origin + size * 0.5;
-            let label_y = match &cell.note {
-                Some(_) => origin.y + size.y * 0.4,
-                None => center.y,
-            };
-            if let Some(label) = &cell.label {
-                out.push(label.at(
-                    Point::new(center.x, label_y),
-                    HAlign::Center,
-                    VAlign::Middle,
-                ));
-            }
-            if let Some(note) = &cell.note {
-                let y = origin.y + size.y * 0.78;
-                let text = note.text();
-                let chars = text.chars().count();
-                if chars == cell.span && chars > 1 {
-                    let left = self.origin.x + cell.start as f64 * self.unit.x;
-                    for (k, c) in text.chars().enumerate() {
-                        let x = left + (k as f64 + 0.5) * self.unit.x;
-                        let one = note.with_text(c);
-                        out.push(one.at(Point::new(x, y), HAlign::Center, VAlign::Middle));
-                    }
-                } else {
-                    out.push(note.at(Point::new(center.x, y), HAlign::Center, VAlign::Middle));
+        for i in 0..self.cells.len() {
+            self.draw_cell(i, out);
+        }
+    }
+
+    /// Append cell `index`, with its text and its note, to `out`.
+    pub fn draw_cell(&self, index: usize, out: &mut Vec<Primitive>) {
+        let cell = &self.cells[index];
+        let (origin, size) = self.cell_rect(index);
+        if cell.fill.is_some() || cell.stroke.is_some() {
+            out.push(Primitive::Rect {
+                origin,
+                size,
+                radius: self.radius,
+                fill: cell.fill,
+                stroke: cell.stroke,
+            });
+        }
+        let center = origin + size * 0.5;
+        let label_y = match &cell.note {
+            Some(_) => origin.y + size.y * 0.4,
+            None => center.y,
+        };
+        if let Some(label) = &cell.label {
+            out.push(label.at(
+                Point::new(center.x, label_y),
+                HAlign::Center,
+                VAlign::Middle,
+            ));
+        }
+        if let Some(note) = &cell.note {
+            let y = origin.y + size.y * 0.78;
+            let text = note.text();
+            let chars = text.chars().count();
+            if chars == cell.span && chars > 1 {
+                let left = self.origin.x + cell.start as f64 * self.unit.x;
+                for (k, c) in text.chars().enumerate() {
+                    let x = left + (k as f64 + 0.5) * self.unit.x;
+                    let one = note.with_text(c);
+                    out.push(one.at(Point::new(x, y), HAlign::Center, VAlign::Middle));
                 }
+            } else {
+                out.push(note.at(Point::new(center.x, y), HAlign::Center, VAlign::Middle));
             }
         }
     }
@@ -106,6 +116,7 @@ mod tests {
             gap: 2.0,
             radius: 0.0,
             cells: vec![cell(0, 3), cell(3, 1)],
+            follow: None,
         };
         assert_eq!(
             row.cell_rect(1),

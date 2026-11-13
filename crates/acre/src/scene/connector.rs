@@ -1,6 +1,6 @@
+use super::Target;
 use super::diagram::{Label, Shape};
 use super::primitive::{HAlign, Motion, Point, Primitive, Stroke, VAlign};
-use crate::lang::Span;
 
 /// The path a connector takes from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -81,8 +81,8 @@ pub enum End {
 /// An end attached to a thing in the scene.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Follow {
-    /// The source of the object the end is attached to.
-    pub target: Span,
+    /// The thing the end is attached to.
+    pub target: Target,
     /// The end where layout put the object.
     pub end: End,
 }
@@ -152,12 +152,14 @@ fn length(p: Point) -> f64 {
 }
 
 impl Connector {
-    /// This connector with each attached end where `motions` take the
-    /// thing it is attached to.
+    /// This connector with each end where `motions` take it: an
+    /// attached end with the thing it is attached to, and a free end on
+    /// its own.
     pub fn followed(&self, motions: [Motion; 2]) -> Connector {
         let [from, to] = [0, 1].map(|i| match &self.follow[i] {
             Some(f) => f.end.moved(motions[i]),
-            None => End::Point([self.from, self.to][i]),
+            None if motions[i].is_none() => End::Point([self.from, self.to][i]),
+            None => End::Point(motions[i].apply([self.from, self.to][i])),
         });
         let ([from_at, to_at], [from_dir, to_dir]) = place(&from, &to);
         Connector {

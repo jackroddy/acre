@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `anchor` on a drawn node names the point of its box that stays put as it
   scales: `center` by default, a side such as `top`, or a corner such as
   `top-left`.
+- A timeline action can name a `group`, `panel`, `stack` or `grid`. `fade`,
+  `show`, `hide`, `move` and `scale` change it as one, with everything inside
+  it. Opacity multiplies down the tree, and a move or a scale inside a moving
+  group adds to the group's. A group scales about the point of its box that
+  `anchor` names, and the four kinds now take `anchor`. A color action on a
+  group is an error.
+- A timeline action can name one cell of a row as `ROW N`, as in
+  `move r 3 0 40`, `scale r 3 1.5`, `fade r 3 out`, `show r 3` and
+  `hide r 3`. The cell's text and note move with it, and it scales about its
+  center. A cell that is moved or scaled at an instant is drawn after the last
+  row, above every cell that is not.
+- Connectors and braces attached to a node inside a moved group, or to a moved
+  cell, follow it. A row placed with `at ROW N` follows that cell.
 - A scene's `duration` runs to the timeline's last change. `duration 5s` on the
   canvas lengthens it, and one shorter than the timeline is an error.
 - `lang` reads a number with `s` straight after it, such as `1.5s`, as a time,
@@ -223,6 +236,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   motion draws as before.
 - `Kind::draw` draws a kind where layout put it. It replaces `Object::draw`,
   since only the scene knows where an object's attached things are.
+- An `Object` holds `groups`, the `Animation` of each animated group around
+  it, innermost first, and `cells`, the `Animation` of each row cell that
+  moves on its own. `Object::motion` includes the groups. `Motion::then`
+  composes two motions, and `Row::draw_cell` draws one cell.
+- `Follow::target` and `Brace::follow` are a `scene::Target`, the span of a
+  node and an optional row cell. `Row` has a `follow` field.
 
 ### Removed
 

@@ -8,7 +8,7 @@ use super::schema;
 use super::timeline;
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Object, Point,
-    Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Text,
+    Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Target, Text,
 };
 use crate::fonts::{Fonts, Typeface};
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
@@ -820,7 +820,7 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
         4 => &p.values[..2],
         _ => &p.values[..],
     };
-    let (thing, _) = target(p, named, names, 0)?;
+    let (thing, _, _) = target(p, named, names, 0)?;
     match &p.values[named.len()..] {
         [] => Ok(thing.origin),
         [dx, dy] => match (&dx.kind, &dy.kind) {
@@ -1008,6 +1008,7 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
         Some(p) => at(p, names, offset)?,
         None => offset,
     };
+    let follow = props.get("at").and_then(|p| cell_named(p, names));
     let [unit_w, unit_h] = props.require("unit")?.numbers::<2>()?;
     let span = props.count_or("span", 1)?;
     let palette = match props.get("palette") {
@@ -1132,6 +1133,25 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
         gap: props.number_or("gap", 0.0)?,
         radius: props.number_or("radius", 0.0)?,
         cells,
+        follow,
+    })
+}
+
+/// The row cell `p`, an `at`, names, as in `at r 3` or `at r 3 0 -40`,
+/// which [`at`] has checked.
+fn cell_named(p: &Property, names: &Names) -> Option<Target> {
+    let [name, index, ..] = p.values.as_slice() else {
+        return None;
+    };
+    let (ValueKind::Word(word), ValueKind::Number(n)) = (&name.kind, &index.kind) else {
+        return None;
+    };
+    if !names.rows.contains_key(word.as_str()) || !matches!(p.values.len(), 2 | 4) {
+        return None;
+    }
+    Some(Target {
+        source: names.sources[word.as_str()],
+        cell: Some(*n as usize),
     })
 }
 
@@ -1147,7 +1167,7 @@ fn connector(
     let (to, to_target) = end(props.require("to")?, names, offset, shift)?;
     let ([from_at, to_at], [from_dir, to_dir]) = connector::place(&from, &to);
     let follow =
-        |end: End, target: Option<Span>| target.map(|target| Box::new(Follow { target, end }));
+        |end: End, target: Option<Target>| target.map(|target| Box::new(Follow { target, end }));
     let stroke = props
         .stroke(Some(Color::BLACK))?
         .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
@@ -1627,8 +1647,7 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
     })
 }
 
-/// The end a connector's `from` or `to` names, and the source of the
-/// thing it names. It is two numbers, a shape's name, or a row's name
+/// The end a connector's `from` or `to` names, and the thing it names. It is two numbers, a shape's name, or a row's name
 /// and a cell's index. A side after a name puts the end at the middle
 /// of that side, facing out of it.
 fn end(
@@ -1636,7 +1655,7 @@ fn end(
     names: &Names,
     offset: Point,
     shift: usize,
-) -> Result<(End, Option<Span>), Error> {
+) -> Result<(End, Option<Target>), Error> {
     if let [first, ..] = p.values.as_slice()
         && let ValueKind::Number(_) = first.kind
     {
@@ -1644,8 +1663,11 @@ fn end(
             .numbers::<2>()
             .map(|[x, y]| (End::Point(offset + Point::new(x, y)), None));
     }
-    let (thing, rest) = target(p, &p.values, names, shift)?;
-    let source = names.source_of(&p.values[0]);
+    let (thing, cell, rest) = target(p, &p.values, names, shift)?;
+    let source = Target {
+        source: names.source_of(&p.values[0]),
+        cell,
+    };
     let end = match rest {
         [] => End::Box(thing),
         [v] => match &v.kind {
@@ -1675,8 +1697,8 @@ fn end(
 
 /// The left, top, right and bottom of what `over` names: a shape, a
 /// whole row, or a row's cells from one index to another, and the
-/// source of the thing.
-fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Span), Error> {
+/// thing, which is one cell only when `over` names one.
+fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Target), Error> {
     let corners = |s: &Shape| {
         [
             s.origin.x,
@@ -1685,32 +1707,38 @@ fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Span), Error> {
             s.origin.y + s.size.y,
         ]
     };
-    let (first, rest) = target(p, &p.values, names, 0)?;
+    let (first, mut cell, rest) = target(p, &p.values, names, 0)?;
     let [left, top, mut right, mut bottom] = corners(&first);
     match rest {
         [] => {}
         [last] => {
+            cell = None;
             let mut to = p.values[..1].to_vec();
             to.push(last.clone());
-            let (last, _) = target(p, &to, names, 0)?;
+            let (last, _, _) = target(p, &to, names, 0)?;
             let c = corners(&last);
             right = c[2];
             bottom = c[3];
         }
         [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
     }
-    Ok(([left, top, right, bottom], names.source_of(&p.values[0])))
+    let target = Target {
+        source: names.source_of(&p.values[0]),
+        cell,
+    };
+    Ok(([left, top, right, bottom], target))
 }
 
-/// The box that the leading values of `values` name, as a shape, and
-/// the values after them. A name alone is a shape or a whole row. A
-/// row's name and a number is one of its cells.
+/// The box that the leading values of `values` name, as a shape, the
+/// cell it is when it is a row's, and the values after them. A name
+/// alone is a shape or a whole row. A row's name and a number is one of
+/// its cells.
 fn target<'v>(
     p: &Property,
     values: &'v [Value],
     names: &Names,
     shift: usize,
-) -> Result<(Shape, &'v [Value]), Error> {
+) -> Result<(Shape, Option<usize>, &'v [Value]), Error> {
     let Some((name, rest)) = values.split_first() else {
         return Err(p.expected("a name"));
     };
@@ -1729,7 +1757,7 @@ fn target<'v>(
         text_align: None,
     };
     if let Some(shape) = names.shapes.get(word.as_str()) {
-        return Ok((shape.clone(), rest));
+        return Ok((shape.clone(), None, rest));
     }
     if let Some(code) = names.codes.get(word.as_str()) {
         return match rest.split_first() {
@@ -1748,9 +1776,9 @@ fn target<'v>(
                     ));
                 }
                 let (origin, size) = code.line_rect(line);
-                Ok((as_box(origin, size), rest))
+                Ok((as_box(origin, size), None, rest))
             }
-            _ => Ok((as_box(code.origin, code.extent()), rest)),
+            _ => Ok((as_box(code.origin, code.extent()), None, rest)),
         };
     }
     let Some(row) = names.rows.get(word.as_str()) else {
@@ -1775,12 +1803,12 @@ fn target<'v>(
                 ));
             }
             let (origin, size) = row.cell_rect(index);
-            Ok((as_box(origin, size), rest))
+            Ok((as_box(origin, size), Some(index), rest))
         }
         _ => {
             let units: usize = row.cells.iter().map(|c| c.span).sum();
             let size = Point::new(units as f64 * row.unit.x, row.unit.y);
-            Ok((as_box(row.origin, size), rest))
+            Ok((as_box(row.origin, size), None, rest))
         }
     }
 }

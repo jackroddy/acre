@@ -85,6 +85,51 @@ pub struct Object {
     /// The node in the source that made the object, or an empty span
     /// for an object made in code.
     pub source: Span,
+    /// The animated groups the object sits in, innermost first.
+    pub groups: Vec<Animation>,
+    /// The cells of a row that move, scale or fade on their own, by
+    /// index.
+    pub cells: Vec<(usize, Animation)>,
+}
+
+/// How a group around objects, or one cell of a row, moves, scales and
+/// fades over time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Animation {
+    pub opacity: Track<f64>,
+    pub scale: Track<f64>,
+    /// The point it scales about.
+    pub pivot: Point,
+    pub offset: Track<Point>,
+}
+
+impl Animation {
+    /// An animation that changes nothing, scaling about `pivot`.
+    pub fn new(pivot: Point) -> Self {
+        Animation {
+            opacity: Track::Constant(1.0),
+            scale: Track::Constant(1.0),
+            pivot,
+            offset: Track::Constant(Point::ZERO),
+        }
+    }
+
+    pub fn motion(&self, t: f64) -> Motion {
+        Motion {
+            pivot: self.pivot,
+            scale: self.scale.at(t),
+            offset: self.offset.at(t),
+        }
+    }
+}
+
+/// A thing in the scene another follows: the object made by a node, or
+/// one cell of a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Target {
+    /// The node that made the object.
+    pub source: Span,
+    pub cell: Option<usize>,
 }
 
 /// What an object is.
@@ -146,6 +191,8 @@ impl Object {
             paints: Vec::new(),
             lifetime: None,
             source: Span::default(),
+            groups: Vec::new(),
+            cells: Vec::new(),
         }
     }
 
@@ -154,13 +201,31 @@ impl Object {
         Object { source, ..self }
     }
 
-    /// How the object is moved and scaled at time `t`.
+    /// How the object is moved and scaled at time `t`, by its own
+    /// tracks and by the groups it sits in.
     pub fn motion(&self, t: f64) -> Motion {
+        self.own_motion(t).then(self.group_motion(t))
+    }
+
+    fn own_motion(&self, t: f64) -> Motion {
         Motion {
             pivot: self.pivot,
             scale: self.scale.at(t),
             offset: self.offset.at(t),
         }
+    }
+
+    fn group_motion(&self, t: f64) -> Motion {
+        self.groups
+            .iter()
+            .fold(Motion::NONE, |m, g| m.then(g.motion(t)))
+    }
+
+    /// How opaque the object is at time `t`, its groups included.
+    pub fn opacity_at(&self, t: f64) -> f64 {
+        self.groups
+            .iter()
+            .fold(self.opacity.at(t), |o, g| o * g.opacity.at(t))
     }
 }
 
@@ -282,73 +347,130 @@ impl From<Plot> for Kind {
 }
 
 impl Scene {
-    /// Everything to draw at time `t`, in paint order.
+    /// Everything to draw at time `t`, in paint order. A row cell moved
+    /// or scaled at `t` is drawn after the last row, above every cell
+    /// that is not.
     pub fn draw(&self, t: f64) -> Vec<Primitive> {
         let mut out = Vec::new();
-        for object in &self.objects {
-            self.draw_object(object, t, &mut out);
+        let mut lifted = Vec::new();
+        let last_row = self
+            .objects
+            .iter()
+            .rposition(|o| matches!(o.kind, Kind::Row(_)));
+        for (i, object) in self.objects.iter().enumerate() {
+            self.draw_parts(object, t, &mut out, &mut lifted);
+            if Some(i) == last_row {
+                out.append(&mut lifted);
+            }
         }
         out
     }
 
     /// Append `object` at time `t` to `out`.
     fn draw_object(&self, object: &Object, t: f64, out: &mut Vec<Primitive>) {
+        let mut lifted = Vec::new();
+        self.draw_parts(object, t, out, &mut lifted);
+        out.append(&mut lifted);
+    }
+
+    /// Append `object` at time `t` to `out`, but its row cells that are
+    /// moved or scaled at `t` to `lifted`.
+    fn draw_parts(
+        &self,
+        object: &Object,
+        t: f64,
+        out: &mut Vec<Primitive>,
+        lifted: &mut Vec<Primitive>,
+    ) {
         if object.lifetime.is_some_and(|l| !l.contains(t)) {
             return;
         }
-        let opacity = object.opacity.at(t);
+        let opacity = object.opacity_at(t);
         if opacity <= 0.0 {
             return;
         }
         let start = out.len();
+        let lifted_start = lifted.len();
         let mut kind = Cow::Borrowed(&object.kind);
         for paint in object.paints.iter().filter(|p| t >= p.start) {
             kind.to_mut()
                 .repaint(paint.part, paint.cell, paint.color.at(t));
         }
-        match &*kind {
+        // a thing that follows another takes that thing's motion in
+        // place of its own groups', which that motion already holds
+        let motion = match &*kind {
             Kind::Connector(c) if c.follow.iter().any(Option::is_some) => {
+                let groups = object.group_motion(t);
                 let motions = c.follow.each_ref().map(|f| match f {
                     Some(f) => self.motion_of(f.target, t),
-                    None => Motion::NONE,
+                    None => groups,
                 });
                 if motions.iter().all(Motion::is_none) {
                     c.draw(out);
                 } else {
                     c.followed(motions).draw(out);
                 }
+                object.own_motion(t)
             }
-            Kind::Brace(b) if b.follow.is_some_and(|f| !self.motion_of(f, t).is_none()) => {
-                let motion = self.motion_of(b.follow.unwrap(), t);
-                let moved = Brace {
-                    from: motion.apply(b.from),
-                    to: motion.apply(b.to),
-                    ..b.clone()
-                };
-                moved.draw(out);
+            Kind::Brace(
+                b @ Brace {
+                    follow: Some(target),
+                    ..
+                },
+            ) => {
+                let motion = self.motion_of(*target, t);
+                if motion.is_none() {
+                    b.draw(out);
+                } else {
+                    let moved = Brace {
+                        from: motion.apply(b.from),
+                        to: motion.apply(b.to),
+                        ..b.clone()
+                    };
+                    moved.draw(out);
+                }
+                object.own_motion(t)
             }
-            kind => kind.draw(t, out),
-        }
-        let motion = object.motion(t);
-        if !motion.is_none() {
-            for prim in &mut out[start..] {
-                prim.transform(motion);
+            Kind::Row(row) => {
+                if object.cells.is_empty() {
+                    row.draw(out);
+                } else {
+                    draw_cells(row, &object.cells, t, out, lifted);
+                }
+                match row.follow {
+                    Some(f) => object.own_motion(t).then(self.motion_of(f, t)),
+                    None => object.motion(t),
+                }
             }
-        }
-        if opacity < 1.0 {
-            for prim in &mut out[start..] {
-                prim.fade(opacity);
+            kind => {
+                kind.draw(t, out);
+                object.motion(t)
+            }
+        };
+        for prims in [&mut out[start..], &mut lifted[lifted_start..]] {
+            if !motion.is_none() {
+                for prim in prims.iter_mut() {
+                    prim.transform(motion);
+                }
+            }
+            if opacity < 1.0 {
+                for prim in prims.iter_mut() {
+                    prim.fade(opacity);
+                }
             }
         }
     }
 
-    /// How the object made by the node at `source` is moved and scaled
-    /// at time `t`.
-    fn motion_of(&self, source: Span, t: f64) -> Motion {
-        self.objects
-            .iter()
-            .find(|o| o.source == source)
-            .map_or(Motion::NONE, |o| o.motion(t))
+    /// How `target` is moved and scaled at time `t`.
+    fn motion_of(&self, target: Target, t: f64) -> Motion {
+        let Some(object) = self.objects.iter().find(|o| o.source == target.source) else {
+            return Motion::NONE;
+        };
+        let cell = target
+            .cell
+            .and_then(|i| object.cells.iter().find(|(c, _)| *c == i))
+            .map_or(Motion::NONE, |(_, a)| a.motion(t));
+        cell.then(object.motion(t))
     }
 
     /// The box around what object `index` draws at time `t`, as its
@@ -377,6 +499,44 @@ impl Scene {
             }
         }
         best.map(|(index, _)| index)
+    }
+}
+
+/// Append the cells of `row` to `out` at time `t`, each moved, scaled
+/// and faded by its entry in `cells`, and those moved or scaled at `t`
+/// to `lifted` instead.
+fn draw_cells(
+    row: &Row,
+    cells: &[(usize, Animation)],
+    t: f64,
+    out: &mut Vec<Primitive>,
+    lifted: &mut Vec<Primitive>,
+) {
+    for i in 0..row.cells.len() {
+        let Some((_, animation)) = cells.iter().find(|(c, _)| *c == i) else {
+            row.draw_cell(i, out);
+            continue;
+        };
+        let opacity = animation.opacity.at(t);
+        if opacity <= 0.0 {
+            continue;
+        }
+        let motion = animation.motion(t);
+        let dest = if motion.is_none() {
+            &mut *out
+        } else {
+            &mut *lifted
+        };
+        let start = dest.len();
+        row.draw_cell(i, dest);
+        for prim in &mut dest[start..] {
+            if !motion.is_none() {
+                prim.transform(motion);
+            }
+            if opacity < 1.0 {
+                prim.fade(opacity);
+            }
+        }
     }
 }
 
@@ -461,7 +621,7 @@ mod tests {
             follow: [
                 None,
                 Some(Box::new(Follow {
-                    target: source,
+                    target: Target { source, cell: None },
                     end: End::Side {
                         at: Point::new(100.0, 20.0),
                         out: Point::new(1.0, 0.0),

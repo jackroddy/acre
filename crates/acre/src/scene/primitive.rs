@@ -93,6 +93,23 @@ impl Motion {
     pub fn apply(&self, p: Point) -> Point {
         self.pivot + (p - self.pivot) * self.scale + self.offset
     }
+
+    /// The motion that applies `self` and then `outer`.
+    pub fn then(self, outer: Motion) -> Motion {
+        if outer.is_none() {
+            return self;
+        }
+        if self.is_none() {
+            return outer;
+        }
+        // both are p -> s * p + d, so the pair is one with the product
+        // of the scales and the d that takes the origin where both do
+        Motion {
+            pivot: Point::ZERO,
+            scale: self.scale * outer.scale,
+            offset: outer.apply(self.apply(Point::ZERO)),
+        }
+    }
 }
 
 /// How a line or an outline is drawn.

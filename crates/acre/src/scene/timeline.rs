@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use super::primitive::{self, Color, Point};
 use super::track::{Easing, Keyframe, Lerp, Track};
-use super::{Kind, Object, Paint, Part};
+use super::{Animation, Kind, Object, Paint, Part};
 use crate::fonts::Fonts;
 use crate::lang::{Error, Node, Property, Span, Value, ValueKind};
 
@@ -46,19 +46,22 @@ enum Channel {
     Scale,
     Move,
     Opacity,
-    Color(Part, Option<usize>),
+    Color(Part),
 }
 
 impl Change {
-    fn channel(self, cell: Option<usize>) -> Channel {
+    fn channel(self) -> Channel {
         match self {
             Change::Scale(_) => Channel::Scale,
             Change::Move(_) => Channel::Move,
             Change::Opacity(_) => Channel::Opacity,
-            Change::Color(part, _) => Channel::Color(part, cell),
+            Change::Color(part, _) => Channel::Color(part),
         }
     }
 }
+
+/// The node kinds a timeline changes as one, with everything inside.
+const GROUPS: [&str; 4] = ["group", "panel", "stack", "grid"];
 
 struct Action {
     start: f64,
@@ -72,8 +75,9 @@ struct Action {
     span: Span,
 }
 
-/// The actions on one thing of the node a name names.
-type Run<'a> = ((&'a str, Channel), Vec<Action>);
+/// The actions on one thing of the node a name names, or of one cell
+/// of it when it is a row.
+type Run<'a> = ((&'a str, Option<usize>, Channel), Vec<Action>);
 
 /// Apply the canvas's `timeline` to `objects`, and return the time of
 /// its last change, or 0 without one.
@@ -98,17 +102,32 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
     }
 
     let (runs, last) = runs(timeline, &nodes)?;
-    for ((name, channel), actions) in runs {
+    let mut groups: Vec<Group> = Vec::new();
+    for ((name, cell, channel), actions) in runs {
         let node = nodes[name].expect("`target` lets through only names one node has");
+        if GROUPS.contains(&node.kind.text.as_str()) {
+            let k = match groups.iter().position(|g| g.node.span == node.span) {
+                Some(k) => k,
+                None => {
+                    groups.push(Group::new(node, objects, fonts)?);
+                    groups.len() - 1
+                }
+            };
+            set(&mut groups[k].animation, channel, &actions);
+            continue;
+        }
         let indices: Vec<usize> = (0..objects.len())
             .filter(|&i| objects[i].source == node.span)
             .collect();
+        if let (Some(cell), Channel::Scale | Channel::Move | Channel::Opacity) = (cell, channel) {
+            for &i in &indices {
+                animate_cell(&mut objects[i], name, cell, channel, &actions)?;
+            }
+            continue;
+        }
         match channel {
             Channel::Scale => {
-                let track = track(1.0, &actions, |c| match c {
-                    Change::Scale(s) => s,
-                    _ => unreachable!("a scale run holds scales"),
-                });
+                let track = scales(&actions);
                 let pivot = pivot(node, objects, &indices, fonts)?;
                 for &i in &indices {
                     objects[i].scale = track.clone();
@@ -116,25 +135,18 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
                 }
             }
             Channel::Move => {
-                let track = track(Point::ZERO, &actions, |c| match c {
-                    Change::Move(p) => p,
-                    _ => unreachable!("a move run holds moves"),
-                });
+                let track = moves(&actions);
                 for &i in &indices {
                     objects[i].offset = track.clone();
                 }
             }
             Channel::Opacity => {
-                let base = if actions[0].reveals { 0.0 } else { 1.0 };
-                let track = track(base, &actions, |c| match c {
-                    Change::Opacity(o) => o,
-                    _ => unreachable!("an opacity run holds opacities"),
-                });
+                let track = opacities(&actions);
                 for &i in &indices {
                     objects[i].opacity = track.clone();
                 }
             }
-            Channel::Color(part, cell) => {
+            Channel::Color(part) => {
                 for &i in &indices {
                     let paint = paint(&objects[i].kind, name, part, cell, &actions)?;
                     objects[i].paints.push(paint);
@@ -142,7 +154,119 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
             }
         }
     }
+
+    // a group nested in another spans less of the source, so sorting by
+    // length puts the inner one first
+    groups.sort_by_key(|g| g.node.span.end - g.node.span.start);
+    for group in groups {
+        for o in objects
+            .iter_mut()
+            .filter(|o| group.inside.contains(&o.source))
+        {
+            o.groups.push(group.animation.clone());
+        }
+    }
     Ok(last)
+}
+
+/// A group, panel, stack or grid that a timeline changes.
+struct Group<'a> {
+    node: &'a Node,
+    /// The source of the node and of every node inside it.
+    inside: Vec<Span>,
+    animation: Animation,
+}
+
+impl<'a> Group<'a> {
+    /// The group `node`, which scales about its `anchor` on the box
+    /// around what `objects` inside it draw.
+    fn new(node: &'a Node, objects: &[Object], fonts: &Fonts) -> Result<Self, Error> {
+        let mut inside = Vec::new();
+        sources(node, &mut inside);
+        let indices: Vec<usize> = (0..objects.len())
+            .filter(|&i| inside.contains(&objects[i].source))
+            .collect();
+        let pivot = pivot(node, objects, &indices, fonts)?;
+        Ok(Group {
+            node,
+            inside,
+            animation: Animation::new(pivot),
+        })
+    }
+}
+
+/// Set the track that `channel` names of cell `cell` of `row`, the row
+/// that `name` names, to the one `actions` make. The cell scales about
+/// its center.
+fn animate_cell(
+    row: &mut Object,
+    name: &str,
+    cell: usize,
+    channel: Channel,
+    actions: &[Action],
+) -> Result<(), Error> {
+    let Kind::Row(r) = &row.kind else {
+        unreachable!("`target` reads a cell only of a row")
+    };
+    if cell >= r.cells.len() {
+        return Err(Error::new(
+            actions[0].span,
+            format!("row `{name}` has cells 0 to {}", r.cells.len() - 1),
+        ));
+    }
+    let (origin, size) = r.cell_rect(cell);
+    let k = match row.cells.iter().position(|(c, _)| *c == cell) {
+        Some(k) => k,
+        None => {
+            row.cells.push((cell, Animation::new(origin + size * 0.5)));
+            row.cells.len() - 1
+        }
+    };
+    set(&mut row.cells[k].1, channel, actions);
+    Ok(())
+}
+
+/// Set the track of `animation` that `channel` names to the one
+/// `actions` make.
+fn set(animation: &mut Animation, channel: Channel, actions: &[Action]) {
+    match channel {
+        Channel::Scale => animation.scale = scales(actions),
+        Channel::Move => animation.offset = moves(actions),
+        Channel::Opacity => animation.opacity = opacities(actions),
+        Channel::Color(_) => {
+            unreachable!("a color run makes a paint, and `runs` rejects one on a group")
+        }
+    }
+}
+
+fn scales(actions: &[Action]) -> Track<f64> {
+    track(1.0, actions, |c| match c {
+        Change::Scale(s) => s,
+        _ => unreachable!("a scale run holds scales"),
+    })
+}
+
+fn moves(actions: &[Action]) -> Track<Point> {
+    track(Point::ZERO, actions, |c| match c {
+        Change::Move(p) => p,
+        _ => unreachable!("a move run holds moves"),
+    })
+}
+
+fn opacities(actions: &[Action]) -> Track<f64> {
+    let base = if actions[0].reveals { 0.0 } else { 1.0 };
+    track(base, actions, |c| match c {
+        Change::Opacity(o) => o,
+        _ => unreachable!("an opacity run holds opacities"),
+    })
+}
+
+/// The source of `node` and of every node inside it.
+fn sources(node: &Node, out: &mut Vec<Span>) {
+    out.push(node.span);
+    for child in &node.children {
+        sources(child, out);
+    }
 }
 
 /// The actions of `timeline` on each thing of each node, in the order
@@ -161,6 +285,16 @@ fn runs<'a>(
         for p in &entry.properties {
             let (name, cell, rest) = target(p, nodes)?;
             let change = change(p, rest)?;
+            let node = nodes[name].expect("`target` lets through only names one node has");
+            if GROUPS.contains(&node.kind.text.as_str()) && matches!(change, Change::Color(..)) {
+                return Err(Error::new(
+                    p.span,
+                    format!(
+                        "`{name}` is a {}, which has no color of its own; change the nodes inside it",
+                        node.kind.text
+                    ),
+                ));
+            }
             if !instant && matches!(p.key.text.as_str(), "show" | "hide") {
                 return Err(Error::new(
                     p.key.span,
@@ -182,22 +316,26 @@ fn runs<'a>(
                 },
                 span: p.span,
             };
-            let key = (name, change.channel(cell));
+            let key = (name, cell, change.channel());
             match runs.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, run)) => run.push(action),
                 None => runs.push((key, vec![action])),
             }
         }
     }
-    for ((name, _), actions) in &mut runs {
+    for ((name, cell, _), actions) in &mut runs {
         actions.sort_by(|a, b| a.start.total_cmp(&b.start).then(a.end.total_cmp(&b.end)));
         for pair in actions.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             if b.start < a.end || (a.start == b.start && a.end == b.end) {
+                let what = match cell {
+                    Some(c) => format!("{name} {c}"),
+                    None => name.to_string(),
+                };
                 return Err(Error::new(
                     b.span,
                     format!(
-                        "this changes `{name}` while another action from {}s to {}s does",
+                        "this changes `{what}` while another action from {}s to {}s does",
                         a.start, a.end
                     ),
                 ));
@@ -352,37 +490,33 @@ fn target<'p>(
         }
         None => return Err(Error::new(first.span, format!("no node is named `{name}`"))),
     };
-    if matches!(
-        node.kind.text.as_str(),
-        "group" | "panel" | "stack" | "grid"
-    ) {
-        return Err(Error::new(
-            first.span,
-            format!(
-                "`{name}` is a {}; a timeline changes the nodes inside it",
-                node.kind.text
-            ),
-        ));
-    }
+    // a row's name with one value more than the action takes names a
+    // cell, so `move r 3 0 40` moves cell 3 and `move r 0 40` the row
     match rest.split_first() {
         Some((
             Value {
                 kind: ValueKind::Number(n),
                 span,
             },
-            rest,
-        )) if node.kind.text == "row" && is_color_action(p) => {
+            after,
+        )) if node.kind.text == "row" && Some(rest.len()) == arity(p).map(|a| a + 1) => {
             if n.fract() != 0.0 || *n < 0.0 {
                 return Err(Error::new(*span, "a cell's index is a whole number from 0"));
             }
-            Ok((name, Some(*n as usize), rest))
+            Ok((name, Some(*n as usize), after))
         }
         _ => Ok((name, None, rest)),
     }
 }
 
-fn is_color_action(p: &Property) -> bool {
-    matches!(p.key.text.as_str(), "fill" | "stroke" | "text-color")
+/// How many values action `p` takes after its target.
+fn arity(p: &Property) -> Option<usize> {
+    match p.key.text.as_str() {
+        "show" | "hide" => Some(0),
+        "scale" | "fade" | "fill" | "stroke" | "text-color" => Some(1),
+        "move" => Some(2),
+        _ => None,
+    }
 }
 
 /// What action `p` changes, from the values after its target.
@@ -552,6 +686,23 @@ mod tests {
         })
     }
 
+    fn canvas(body: &str) -> Scene {
+        let src = format!("canvas {{ size 600 400; {body} }}");
+        build(&parse(&src).unwrap(), &[]).unwrap()
+    }
+
+    fn origins(s: &Scene, i: usize, t: f64) -> Vec<Point> {
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[i], t, &mut prims);
+        prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Rect { origin, .. } => Some(*origin),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn object(s: &Scene, i: usize) -> &Object {
         &s.objects[i]
     }
@@ -718,6 +869,164 @@ mod tests {
     }
 
     #[test]
+    fn a_fading_panel_fades_what_it_holds_and_a_fade_inside_it_multiplies() {
+        let s = canvas(
+            "panel p { at 0 0; stroke #000000; box a { at 0 0; size 40 20; fill #ffffff; } }
+             timeline { 0s to 1s ease linear { fade p 0.5; fade a 0.5; } }",
+        );
+        let [frame, a] = [&s.objects[0], &s.objects[1]];
+        assert_eq!(frame.opacity_at(1.0), 0.5);
+        assert_eq!(a.opacity_at(1.0), 0.25);
+        let mut prims = Vec::new();
+        s.draw_object(a, 1.0, &mut prims);
+        let Primitive::Rect { fill, .. } = prims[0] else {
+            panic!("expected a rect")
+        };
+        assert_eq!(fill.unwrap().a, 0.25);
+    }
+
+    #[test]
+    fn a_moving_group_carries_its_children_and_the_connectors_on_them() {
+        let s = canvas(
+            "group g { at 100 0; box a { at 0 0; size 40 20; } arrow link { from a right; to 300 10; } }
+             box b { at 0 100; size 40 20; }
+             line tie { from b top; to a bottom; }
+             timeline { 0s to 1s { move g 0 50; } }",
+        );
+        assert_eq!(rect(&s, 0, 1.0).0, Point::new(100.0, 50.0));
+        // the arrow sits in the group and its start follows `a`, so it
+        // moves once, with `a`, and its free end moves with the group
+        let (from, to) = line(&s, 1, 1.0);
+        assert_eq!(from, Point::new(140.0, 60.0));
+        assert_eq!(to.y, 60.0);
+        assert_eq!(
+            line(&s, 3, 1.0),
+            (Point::new(20.0, 100.0), Point::new(120.0, 70.0))
+        );
+    }
+
+    #[test]
+    fn a_group_scales_as_one_about_its_center_or_its_anchor() {
+        let boxes = "box a { at 0 0; size 40 40; stroke none; } box c { at 60 0; size 40 40; stroke none; }";
+        let s = canvas(&format!(
+            "group g {{ {boxes} }} timeline {{ 0s to 1s {{ scale g 2; }} }}"
+        ));
+        assert_eq!(
+            [rect(&s, 0, 1.0), rect(&s, 1, 1.0)].map(|r| (r.0, r.1)),
+            [
+                (Point::new(-50.0, -20.0), Point::new(80.0, 80.0)),
+                (Point::new(70.0, -20.0), Point::new(80.0, 80.0)),
+            ]
+        );
+        let s = canvas(&format!(
+            "group g {{ anchor top-left; {boxes} }} timeline {{ 0s to 1s {{ scale g 2; }} }}"
+        ));
+        assert_eq!(rect(&s, 1, 1.0).0, Point::new(120.0, 0.0));
+    }
+
+    #[test]
+    fn a_move_inside_a_moving_group_adds_to_it() {
+        let s = canvas(
+            "panel p { at 0 0; box a { at 0 0; size 40 20; } }
+             group outer { group inner { box b { at 0 100; size 40 20; } } }
+             timeline { 0s to 1s ease linear { move p 100 0; move a 0 50; move outer 10 0; move inner 0 10; } }",
+        );
+        assert_eq!(rect(&s, 0, 0.5).0, Point::new(50.0, 25.0));
+        assert_eq!(rect(&s, 0, 1.0).0, Point::new(100.0, 50.0));
+        assert_eq!(rect(&s, 1, 1.0).0, Point::new(10.0, 110.0));
+    }
+
+    #[test]
+    fn a_moved_cell_takes_its_text_and_the_connector_on_it() {
+        let s = canvas(
+            "row r { at 0 200; unit 20 20; cells \"x\" \"y\" \"z\"; }
+             line l { from 0 0; to r 1 top; }
+             timeline { 0s to 1s ease linear { move r 1 0 -100; } }",
+        );
+        assert_eq!(line(&s, 1, 1.0).1, Point::new(30.0, 100.0));
+        assert_eq!(line(&s, 1, 0.5).1, Point::new(30.0, 150.0));
+        // cells 0 and 2 stay; cell 1, moved, comes last
+        assert_eq!(
+            origins(&s, 0, 1.0),
+            [
+                Point::new(0.0, 200.0),
+                Point::new(40.0, 200.0),
+                Point::new(20.0, 100.0)
+            ]
+        );
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[0], 1.0, &mut prims);
+        let Some(Primitive::Text { origin, .. }) = prims.last() else {
+            panic!("expected the moved cell's text last")
+        };
+        assert_eq!(origin.x, 30.0);
+        assert!(origin.y < 120.0);
+    }
+
+    #[test]
+    fn a_moved_cell_draws_above_every_row_and_a_still_one_in_its_place() {
+        let s = canvas(
+            "row r { at 0 0; unit 20 20; cells \"a\" \"b\" \"c\"; }
+             row q { at 0 40; unit 20 20; cells \"d\" \"e\"; }
+             text t { at 0 100; text \"over\"; }
+             timeline { 0s to 1s { move r 0 0 40; } }",
+        );
+        let rects = |t: f64| -> Vec<Point> {
+            s.draw(t)
+                .iter()
+                .filter_map(|p| match p {
+                    Primitive::Rect { origin, .. } => Some(*origin),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(rects(0.0)[0], Point::new(0.0, 0.0));
+        let moved = rects(1.0);
+        assert_eq!(moved.last(), Some(&Point::new(0.0, 40.0)));
+        assert_eq!(moved[0], Point::new(20.0, 0.0));
+        // the text after the rows still goes on top
+        assert!(matches!(s.draw(1.0).last(), Some(Primitive::Text { .. })));
+    }
+
+    #[test]
+    fn a_cell_scales_about_its_center_and_fades_on_its_own() {
+        let s = canvas(
+            "row r { at 0 0; unit 20 20; cells \"a\" \"b\"; }
+             timeline { 0s to 1s ease linear { scale r 1 2; fade r 0 out; } 1s { hide r 1; } }",
+        );
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[0], 0.99, &mut prims);
+        assert_eq!(prims.len(), 4);
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[0], 0.5, &mut prims);
+        let Primitive::Rect { fill, .. } = prims[0] else {
+            panic!("expected cell 0")
+        };
+        assert_eq!(fill.unwrap().a, 0.5);
+        let Primitive::Rect { origin, size, .. } = prims[2] else {
+            panic!("expected cell 1")
+        };
+        assert_eq!(
+            (origin, size),
+            (Point::new(15.0, -5.0), Point::new(30.0, 30.0))
+        );
+        assert!(s.draw(1.0).is_empty());
+    }
+
+    #[test]
+    fn a_brace_and_a_veil_row_on_a_cell_follow_it() {
+        let s = canvas(
+            "row r { at 0 0; unit 20 20; cells \"a\" \"b\"; }
+             row v { at r 1 0 0; unit 20 20; cells \".\"; }
+             brace br { over r 1; side top; }
+             timeline { 0s to 1s ease linear { move r 1 0 100; } }",
+        );
+        assert_eq!(origins(&s, 1, 1.0), [Point::new(20.0, 100.0)]);
+        let (before, after) = (s.bounds(2, 0.0).unwrap(), s.bounds(2, 1.0).unwrap());
+        assert_eq!(after.0 - before.0, Point::new(0.0, 100.0));
+    }
+
+    #[test]
     fn mistakes_in_a_timeline_point_at_the_offending_text() {
         assert_eq!(
             scene("timeline {\n 1s { scale nobody 2; } }").unwrap_err(),
@@ -758,6 +1067,18 @@ mod tests {
         assert_eq!(
             err("group { timeline { } }"),
             "a `timeline` goes in the canvas"
+        );
+        assert_eq!(
+            err("group g { box x { at 0 0; size 9 9; } } timeline { 0s { fill g #ff0000; } }"),
+            "`g` is a group, which has no color of its own; change the nodes inside it"
+        );
+        assert_eq!(
+            err("timeline { 0s to 1s { move r 3 0 10; } }"),
+            "row `r` has cells 0 to 2"
+        );
+        assert_eq!(
+            err("timeline { 0s to 1s { move r 1 0 10; } 0.5s to 2s { move r 1 0 0; } }"),
+            "this changes `r 1` while another action from 0s to 1s does"
         );
     }
 }

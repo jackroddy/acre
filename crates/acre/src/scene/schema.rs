@@ -419,11 +419,10 @@ pub const NODES: &[NodeKind] = &[
     NodeKind {
         name: "group",
         about: "nodes moved together by `at`",
-        properties: &[prop(
-            "at",
-            "X Y | NAME [DX DY]",
-            "where the group's origin sits",
-        )],
+        properties: &[
+            prop("at", "X Y | NAME [DX DY]", "where the group's origin sits"),
+            ANCHOR,
+        ],
         children: DRAWN,
     },
     NodeKind {
@@ -462,6 +461,7 @@ pub const NODES: &[NodeKind] = &[
             prop("width", "N", "the least width of the frame"),
             prop("height", "N", "the least height of the frame"),
             RADIUS,
+            ANCHOR,
             STYLE,
         ],
         children: DRAWN,
@@ -482,6 +482,7 @@ pub const NODES: &[NodeKind] = &[
                 "start | center | end",
                 "where a narrower child sits across the stack",
             ),
+            ANCHOR,
             STYLE,
         ],
         children: DRAWN,
@@ -502,6 +503,7 @@ pub const NODES: &[NodeKind] = &[
                 "start | center | end",
                 "where a smaller child sits in its cell",
             ),
+            ANCHOR,
             STYLE,
         ],
         children: DRAWN,
@@ -594,37 +596,40 @@ pub const NODES: &[NodeKind] = &[
         about: "what happens to named nodes, and when; it holds entries, each an instant `Ts { ACTION...; }` \
                 or a span `Ts to Ts [ease linear | in | out | in-out] { ACTION...; }`; a span eases in-out \
                 unless it names another, and an action at an instant takes effect at once; an action changes a \
-                thing from where it stands to its value, and two actions may not change one thing at once",
+                thing from where it stands to its value, and two actions may not change one thing at once; \
+                a NAME may be a group, panel, stack or grid, which moves, scales and fades as one with \
+                everything inside it, and `ROW N` is one cell of a row, which moves, scales and fades on its \
+                own and draws above the cells that do not move",
         properties: &[
             prop(
                 "scale",
-                "NAME F",
+                "NAME F | ROW N F",
                 "draw the node F times the size layout gave it, strokes and text included, about its `anchor`; neighbours stay put",
             ),
             prop(
                 "move",
-                "NAME DX DY",
+                "NAME DX DY | ROW N DX DY",
                 "draw the node DX across and DY down from where layout put it; `move NAME 0 0` takes it back",
             ),
             prop(
                 "fade",
-                "NAME in | out | F",
+                "NAME in | out | F | ROW N in | out | F",
                 "fade the node to fully drawn, to gone, or to opacity F from 0 to 1; a node whose first change of opacity is `fade NAME in` starts hidden",
             ),
             prop(
                 "show",
-                "NAME",
+                "NAME | ROW N",
                 "draw the node from this instant, and only at an instant; a node whose first change of opacity is `show` starts hidden",
             ),
             prop(
                 "hide",
-                "NAME",
+                "NAME | ROW N",
                 "stop drawing the node from this instant, and only at an instant",
             ),
             prop(
                 "fill",
                 "NAME COLOR | ROW N COLOR",
-                "change the fill of a box, an ellipse, a marker, a code block or a row's cell N",
+                "change the fill of a box, an ellipse, a marker, a code block or a row's cell N; not of a group, panel, stack or grid",
             ),
             prop(
                 "stroke",
