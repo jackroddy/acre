@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Text is shaped with rustybuzz, so kerning and other font rules apply. The new
+  `text` module lays out and measures text for both `scene` and `render`.
+  `Label::size` gives a label's measured size, and `Scene::bounds` measures
+  text instead of estimating it.
 - `lang::highlight` splits strings at their markup, marks the words a `let`
   defines as `Highlight::Name`, and gives each color, and each `let` name that
   stands for one, as `Highlight::Color` with its value.

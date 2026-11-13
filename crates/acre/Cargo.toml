@@ -9,5 +9,6 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+rustybuzz = "0.20.1"
 tiny-skia = "0.12"
 ttf-parser = "0.25"

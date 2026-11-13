@@ -308,6 +308,14 @@ impl Label {
         }
     }
 
+    /// The width and height the text takes when set, from the first
+    /// line's ascent to the last line's descent.
+    pub fn size(&self) -> Point {
+        let layout = crate::text::layout(&self.runs, self.size);
+        let (min, max) = layout.extent(Point::ZERO, HAlign::Left, VAlign::Top);
+        max - min
+    }
+
     /// The text of every run, in order.
     pub fn text(&self) -> String {
         self.runs.iter().map(|r| r.text.as_str()).collect()

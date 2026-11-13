@@ -166,8 +166,8 @@ pub enum Primitive {
 }
 
 /// The box around `prims`, as its top-left and bottom-right corners, or
-/// `None` when they cover nothing. Text is measured roughly, at 0.6 of
-/// its size to a character, since the scene holds no font.
+/// `None` when they cover nothing. Text covers its advances, from its
+/// font's ascent to its descent.
 pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
     let mut min = Point::new(f64::INFINITY, f64::INFINITY);
     let mut max = Point::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -206,23 +206,10 @@ pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
                 h_align,
                 v_align,
             } => {
-                let text: String = runs.iter().map(|r| r.text.as_str()).collect();
-                let lines: Vec<&str> = text.split('\n').collect();
-                let longest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-                let width = longest as f64 * size * 0.6;
-                let height = lines.len() as f64 * size * 1.3;
-                let left = match h_align {
-                    HAlign::Left => origin.x,
-                    HAlign::Center => origin.x - width / 2.0,
-                    HAlign::Right => origin.x - width,
-                };
-                let top = match v_align {
-                    VAlign::Top => origin.y,
-                    VAlign::Middle => origin.y - height / 2.0,
-                    VAlign::Baseline => origin.y - size,
-                };
-                add(Point::new(left, top), 0.0);
-                add(Point::new(left + width, top + height), 0.0);
+                let (min, max) =
+                    crate::text::layout(runs, *size).extent(*origin, *h_align, *v_align);
+                add(min, 0.0);
+                add(max, 0.0);
             }
         }
     }

@@ -4,18 +4,10 @@
 //! primitives onto a pixmap. Nothing here writes a file.
 
 use tiny_skia as sk;
-use ttf_parser::{Face, GlyphId, OutlineBuilder};
+use ttf_parser::{GlyphId, OutlineBuilder};
 
-use crate::scene::{Color, Font, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
-
-static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
-static SANS: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
-static SANS_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
-static SANS_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-Italic.ttf");
-
-/// The distance from one baseline to the next, in multiples of the
-/// text size.
-const LINE_HEIGHT: f32 = 1.3;
+use crate::scene::{Color, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
+use crate::text;
 
 /// The scene at time `t`, drawn onto a pixmap of `scale` pixels to each
 /// canvas pixel.
@@ -78,8 +70,6 @@ fn draw_primitives(
     transform: sk::Transform,
     mask: Option<&sk::Mask>,
 ) {
-    let face = |data| Face::parse(data, 0).expect("the embedded font parses");
-    let fonts = [face(MONO), face(SANS), face(SANS_BOLD), face(SANS_ITALIC)];
     let paint_path = |pixmap: &mut sk::Pixmap, path: &sk::Path, fill, stroke| {
         paint_path(pixmap, path, fill, stroke, transform, mask)
     };
@@ -138,7 +128,7 @@ fn draw_primitives(
                 h_align,
                 v_align,
             } => {
-                for (path, color) in text_paths(&fonts, runs, *origin, *size, *h_align, *v_align) {
+                for (path, color) in text_paths(runs, *origin, *size, *h_align, *v_align) {
                     paint_path(pixmap, &path, Some(color), None);
                 }
             }
@@ -229,103 +219,42 @@ fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
     builder.finish()
 }
 
-/// The outline of each piece of `runs`, set in the embedded fonts and
-/// placed so `origin` sits where the alignments say, with its color.
+/// The outline of `runs` laid out by [`text::layout`] and placed so
+/// `origin` sits where the alignments say, as one path per stretch of
+/// glyphs in one color.
 fn text_paths(
-    fonts: &[Face; 4],
     runs: &[Run],
     origin: Point,
     size: f64,
     h_align: HAlign,
     v_align: VAlign,
 ) -> Vec<(sk::Path, Color)> {
-    let face = |font: Font| {
-        &fonts[match font {
-            Font::Mono => 0,
-            Font::Sans => 1,
-            Font::SansBold => 2,
-            Font::SansItalic => 3,
-        }]
-    };
-    let scale = |face: &Face| size as f32 / face.units_per_em() as f32;
-
-    // each line as pieces of one font and color
-    let mut lines: Vec<Vec<(&str, Font, Color)>> = vec![Vec::new()];
-    for run in runs {
-        for (k, piece) in run.text.split('\n').enumerate() {
-            if k > 0 {
-                lines.push(Vec::new());
+    let layout = text::layout(runs, size);
+    let starts = layout.place(origin, h_align, v_align);
+    let mut out = Vec::new();
+    let mut builder = sk::PathBuilder::new();
+    let mut color = None;
+    for (line, start) in layout.lines.iter().zip(starts) {
+        for glyph in &line.glyphs {
+            if color.is_some_and(|c| c != glyph.color)
+                && let Some(path) = std::mem::take(&mut builder).finish()
+            {
+                out.push((path, color.unwrap()));
             }
-            if !piece.is_empty() {
-                lines.last_mut().unwrap().push((piece, run.font, run.color));
-            }
+            color = Some(glyph.color);
+            let face = text::face(glyph.font);
+            let mut outline = Outline {
+                builder,
+                x: (start.x + glyph.x) as f32,
+                y: (start.y + glyph.y) as f32,
+                scale: (size / face.units_per_em() as f64) as f32,
+            };
+            face.outline_glyph(GlyphId(glyph.id), &mut outline);
+            builder = outline.builder;
         }
     }
-
-    let first = face(runs.first().map_or(Font::Mono, |r| r.font));
-    let line_height = LINE_HEIGHT * size as f32;
-    let first_baseline = origin.y as f32
-        - match v_align {
-            VAlign::Top | VAlign::Baseline => 0.0,
-            VAlign::Middle => (lines.len() - 1) as f32 * line_height / 2.0,
-        }
-        + match v_align {
-            VAlign::Top => first.ascender() as f32 * scale(first),
-
-            // half the capital height rather than half the
-            // ascender to descender span, so a digit or a
-            // capital sits in the middle of a grid cell
-            VAlign::Middle => {
-                first.capital_height().unwrap_or(first.ascender()) as f32 * scale(first) / 2.0
-            }
-            VAlign::Baseline => 0.0,
-        };
-
-    let glyphs = |face: &Face, text: &str| -> Vec<GlyphId> {
-        text.chars()
-            .map(|c| face.glyph_index(c).unwrap_or(GlyphId(0)))
-            .collect()
-    };
-    let advance =
-        |face: &Face, g: GlyphId| face.glyph_hor_advance(g).unwrap_or(0) as f32 * scale(face);
-
-    let mut out = Vec::new();
-    let mut y = first_baseline;
-    for line in &lines {
-        let width: f32 = line
-            .iter()
-            .map(|&(text, font, _)| {
-                let face = face(font);
-                glyphs(face, text)
-                    .iter()
-                    .map(|&g| advance(face, g))
-                    .sum::<f32>()
-            })
-            .sum();
-        let mut x = origin.x as f32
-            - match h_align {
-                HAlign::Left => 0.0,
-                HAlign::Center => width / 2.0,
-                HAlign::Right => width,
-            };
-        for &(text, font, color) in line {
-            let face = face(font);
-            let mut outline = Outline {
-                builder: sk::PathBuilder::new(),
-                x,
-                y,
-                scale: scale(face),
-            };
-            for g in glyphs(face, text) {
-                face.outline_glyph(g, &mut outline);
-                outline.x += advance(face, g);
-            }
-            x = outline.x;
-            if let Some(path) = outline.builder.finish() {
-                out.push((path, color));
-            }
-        }
-        y += line_height;
+    if let (Some(path), Some(color)) = (builder.finish(), color) {
+        out.push((path, color));
     }
     out
 }
@@ -377,6 +306,7 @@ impl OutlineBuilder for Outline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::Font;
 
     const RED: Color = Color::rgb(1.0, 0.0, 0.0);
 
@@ -509,6 +439,34 @@ mod tests {
         assert!(red(5, 5) && red(24, 24));
         assert_eq!(pixmap.pixel(4, 4).unwrap().alpha(), 0);
         assert_eq!(pixmap.pixel(25, 25).unwrap().alpha(), 0);
+    }
+
+    #[test]
+    fn a_measured_width_matches_the_ink_drawn() {
+        let runs = vec![Run {
+            text: "Measure AV.".into(),
+            font: Font::Sans,
+            color: Color::BLACK,
+        }];
+        let width = text::layout(&runs, 30.0).width();
+        let mut pixmap = blank(300, 60);
+        let label = Primitive::Text {
+            origin: Point::new(10.0, 40.0),
+            runs,
+            size: 30.0,
+            h_align: HAlign::Left,
+            v_align: VAlign::Baseline,
+        };
+        draw_primitives(&mut pixmap, &[label], sk::Transform::identity(), None);
+        let [left, _, right, _] = ink(&pixmap);
+        // the ink starts at the first glyph's left bearing and ends at
+        // the last one's right edge, so it falls inside the advances
+        assert!((10..=13).contains(&left), "ink starts at {left}");
+        assert!(
+            (right as f64 - (10.0 + width)).abs() <= 3.0,
+            "ink ends at {right}, advances at {}",
+            10.0 + width
+        );
     }
 
     #[test]
