@@ -153,9 +153,6 @@ fn add_objects(
 ) -> Result<(), Error> {
     let names = pass.names;
     for node in nodes {
-        if pass.measuring && matches!(node.kind.text.as_str(), "line" | "arrow" | "brace") {
-            continue;
-        }
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
             "palette" => continue,
@@ -190,7 +187,13 @@ fn add_objects(
                     .find(|p| p.key.text == "repeat")
                     .map_or(Ok(1), |p| p.count())?;
                 for shift in 0..repeat {
-                    let c = connector(node, names, head, offset, shift)?;
+                    let c = match connector(node, names, head, offset, shift) {
+                        Ok(c) => c,
+                        // a measure leaves out what names a thing not
+                        // placed yet
+                        Err(_) if pass.measuring => continue,
+                        Err(e) => return Err(e),
+                    };
                     out.push(Object::new(Kind::Connector(c)).from_source(node.span));
                 }
                 continue;
@@ -210,7 +213,11 @@ fn add_objects(
                 }
                 continue;
             }
-            "brace" => Kind::Brace(brace(node, names, offset)?),
+            "brace" => match brace(node, names, offset) {
+                Ok(b) => Kind::Brace(b),
+                Err(_) if pass.measuring => continue,
+                Err(e) => return Err(e),
+            },
             "ruler" => Kind::Ruler(ruler(node, names, offset)?),
             other => {
                 return Err(Error::new(
@@ -228,9 +235,11 @@ fn add_objects(
     Ok(())
 }
 
-/// Where a panel's heading and contents go.
+/// Where a panel's frame, heading and contents go.
 struct PanelPlace {
-    /// The top-left corner of the heading.
+    /// The top-left corner of the panel: its frame's when it has one.
+    corner: Point,
+    /// The top-left corner of the heading, inside the frame's padding.
     at: Point,
     /// The origin of the nodes in the panel, under the heading.
     contents: Point,
@@ -245,9 +254,16 @@ fn panel_place(
     number: Option<usize>,
 ) -> Result<PanelPlace, Error> {
     let props = Props::new(node, &keys("panel"), true)?;
-    let at = match props.get("at") {
+    let corner = match props.get("at") {
         Some(p) => self::at(p, names, offset)?,
         None => offset,
+    };
+    let at = match framed(&props)? {
+        true => {
+            let pad = props.number_or("padding", 16.0)?;
+            corner + Point::new(pad, pad)
+        }
+        false => corner,
     };
     let font = match props.get("title-font") {
         Some(p) => font(p)?,
@@ -285,10 +301,21 @@ fn panel_place(
         None => 0.0,
     };
     Ok(PanelPlace {
+        corner,
         at,
         contents: at + Point::new(0.0, below),
         heading,
     })
+}
+
+/// Whether a panel draws a frame: it has a `stroke` or a `fill`.
+fn framed(props: &Props) -> Result<bool, Error> {
+    let stroke = props.stroke(None)?.is_some();
+    let fill = match props.get("fill") {
+        Some(p) => p.color_or_none()?.is_some(),
+        None => false,
+    };
+    Ok(stroke || fill)
 }
 
 /// Append a panel's heading, frame, contents and captions to `out`.
@@ -324,36 +351,40 @@ fn add_panel(
     let contents: Vec<Node> = contents.into_iter().cloned().collect();
     add_objects(&contents, place.contents, pass, panels, out)?;
 
-    let Some((min, max)) = bounds_of(&out[start..]) else {
-        return Ok(());
-    };
+    let max = bounds_of(&out[start..]).map_or(place.at, |(_, max)| max);
     let mut bottom = max.y;
-    let frame = props.stroke(None)?;
-    let fill = match props.get("fill") {
-        Some(p) => p.color_or_none()?,
-        None => None,
-    };
-    if frame.is_some() || fill.is_some() {
+    if framed(&props)? {
+        // the frame reaches past the contents by the padding, and is at
+        // least `width` by `height`
         let pad = props.number_or("padding", 16.0)?;
+        let size = max - place.corner + Point::new(pad, pad);
+        let size = Point::new(
+            size.x.max(props.number_or("width", 0.0)?),
+            size.y.max(props.number_or("height", 0.0)?),
+        );
+        bottom = place.corner.y + size.y;
+        let fill = match props.get("fill") {
+            Some(p) => p.color_or_none()?,
+            None => None,
+        };
         let frame = Shape {
-            origin: min - Point::new(pad, pad),
-            size: max - min + Point::new(2.0 * pad, 2.0 * pad),
+            origin: place.corner,
+            size,
             oval: false,
             radius: props.number_or("radius", 0.0)?,
             fill,
-            stroke: frame,
+            stroke: props.stroke(None)?,
             label: None,
             padding: Point::ZERO,
             text_align: None,
         };
-        bottom += pad;
         out.insert(
             start,
             Object::new(Kind::Shape(frame)).from_source(node.span),
         );
     }
     for c in captions {
-        let t = caption(c, names, Point::new(place.at.x, bottom))?;
+        let t = caption(c, names, Point::new(place.corner.x, bottom))?;
         bottom = t.origin.y + t.label.size().y;
         out.push(Object::new(Kind::Text(t)).from_source(c.span));
     }
@@ -1695,7 +1726,7 @@ mod tests {
             r#"canvas { size 400 400;
                 style panel { title-size 20; gap 10; }
                 panel { at 10 10; title "first"; box { at 0 0; size 50 20; } }
-                panel { at 10 200; title "second"; stroke #000000; padding 5;
+                panel { at 10 200; title "second"; stroke #000000; padding 5; width 300;
                     box { at 0 0; size 50 20; }
                     caption { text "under"; gap 4; }
                 }
@@ -1715,16 +1746,18 @@ mod tests {
         };
         assert_eq!(first_box.origin.y, 10.0 + h.label.size().y + 10.0);
 
-        // the framed panel puts its frame first, around heading and box
+        // a framed panel's `at` is its frame's corner, and its heading
+        // sits inside the padding
         let Kind::Shape(frame) = &s.objects[2].kind else {
             panic!("expected the frame");
         };
-        assert_eq!(frame.origin, Point::new(5.0, 195.0));
-        assert_eq!(heading(3).1, "2   second");
+        assert_eq!(frame.origin, Point::new(10.0, 200.0));
+        assert_eq!(heading(3), (Point::new(15.0, 205.0), "2   second".into()));
         let Kind::Text(caption) = &s.objects[5].kind else {
             panic!("expected the caption");
         };
         assert_eq!(caption.origin.y, frame.origin.y + frame.size.y + 4.0);
+        assert_eq!(frame.size.x, 300.0);
         assert_eq!(heading(6).1, "aside");
     }
 

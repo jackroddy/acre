@@ -324,12 +324,12 @@ pub const NODES: &[NodeKind] = &[
     },
     NodeKind {
         name: "panel",
-        about: "a numbered section with a heading; what it holds goes under the heading",
+        about: "a numbered section with a heading; `stroke` or `fill` draws it as a card",
         properties: &[
             prop(
                 "at",
                 "X Y | NAME [DX DY]",
-                "the top-left corner of the heading",
+                "the top-left corner of the frame, or of the heading when there is no frame",
             ),
             prop("title", "\"TEXT\"", "the heading, with markup"),
             prop("number", "none", "leave the panel out of the numbering"),
@@ -355,6 +355,8 @@ pub const NODES: &[NodeKind] = &[
                 "N",
                 "the space between the frame and what it holds",
             ),
+            prop("width", "N", "the least width of the frame"),
+            prop("height", "N", "the least height of the frame"),
             RADIUS,
             STYLE,
         ],

@@ -36,8 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left, center or right.
 - A `panel` node is a section with a heading. Panels number themselves in
   source order, and `number none` leaves one out. What a panel holds goes
-  under its heading. `stroke` or `fill` draws a frame around the heading and
-  contents, with `padding`.
+  under its heading. With a `stroke` or a `fill`, a panel is a card: its `at`
+  is the card's corner, the heading and contents sit inside `padding`, and
+  `width` and `height` set the card's least size.
 - A `caption` node sets text under the panel it sits in, or under everything
   before it.
 - A style named after a node kind, such as `style panel { ... }`, applies to
@@ -46,8 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a `gap`, and `align` sets where a narrower child sits. A `grid` node
   places its children row by row in `columns`, each column as wide as its
   widest child and each row as tall as its tallest. Both are optional: `at`
-  works as before everywhere else. Lines, arrows and braces take no room in
-  either, so they can name things anywhere in the file.
+  works as before everywhere else. A child's lines, arrows and braces take room
+  when everything they name is placed already, and none otherwise.
 - `at` is optional. Without it, a node sits at its group's origin, or at its
   slot in a stack or grid.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
