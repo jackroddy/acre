@@ -3,20 +3,20 @@
   "title": "acre writes a drawing as SVG or PDF",
   "body": "acre renders only to PNG, through `render::draw_frame` and `acre render`. A figure for a paper needs vector output. Jack wants this when he publishes a figure, not before. The scene already lowers to a short list of `Primitive`s, so an SVG writer is a second renderer over the same list, with text set as outlines or as `<text>` in the embedded fonts.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "acre-e77413",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T07:39:10.708759168Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T01:14:46.971389521Z",
-  "updated_at": "2026-11-13T07:33:31.348709008Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T07:33:35.212996937Z",
+  "closed_at": "2026-11-13T07:33:35.212996937Z",
+  "close_reason": "Landed on dev in 2a3a569: render::draw_svg and render::draw_pdf, and acre render takes the format from the extension of --out (.png, .svg, .pdf), with --format to override. An --out with another extension and no --format is an error. The note on this issue records the dependency and text choices.",
+  "resolution": "done",
   "notes": [
     {
       "id": "e42182b5",
@@ -40,6 +40,9 @@
       "commit": "38a8b36",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "2a3a569",
+      "branch": "dev"
+    }
   }
 }
