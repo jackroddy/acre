@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-13T05:32:53.906969075Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T05:55:29.561899729Z",
+  "updated_at": "2026-11-13T05:55:29.569593862Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -33,7 +33,8 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "Jack judged the reworked figure much better on 2026-11-13. It is still uncommitted in the working tree: crates/acre/examples/key-schemes.acre, the removal of prefix-encoder.acre, the formatter test and the changelog line.",
       "commit": "f4067bd",
-      "branch": "dev"
+      "branch": "dev",
+      "deleted_at": "2026-11-13T05:55:29.569593662Z"
     }
   ],
   "stamps": {
