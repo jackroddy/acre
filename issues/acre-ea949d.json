@@ -3,26 +3,29 @@
   "title": "acre shapes text with rustybuzz and the scene measures it",
   "body": "`render::text_paths` in `crates/acre/src/render.rs` sets each glyph at the advance of the one before, with no kerning, ligatures or contextual forms. The scene cannot measure text at all: `scene::primitive::bounds` guesses 0.6 of the size per character. Every later feature in the milestone needs real widths: wrapping, boxes sized to text, layout, code blocks and math.\n\n## Proposal\n\n- Shape every run with rustybuzz, a pure-Rust port of HarfBuzz, against the embedded fonts. The renderer draws the shaped glyphs at their shaped positions.\n- Move the fonts and a shaping function where both `scene` and `render` reach them, for example a `text` module in the `acre` crate, so the scene measures with the same metrics the renderer draws with. `scene` still produces no pixels.\n- A measure of a `Label`: its width, its line height, and the ascent and descent of its first and last lines.\n- `Scene::bounds` uses the real measure in place of the 0.6 guess.\n\n## Cost\n\n- One new dependency, rustybuzz, which uses `ttf-parser`, already a dependency.\n- `Primitive::Text` may hold shaped glyphs in place of strings. That is a change to the library's public types, so it takes a minor version bump.\n\n## Open\n\n- Whether shaping runs once in `scene`, with `Primitive::Text` carrying glyph ids and positions, or again in `render`. Shaping once keeps the two in step.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-e77413",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/cd2d1020",
-  "lease_expires": "2026-11-13T06:14:18.555323501Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T05:49:59.04262438Z",
-  "updated_at": "2026-11-13T05:59:18.555323501Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T06:01:19.450042658Z",
+  "closed_at": "2026-11-13T06:01:19.450042658Z",
+  "close_reason": "Landed uncommitted on dev: crates/acre/src/text.rs shapes runs with rustybuzz, breaks lines, and places and measures a layout. render draws the shaped glyphs from it, and scene's Label::size and Scene::bounds measure with it. Primitive::Text still carries runs, and render lays them out again from the same function.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f4067bd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "934e4ef",
+      "branch": "dev"
+    }
   }
 }
