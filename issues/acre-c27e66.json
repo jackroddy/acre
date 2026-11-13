@@ -1,0 +1,30 @@
+{
+  "id": "acre-c27e66",
+  "title": "Text wraps to a width, and a box can size itself to its text",
+  "body": "A label breaks lines only at a `\\n` in its string, so the step paragraphs in `key-schemes.acre` hold hand-placed line breaks. A `box` takes a fixed `size`, so the boxes of its section 1 are sized by trial.\n\n## Proposal\n\n- `width N` on `text` and on a box's text wraps lines at spaces to fit N pixels, using the measure from the shaping issue. A `\\n` still forces a break.\n- A `box` without `size`, or with `size auto`, takes the size of its text plus `padding`, a new property.\n- Text inside a box can align `left`, `center` or `right`, with a padding, instead of always being centered.\n\n## Open\n\n- Whether a box's text should place by its first baseline or its top. Top matches `text` today.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-e77413",
+  "blocked_by": [
+    "acre-ea949d"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T05:49:59.051748743Z",
+  "updated_at": "2026-11-13T05:49:59.051748743Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f4067bd",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
