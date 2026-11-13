@@ -1,0 +1,10 @@
+{
+  "slug": "decade-frames-only-on-screen",
+  "text": "decade sends its panes' windows frame callbacks only while decade's own window is on screen. With decade on another Hyprland workspace, acre-gui runs eframe's logic but not ui, and a decade pane screenshot shows a stale frame. A frozen acre-gui window inside decade is this before it is an acre bug (acre-4db16b, decade-7091e6).",
+  "created_at": "2026-11-13T06:31:19.432131161Z",
+  "updated_at": "2026-11-13T06:31:19.432131161Z",
+  "stamp": {
+    "commit": "6866c55",
+    "branch": "dev"
+  }
+}
