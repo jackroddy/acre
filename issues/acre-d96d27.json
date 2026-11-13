@@ -3,7 +3,7 @@
   "title": "acre-gui v0 shows the source beside its render",
   "body": "`acre-gui` is the editor Jack plans to work in, and the way he will try out the language. v0 puts the source in an egui text editor beside its render, and redraws the render on every edit.\n\n## Proposal\n\n- Colors come from `acre::lang::highlight`.\n- An error's span is underlined in the source, and its message shows in a status line.\n- Files open and save through `rfd` dialogs. Closing or replacing a modified file asks first.\n- `$XDG_STATE_HOME/acre/recent` keeps ten recent files. Bare `acre-gui` reopens the newest.\n- `$XDG_CONFIG_HOME/acre/config.toml` takes one key, `editor-font-size`.\n- `scripts/launch` builds and runs it. `~/.local/bin/acre-gui` and `acre-gui-dev` link to the script, and two app menu entries call the links.\n\n## Open\n\n- Jack has not run it yet.",
   "type": "task",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-08T22:24:33.243769876Z",
-  "updated_at": "2026-11-09T23:27:28.415495406Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T05:06:33.609454722Z",
+  "closed_at": "2026-11-13T05:06:33.609454722Z",
+  "close_reason": "Superseded: acre-gui no longer holds the source, after acre-4c3bfd made it a viewer that neovim drives.",
+  "resolution": "done",
   "notes": [
     {
       "id": "273dda71",
@@ -40,6 +40,9 @@
       "commit": "735a43c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "f4067bd",
+      "branch": "dev"
+    }
   }
 }
