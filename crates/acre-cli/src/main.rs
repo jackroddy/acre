@@ -28,6 +28,15 @@ enum Command {
     Render(RenderArgs),
     /// Rewrite drawings in acre's one layout.
     Fmt(FmtArgs),
+    /// List the node kinds a drawing can hold and the properties each takes.
+    Reference(ReferenceArgs),
+}
+
+#[derive(Args)]
+struct ReferenceArgs {
+    /// Only this node kind [default: every kind]
+    #[arg(value_name = "kind")]
+    kind: Option<String>,
 }
 
 #[derive(Args)]
@@ -67,6 +76,34 @@ fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Check(args) => {
             load(&args.file)?;
+        }
+        Command::Reference(args) => {
+            let kinds: Vec<&scene::schema::NodeKind> = match &args.kind {
+                None => scene::schema::NODES.iter().collect(),
+                Some(name) => vec![
+                    scene::schema::node(name)
+                        .ok_or_else(|| anyhow!("acre has no node kind `{name}`"))?,
+                ],
+            };
+            for (k, kind) in kinds.iter().enumerate() {
+                if k > 0 {
+                    println!();
+                }
+                println!("{}: {}", kind.name, kind.about);
+                let width = kind
+                    .properties
+                    .iter()
+                    .map(|p| p.name.len())
+                    .max()
+                    .unwrap_or(0);
+                for p in kind.properties {
+                    println!("  {:width$}  {}", p.name, p.takes);
+                    println!("  {:width$}  {}", "", p.about);
+                }
+                if !kind.children.is_empty() {
+                    println!("  holds {}", kind.children.join(", "));
+                }
+            }
         }
         Command::Fmt(args) if args.files == [Path::new("-")] => {
             let mut src = String::new();

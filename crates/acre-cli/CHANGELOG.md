@@ -24,3 +24,5 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   the files that would change and writes nothing.
 - `acre fmt -` formats stdin and writes the result to stdout, for an editor's
   format command.
+- `acre reference [KIND]` lists every node kind, or one, with each property
+  it takes, the values the property takes, and what it does.
