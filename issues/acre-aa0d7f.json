@@ -3,26 +3,29 @@
   "title": "Text can hold bulleted lists",
   "body": "`scene::markup::runs` turns a label's string into `Run`s of one font and color each. `text::layout` breaks the runs into lines at each `\\n` and wraps them within `width`, greedily or justified. A list today is written by hand as lines that start with a dash or a bullet character. Their wrapped lines run back to the left edge, and consecutive items sit one line height apart like any other lines.\n\n## Proposal\n\n- In a text's string, a line that starts with `- ` is a bullet item. A line is the start of the string or the text after a `\\n`, in a block string too. Markup reads it, so the lexer and the parser stay as they are.\n- A literal leading `- ` is written `\\-` in markup: `\"\\\\- 5\"` in a quoted string, `\\- 5` in a block string.\n- Each item draws \"•\" in the text's color and hangs its wrapped lines under its first word. Consecutive items sit a little apart, in proportion to the text size. `width` includes the indent.\n- With `text-align justify` each item justifies on its own, and its last line stays left-aligned.\n- Lines without `- ` stay plain paragraphs, so a bold heading line can lead the list.\n- `text` and a box's text get it in PNG, SVG and PDF alike, since all three take positions from `text::layout`. Text with no `- ` lines does not move.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T08:40:10.177859287Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T08:25:08.338050982Z",
-  "updated_at": "2026-11-13T08:25:10.177859287Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T08:40:15.725400854Z",
+  "closed_at": "2026-11-13T08:40:15.725400854Z",
+  "close_reason": "Landed in c846b14. The syntax and its reason are a note on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "df2b59e",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "c846b14",
+      "branch": "dev"
+    }
   }
 }
