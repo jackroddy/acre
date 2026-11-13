@@ -1,0 +1,28 @@
+{
+  "id": "acre-95ce06",
+  "title": "Bold markup has no effect on a monospace code span",
+  "body": "`markup::runs` in `crates/acre/src/scene/markup.rs` picks a run's font from two flags. A code span takes `Font::Mono` whether or not it sits inside `**...**`, because acre embeds only JetBrains Mono NL Regular. So `**`UnmaskedKeys`**` draws in regular mono, and the name looks no different from the code names in the text around it.\n\n`figures/key-schemes.acre` shows it in three places. The headings of the `UnmaskedKeys`, `MaskedKeys` and `Packing` boxes in section 1 are bold mono. So are the column headings of the table in section 5, and the `bmi2` in the heading \"pext and `bmi2`\".\n\n## Proposal\n\n- Embed JetBrains Mono NL Bold beside the regular face. It is OFL, like the regular face, and its license is the `OFL.txt` already in `crates/acre/assets/fonts/`.\n- Add `Font::MonoBold`, and map a code span inside bold markup to it.\n- `font` accepts `mono-bold`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T07:38:33.185344989Z",
+  "updated_at": "2026-11-13T07:38:33.185344989Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "2a3a569",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
