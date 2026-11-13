@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T18:29:54.260417919Z",
-  "updated_at": "2026-11-13T18:29:54.260417919Z",
+  "updated_at": "2026-11-13T18:31:09.821822106Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "e4a7d555",
+      "at": "2026-11-13T18:31:09.821821436Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Jack decided the four open points:\n\n- Anchor: a node scales about its center by default. A file can name a side or a corner instead, such as `anchor top-left`.\n- Layout: scale changes the drawing only. Neighbours in a `stack` or a `grid` stay where they are.\n- Connectors: an arrow attached to a scaling node follows its scaled edge. Connectors read the node's scaled box at each instant.\n- Strokes: outlines scale with the node, as text does.\n\nThe syntax is still open. It comes with the rest of the animation syntax in acre-4518a5.",
+      "commit": "c846b14",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "c846b14",
