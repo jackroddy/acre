@@ -6,10 +6,12 @@ use super::primitive::{HAlign, Point, Primitive, Stroke, VAlign};
 pub enum Route {
     #[default]
     Straight,
-    /// Three segments at right angles, turning halfway along the longer
-    /// of the two distances between the ends.
+    /// Segments at right angles. Ends on sides give an L when the sides
+    /// are perpendicular and a Z when parallel. Without sides it turns
+    /// halfway along the longer distance between the ends.
     Elbow,
-    /// A cubic whose handles run along that same axis from each end.
+    /// A cubic whose handles run out of each end's side, or along the
+    /// longer distance between the ends when it has none.
     Curve,
 }
 
@@ -41,6 +43,11 @@ pub enum LabelSide {
 pub struct Connector {
     pub from: Point,
     pub to: Point,
+    /// The direction the route leaves `from`, out of the box it sits on.
+    pub from_dir: Option<Point>,
+    /// The direction pointing out of the box at `to`, which the route
+    /// arrives against.
+    pub to_dir: Option<Point>,
     pub stroke: Stroke,
     pub route: Route,
     /// The head at `to`.
@@ -59,6 +66,10 @@ const LABEL_GAP: f64 = 6.0;
 
 /// The segments a curve is drawn as.
 const CURVE_STEPS: usize = 24;
+
+/// How far past both ends an elbow steps out when its ends face the
+/// same way.
+const STEP_OUT: f64 = 24.0;
 
 fn length(p: Point) -> f64 {
     (p.x * p.x + p.y * p.y).sqrt()
@@ -112,30 +123,11 @@ impl Connector {
     /// straight segment, without repeated points.
     fn path(&self) -> Vec<Point> {
         let (a, b) = (self.from, self.to);
-        let d = b - a;
         let mut points = match self.route {
             Route::Straight => vec![a, b],
-            Route::Elbow if d.x == 0.0 || d.y == 0.0 => vec![a, b],
-            Route::Elbow if d.x.abs() >= d.y.abs() => {
-                let mid = a.x + d.x / 2.0;
-                vec![a, Point::new(mid, a.y), Point::new(mid, b.y), b]
-            }
-            Route::Elbow => {
-                let mid = a.y + d.y / 2.0;
-                vec![a, Point::new(a.x, mid), Point::new(b.x, mid), b]
-            }
+            Route::Elbow => self.elbow(),
             Route::Curve => {
-                let (c1, c2) = if d.x.abs() >= d.y.abs() {
-                    (
-                        Point::new(a.x + d.x / 2.0, a.y),
-                        Point::new(b.x - d.x / 2.0, b.y),
-                    )
-                } else {
-                    (
-                        Point::new(a.x, a.y + d.y / 2.0),
-                        Point::new(b.x, b.y - d.y / 2.0),
-                    )
-                };
+                let (c1, c2) = self.handles();
                 (0..=CURVE_STEPS)
                     .map(|i| {
                         let t = i as f64 / CURVE_STEPS as f64;
@@ -150,6 +142,65 @@ impl Connector {
         };
         points.dedup();
         points
+    }
+
+    fn elbow(&self) -> Vec<Point> {
+        let (a, b) = (self.from, self.to);
+        let d = b - a;
+        match (self.from_dir, self.to_dir) {
+            (Some(from), Some(to)) if (from.x != 0.0) != (to.x != 0.0) => {
+                let corner = if from.x != 0.0 {
+                    Point::new(b.x, a.y)
+                } else {
+                    Point::new(a.x, b.y)
+                };
+                vec![a, corner, b]
+            }
+            (Some(from), Some(to)) => {
+                // parallel ends facing the same way both step out past
+                // the farther one, and the rest turn halfway
+                let horizontal = from.x != 0.0;
+                let (ca, cb, out) = if horizontal {
+                    (a.x, b.x, from.x)
+                } else {
+                    (a.y, b.y, from.y)
+                };
+                let turn = if from == to {
+                    let farthest = if out > 0.0 { ca.max(cb) } else { ca.min(cb) };
+                    farthest + out * STEP_OUT
+                } else {
+                    ca + (cb - ca) / 2.0
+                };
+                bend(a, b, horizontal, turn)
+            }
+            (Some(dir), None) | (None, Some(dir)) => bend_halfway(a, b, dir.x != 0.0),
+            (None, None) if d.x == 0.0 || d.y == 0.0 => vec![a, b],
+            (None, None) => bend_halfway(a, b, d.x.abs() >= d.y.abs()),
+        }
+    }
+
+    /// The two inner control points of the cubic from `from` to `to`.
+    fn handles(&self) -> (Point, Point) {
+        let (a, b) = (self.from, self.to);
+        let d = b - a;
+        // with no side, a handle runs along the longer axis toward the
+        // other end, for half the distance along it
+        let along_x = d.x.abs() >= d.y.abs();
+        let (axis, reach) = if along_x {
+            (Point::new(d.x.signum(), 0.0), d.x.abs() / 2.0)
+        } else {
+            (Point::new(0.0, d.y.signum()), d.y.abs() / 2.0)
+        };
+        let side_reach = length(d) / 2.0;
+        let c1 = match self.from_dir {
+            Some(dir) => a + dir * side_reach,
+            None => a + axis * reach,
+        };
+        let c2 = match self.to_dir {
+            Some(dir) => b + dir * side_reach,
+            None => b - axis * reach,
+        };
+        (c1, c2)
     }
 
     /// The label placed with its box clear of the line by `LABEL_GAP`.
@@ -175,6 +226,25 @@ impl Connector {
         let origin = Point::new(center.x - (min.x + max.x) / 2.0, center.y + ascent / 2.0);
         label.at(origin, HAlign::Center, VAlign::Baseline)
     }
+}
+
+/// Three segments from `a` to `b` that turn where the horizontal or
+/// vertical coordinate is `turn`.
+fn bend(a: Point, b: Point, horizontal: bool, turn: f64) -> Vec<Point> {
+    if horizontal {
+        vec![a, Point::new(turn, a.y), Point::new(turn, b.y), b]
+    } else {
+        vec![a, Point::new(a.x, turn), Point::new(b.x, turn), b]
+    }
+}
+
+fn bend_halfway(a: Point, b: Point, horizontal: bool) -> Vec<Point> {
+    let turn = if horizontal {
+        a.x + (b.x - a.x) / 2.0
+    } else {
+        a.y + (b.y - a.y) / 2.0
+    };
+    bend(a, b, horizontal, turn)
 }
 
 /// The distance a head takes off the end of the shaft.
@@ -275,6 +345,8 @@ mod tests {
         Connector {
             from: Point::new(from.0, from.1),
             to: Point::new(to.0, to.1),
+            from_dir: None,
+            to_dir: None,
             stroke: Stroke::solid(Color::BLACK, 2.0),
             route: Route::Straight,
             head: Head::Triangle,
@@ -429,6 +501,115 @@ mod tests {
         let last = path[path.len() - 1] - path[path.len() - 2];
         assert!(first.y.abs() < first.x * 0.1);
         assert!(last.y.abs() < last.x * 0.1);
+    }
+
+    fn with_sides(mut c: Connector, from: (f64, f64), to: (f64, f64)) -> Connector {
+        c.from_dir = Some(Point::new(from.0, from.1));
+        c.to_dir = Some(Point::new(to.0, to.1));
+        c
+    }
+
+    #[test]
+    fn an_elbow_between_perpendicular_sides_turns_once() {
+        let mut c = with_sides(
+            connector((0.0, 0.0), (100.0, 80.0)),
+            (1.0, 0.0),
+            (0.0, -1.0),
+        );
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path(),
+            [
+                Point::new(0.0, 0.0),
+                Point::new(100.0, 0.0),
+                Point::new(100.0, 80.0)
+            ]
+        );
+        let mut c = with_sides(
+            connector((0.0, 0.0), (100.0, 80.0)),
+            (0.0, 1.0),
+            (-1.0, 0.0),
+        );
+        c.route = Route::Elbow;
+        assert_eq!(c.path()[1], Point::new(0.0, 80.0));
+    }
+
+    #[test]
+    fn an_elbow_between_sides_facing_each_other_turns_halfway() {
+        let mut c = with_sides(
+            connector((0.0, 0.0), (100.0, 40.0)),
+            (1.0, 0.0),
+            (-1.0, 0.0),
+        );
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [Point::new(50.0, 0.0), Point::new(50.0, 40.0)]
+        );
+        let mut c = with_sides(
+            connector((0.0, 0.0), (40.0, 100.0)),
+            (0.0, 1.0),
+            (0.0, -1.0),
+        );
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [Point::new(0.0, 50.0), Point::new(40.0, 50.0)]
+        );
+    }
+
+    #[test]
+    fn an_elbow_between_sides_facing_the_same_way_steps_out_past_both() {
+        let mut c = with_sides(connector((0.0, 0.0), (100.0, 40.0)), (1.0, 0.0), (1.0, 0.0));
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [
+                Point::new(100.0 + STEP_OUT, 0.0),
+                Point::new(100.0 + STEP_OUT, 40.0)
+            ]
+        );
+        let mut c = with_sides(
+            connector((0.0, 0.0), (40.0, 100.0)),
+            (0.0, -1.0),
+            (0.0, -1.0),
+        );
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [Point::new(0.0, -STEP_OUT), Point::new(40.0, -STEP_OUT)]
+        );
+    }
+
+    #[test]
+    fn an_elbow_with_one_side_leaves_along_it() {
+        let mut c = connector((0.0, 0.0), (100.0, 40.0));
+        c.route = Route::Elbow;
+        c.from_dir = Some(Point::new(0.0, 1.0));
+        assert_eq!(c.path()[1], Point::new(0.0, 20.0));
+        c.from_dir = None;
+        c.to_dir = Some(Point::new(0.0, -1.0));
+        assert_eq!(c.path()[1], Point::new(0.0, 20.0));
+    }
+
+    #[test]
+    fn a_curve_runs_its_handles_out_of_the_sides() {
+        let mut c = with_sides(
+            connector((0.0, 0.0), (100.0, 100.0)),
+            (0.0, 1.0),
+            (1.0, 0.0),
+        );
+        c.route = Route::Curve;
+        let (c1, c2) = c.handles();
+        let half = 100.0 * 2f64.sqrt() / 2.0;
+        assert_eq!(c1, Point::new(0.0, half));
+        assert_eq!(c2, Point::new(100.0 + half, 100.0));
+        let path = c.path();
+        let first = path[1] - path[0];
+        let last = path[path.len() - 1] - path[path.len() - 2];
+        assert!(first.x.abs() < first.y * 0.1);
+        assert!(last.y.abs() < last.x.abs() * 0.5);
+        assert!(last.x < 0.0);
     }
 
     #[test]

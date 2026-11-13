@@ -117,7 +117,7 @@ const CONNECTOR: &[Property] = &[
     prop(
         "route",
         "straight | elbow | curve",
-        "the path from `from` to `to`; an elbow turns at right angles and a curve leaves each end along the longer axis",
+        "the path from `from` to `to`; an elbow turns at right angles and a curve bends smoothly; an end given a side leaves or enters along it, so an elbow between perpendicular sides is an L, and an end with no side follows the longer axis",
     ),
     prop(
         "head",

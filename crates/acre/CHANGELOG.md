@@ -27,9 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   circle sits outside that side, touching it). `number` on a `text` puts the
   same badge to the left of the text. `style marker` sets the fill, text color,
   text size, font and `diameter` of both.
-- `route` on a `line` or an `arrow` is `straight`, `elbow` or `curve`. An elbow
-  turns at right angles halfway along the longer distance between the ends,
-  and a curve leaves each end along that same axis.
+- `route` on a `line` or an `arrow` is `straight`, `elbow` or `curve`. An end
+  given a side (`from build left`) leaves or enters along it. An elbow between
+  perpendicular sides turns once, and between parallel sides it turns halfway,
+  or steps out past both when they face the same way. A curve's handles run out
+  of each side. An end with no side follows the longer distance between the
+  ends: an elbow turns halfway along it, and a curve leaves along it.
 - `head` and `tail` on a `line` or an `arrow` are `none`, `triangle`, `open` or
   `dot`, at the end and the start. An `arrow` still has a triangle head and a
   `line` none.

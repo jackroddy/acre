@@ -1091,11 +1091,17 @@ fn connector(
     let to = end(props.require("to")?, names, offset, shift)?;
     let center = |end: &End| match end {
         End::Point(p) => *p,
+        End::Side { at, .. } => *at,
         End::Box(s) => s.center(),
     };
     let on_edge = |end: &End, other: &End| match end {
         End::Point(p) => *p,
+        End::Side { at, .. } => *at,
         End::Box(s) => s.edge_toward(center(other)),
+    };
+    let facing = |end: &End| match end {
+        End::Side { out, .. } => Some(*out),
+        _ => None,
     };
     let stroke = props
         .stroke(Some(Color::BLACK))?
@@ -1103,6 +1109,8 @@ fn connector(
     Ok(Connector {
         from: on_edge(&from, &to),
         to: on_edge(&to, &from),
+        from_dir: facing(&from),
+        to_dir: facing(&to),
         stroke,
         route: props.choice(
             "route",
@@ -1184,6 +1192,7 @@ fn marker(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     let badge = Badge::read(&props, &names.fonts)?;
     let mut center = match end(at, names, offset, 0)? {
         End::Point(p) => p,
+        End::Side { at, .. } => at,
         End::Box(s) => s.center(),
     };
     // a side puts the circle outside it, touching
@@ -1548,11 +1557,17 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
 enum End {
     Point(Point),
     Box(Shape),
+    /// The middle of a side of a box, and the direction that points
+    /// out of the box there.
+    Side {
+        at: Point,
+        out: Point,
+    },
 }
 
 /// The end a connector's `from` or `to` names. It is two numbers, a
 /// shape's name, or a row's name and a cell's index. A side after a
-/// name puts the end at the middle of that side.
+/// name puts the end at the middle of that side, facing out of it.
 fn end(p: &Property, names: &Names, offset: Point, shift: usize) -> Result<End, Error> {
     if let [first, ..] = p.values.as_slice()
         && let ValueKind::Number(_) = first.kind
@@ -1573,13 +1588,14 @@ fn end(p: &Property, names: &Names, offset: Point, shift: usize) -> Result<End, 
                     thing.origin.y + thing.size.y,
                 ];
                 let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
-                Ok(End::Point(match w.as_str() {
-                    "top" => Point::new(cx, top),
-                    "bottom" => Point::new(cx, bottom),
-                    "left" => Point::new(left, cy),
-                    "right" => Point::new(right, cy),
+                let (at, out) = match w.as_str() {
+                    "top" => (Point::new(cx, top), Point::new(0.0, -1.0)),
+                    "bottom" => (Point::new(cx, bottom), Point::new(0.0, 1.0)),
+                    "left" => (Point::new(left, cy), Point::new(-1.0, 0.0)),
+                    "right" => (Point::new(right, cy), Point::new(1.0, 0.0)),
                     _ => return Err(Error::new(v.span, "a side is top, bottom, left or right")),
-                }))
+                };
+                Ok(End::Side { at, out })
             }
             _ => Err(Error::new(v.span, "expected a side")),
         },
