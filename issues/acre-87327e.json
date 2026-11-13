@@ -1,7 +1,7 @@
 {
   "id": "acre-87327e",
   "title": "Panning in acre-gui draws the whole scene again on every frame",
-  "body": "`View::show` in `crates/acre-gui/src/view.rs` draws the scene again whenever the zoom, the offset or the pane's size changes. A drag changes the offset on every frame. So each frame of a pan builds every primitive, sets every label's glyphs as paths, rasterizes the whole pane in software through `render::draw_view`, and uploads the texture. Jack finds panning laggy on `examples/prefix-encoder.acre` in the debug build. The release build does the same work per frame, more quickly.\n\n## Proposal\n\n- While the person drags, paint the last texture shifted by the drag, and draw the scene again when the drag stops.\n- Draw a margin around the pane, so a short pan shows drawn content and not an empty edge.\n- While zooming with the wheel, stretch the last texture and draw a sharp one once the wheel stops.\n\n## Open\n\n- Whether to cache glyph paths in `render`, so each full redraw costs less as well.",
+  "body": "`View::show` in `crates/acre-gui/src/view.rs` draws the scene again whenever the zoom, the offset or the pane's size changes. A drag changes the offset on every frame. So each frame of a pan builds every primitive, sets every label's glyphs as paths, rasterizes the whole pane in software through `render::draw_view`, and uploads the texture. Jack finds panning laggy on the PrefixEncoder figure in the debug build. The release build does the same work per frame, more quickly.\n\n## Proposal\n\n- While the person drags, paint the last texture shifted by the drag, and draw the scene again when the drag stops.\n- Draw a margin around the pane, so a short pan shows drawn content and not an empty edge.\n- While zooming with the wheel, stretch the last texture and draw a sharp one once the wheel stops.\n\n## Open\n\n- Whether to cache glyph paths in `render`, so each full redraw costs less as well.",
   "type": "bug",
   "status": "closed",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T03:51:14.543446449Z",
-  "updated_at": "2026-11-13T04:20:31.691324663Z",
+  "updated_at": "2026-11-13T05:55:29.518375041Z",
   "closed_at": "2026-11-13T04:20:31.691324663Z",
   "close_reason": "View::texture_rect moves and scales the last texture during a pan or zoom, and View::draw runs again 150 ms after motion stops. Jack tried it in the release build and found it snappy. Glyph path caching was left out, since a full redraw no longer happens during a pan.",
   "resolution": "done",
