@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-13T05:32:53.906969075Z",
   "defer_until": null,
   "created_at": "2026-11-13T05:17:53.898801538Z",
-  "updated_at": "2026-11-13T05:20:55.827308027Z",
+  "updated_at": "2026-11-13T05:50:18.280797792Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-11-13T05:20:55.827307457Z",
       "author": "Jack Roddy/cd2d1020",
       "text": "examples/key-schemes.acre is written and renders. tmp-claude/2026-11-13-key-schemes/model.py checked every key, the masked key 0x6522ca65384c0000, care_bits, window_offset [6, 0] and pad_bits 16. prefix-encoder.acre is removed, and the formatter's idempotence test now reads key-schemes.acre. Not committed yet.",
+      "commit": "f4067bd",
+      "branch": "dev"
+    },
+    {
+      "id": "fe37f8a9",
+      "at": "2026-11-13T05:50:18.280797142Z",
+      "author": "Jack Roddy/cd2d1020",
+      "text": "Jack judged the reworked figure much better on 2026-11-13. It is still uncommitted in the working tree: crates/acre/examples/key-schemes.acre, the removal of prefix-encoder.acre, the formatter test and the changelog line.",
       "commit": "f4067bd",
       "branch": "dev"
     }
