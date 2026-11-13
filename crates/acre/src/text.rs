@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 
 use rustybuzz::{Face, UnicodeBuffer};
 
+use crate::math::MathFont;
 use crate::scene::{Color, Font, HAlign, Point, Run, VAlign};
 
 static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
@@ -24,12 +25,13 @@ pub const LINE_HEIGHT: f64 = 1.3;
 
 /// The parsed face of `font`.
 pub fn face(font: Font) -> &'static Face<'static> {
-    &FACES[match font {
-        Font::Mono => 0,
-        Font::Sans => 1,
-        Font::SansBold => 2,
-        Font::SansItalic => 3,
-    }]
+    match font {
+        Font::Mono => &FACES[0],
+        Font::Sans => &FACES[1],
+        Font::SansBold => &FACES[2],
+        Font::SansItalic => &FACES[3],
+        Font::Math => &MathFont::noto().face,
+    }
 }
 
 /// One shaped glyph, placed from the start of its line's baseline.

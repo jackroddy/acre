@@ -103,6 +103,8 @@ pub enum Font {
     Sans,
     SansBold,
     SansItalic,
+    /// The math font. A run in it holds a formula in LaTeX math.
+    Math,
 }
 
 /// Where a text's origin sits on its box, horizontally.

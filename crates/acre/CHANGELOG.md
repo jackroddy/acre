@@ -96,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measures it. A new canvas property `margin` sets the space added on both
   ends of an `auto` side, 20 by default. The drawing moves to start at the
   margin on each `auto` axis.
+- acre embeds Noto Sans Math. `math::MathFont` holds a font with an OpenType
+  MATH table, and `MathFont::noto` returns the embedded one. `Font::Math`
+  names it.
 
 ### Changed
 
