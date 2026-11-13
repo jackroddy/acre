@@ -1,0 +1,341 @@
+//! Every node kind a canvas holds and the properties each takes, with
+//! what each value is. The builder checks nodes against this table, and
+//! an editor can list it.
+
+/// One kind of node.
+#[derive(Debug)]
+pub struct NodeKind {
+    pub name: &'static str,
+    pub about: &'static str,
+    pub properties: &'static [Property],
+    /// The kinds of node it holds.
+    pub children: &'static [&'static str],
+}
+
+/// One property of a node kind.
+#[derive(Debug)]
+pub struct Property {
+    pub name: &'static str,
+    /// The values it takes, as a reader would write them.
+    pub takes: &'static str,
+    pub about: &'static str,
+}
+
+impl NodeKind {
+    /// The names of its properties.
+    pub fn keys(&self) -> Vec<&'static str> {
+        self.properties.iter().map(|p| p.name).collect()
+    }
+
+    pub fn property(&self, name: &str) -> Option<&'static Property> {
+        self.properties.iter().find(|p| p.name == name)
+    }
+}
+
+/// The node kind named `name`.
+pub fn node(name: &str) -> Option<&'static NodeKind> {
+    NODES.iter().find(|n| n.name == name)
+}
+
+const fn prop(name: &'static str, takes: &'static str, about: &'static str) -> Property {
+    Property { name, takes, about }
+}
+
+const AT: Property = prop(
+    "at",
+    "X Y | NAME [DX DY] | ROW N [DX DY]",
+    "the top-left corner, in the group's coordinates or from a named thing's corner",
+);
+const FILL: Property = prop("fill", "COLOR | none", "the inside color");
+const STROKE: Property = prop("stroke", "COLOR | none", "the outline color");
+const STROKE_WIDTH: Property = prop("stroke-width", "N", "the outline width in pixels");
+const DASH: Property = prop(
+    "dash",
+    "ON OFF",
+    "dash and gap lengths for a dashed outline",
+);
+const RADIUS: Property = prop("radius", "N", "the radius of rounded corners");
+const TEXT_SIZE: Property = prop("text-size", "N", "the size of the text in pixels");
+const TEXT_COLOR: Property = prop("text-color", "COLOR", "the color of the text");
+const FONT: Property = prop(
+    "font",
+    "mono | sans | sans-bold | sans-italic",
+    "the text's font",
+);
+const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup");
+const SIDE: Property = prop("side", "top | bottom | left | right", "which way it faces");
+const FROM: Property = prop(
+    "from",
+    "X Y | NAME [SIDE] | ROW N [SIDE]",
+    "where it starts: a point, or the edge of a named thing",
+);
+const TO: Property = prop("to", "X Y | NAME [SIDE] | ROW N [SIDE]", "where it ends");
+const STYLE: Property = prop("style", "NAME...", "the styles whose properties it takes");
+
+const SHAPE: &[Property] = &[
+    AT,
+    prop("size", "W H", "the width and height"),
+    FILL,
+    STROKE,
+    STROKE_WIDTH,
+    DASH,
+    RADIUS,
+    prop("text", "\"TEXT\"", "text centered inside, with markup"),
+    TEXT_SIZE,
+    TEXT_COLOR,
+    FONT,
+    STYLE,
+];
+
+const CONNECTOR: &[Property] = &[
+    FROM,
+    TO,
+    prop(
+        "repeat",
+        "N",
+        "draw it N times, each named cell one further along",
+    ),
+    STROKE,
+    STROKE_WIDTH,
+    DASH,
+    LABEL,
+    TEXT_SIZE,
+    TEXT_COLOR,
+    FONT,
+    STYLE,
+];
+
+const DRAWN: &[&str] = &[
+    "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
+];
+
+pub const NODES: &[NodeKind] = &[
+    NodeKind {
+        name: "canvas",
+        about: "the drawing: its size, and everything on it",
+        properties: &[
+            prop("size", "W H", "the width and height in pixels"),
+            prop("background", "COLOR", "the color behind everything"),
+            FONT,
+            prop(
+                "let",
+                "NAME VALUES...",
+                "a name that stands for its values in any later property",
+            ),
+        ],
+        children: &[
+            "box", "ellipse", "row", "line", "arrow", "text", "table", "brace", "ruler", "group",
+            "palette", "style",
+        ],
+    },
+    NodeKind {
+        name: "box",
+        about: "a rectangle, with optional text inside",
+        properties: SHAPE,
+        children: &[],
+    },
+    NodeKind {
+        name: "ellipse",
+        about: "an ellipse filling the box at `at` of `size`",
+        properties: SHAPE,
+        children: &[],
+    },
+    NodeKind {
+        name: "row",
+        about: "cells side by side on a grid of equal units",
+        properties: &[
+            AT,
+            prop("unit", "W H", "the width of one unit and the row's height"),
+            prop("span", "N", "how many units each cell covers"),
+            prop("gap", "N", "the space between cells"),
+            RADIUS,
+            prop("cells", "\"TEXT\"...", "one cell per string"),
+            prop("chars", "\"TEXT\"", "one cell per character"),
+            prop(
+                "palette",
+                "NAME",
+                "the palette that fills cells by their text",
+            ),
+            prop(
+                "notes",
+                "show | hide",
+                "whether the palette's notes show under cells",
+            ),
+            FILL,
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            TEXT_SIZE,
+            TEXT_COLOR,
+            prop("note-size", "N", "the size of notes"),
+            prop("note-color", "COLOR", "the color of notes"),
+            FONT,
+            prop(
+                "note-font",
+                "mono | sans | sans-bold | sans-italic",
+                "the notes' font",
+            ),
+            STYLE,
+        ],
+        children: &["cell"],
+    },
+    NodeKind {
+        name: "cell",
+        about: "one more cell at the end of a row",
+        properties: &[
+            prop("text", "\"TEXT\"", "the cell's text"),
+            prop("note", "\"TEXT\"", "small text under the cell's text"),
+            prop("span", "N", "how many units it covers"),
+            FILL,
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            TEXT_COLOR,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "line",
+        about: "a straight line between two points or things",
+        properties: CONNECTOR,
+        children: &[],
+    },
+    NodeKind {
+        name: "arrow",
+        about: "a line with a head at `to`",
+        properties: CONNECTOR,
+        children: &[],
+    },
+    NodeKind {
+        name: "text",
+        about: "text placed by its top edge",
+        properties: &[
+            AT,
+            prop("text", "\"TEXT\"", "the text, with markup"),
+            prop("size", "N", "the size in pixels"),
+            prop("color", "COLOR", "the color"),
+            prop(
+                "align",
+                "left | center | right",
+                "where `at` sits along the text",
+            ),
+            FONT,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "table",
+        about: "rows of strings in aligned columns",
+        properties: &[
+            AT,
+            prop("columns", "X...", "the x of each column"),
+            prop(
+                "align",
+                "(left | center | right)...",
+                "each column's alignment",
+            ),
+            prop("row-height", "N", "the distance between rows"),
+            prop("size", "N", "the text size"),
+            prop("color", "COLOR", "the text color"),
+            FONT,
+            prop(
+                "row",
+                "\"TEXT\"...",
+                "one row, a string per column; repeat for each row",
+            ),
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "brace",
+        about: "a curly or square bracket with a label",
+        properties: &[
+            prop(
+                "over",
+                "NAME | ROW [N [M]]",
+                "the thing, row or run of cells it brackets",
+            ),
+            prop("from", "X Y", "where it starts, without `over`"),
+            prop("to", "X Y", "where it ends, without `over`"),
+            SIDE,
+            prop("depth", "N", "how far the tip stands out"),
+            prop("gap", "N", "the space between it and what it brackets"),
+            prop("shape", "curly | square", "its shape"),
+            STROKE,
+            STROKE_WIDTH,
+            LABEL,
+            TEXT_SIZE,
+            TEXT_COLOR,
+            FONT,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "ruler",
+        about: "a scale of equal units with numbers",
+        properties: &[
+            AT,
+            prop("unit", "N", "the width of one unit"),
+            prop("count", "N", "how many units"),
+            prop("first", "N", "the number over the first unit"),
+            prop("step", "N", "how much each number grows"),
+            prop("every", "N", "a number over every Nth unit"),
+            SIDE,
+            STROKE,
+            STROKE_WIDTH,
+            TEXT_SIZE,
+            TEXT_COLOR,
+            FONT,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "group",
+        about: "nodes moved together by `at`",
+        properties: &[prop(
+            "at",
+            "X Y | NAME [DX DY]",
+            "where the group's origin sits",
+        )],
+        children: DRAWN,
+    },
+    NodeKind {
+        name: "palette",
+        about: "fills, notes and text colors for cells, by their text",
+        properties: &[prop(
+            "symbol",
+            "\"TEXT\" FILL [\"NOTE\"] [TEXT-COLOR]",
+            "how a cell with this text is drawn; repeat for each",
+        )],
+        children: &[],
+    },
+    NodeKind {
+        name: "style",
+        about: "named properties a node takes with `style NAME;`",
+        properties: &[],
+        children: &[],
+    },
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_child_kind_is_a_kind_and_no_kind_repeats_a_property() {
+        for kind in NODES {
+            for child in kind.children {
+                assert!(node(child).is_some(), "{} holds unknown {child}", kind.name);
+            }
+            let keys = kind.keys();
+            for (i, key) in keys.iter().enumerate() {
+                assert!(!keys[..i].contains(key), "{} repeats {key}", kind.name);
+            }
+        }
+    }
+}

@@ -6,42 +6,94 @@
 use tiny_skia as sk;
 use ttf_parser::{Face, GlyphId, OutlineBuilder};
 
-use crate::scene::{Color, HAlign, Point, Primitive, Scene, Stroke, VAlign};
+use crate::scene::{Color, Font, HAlign, Point, Primitive, Run, Scene, Stroke, VAlign};
 
-static FONT: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+static SANS: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
+static SANS_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
+static SANS_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-Italic.ttf");
 
-/// The scene at time `t`, drawn onto a pixmap the size of its canvas.
+/// The distance from one baseline to the next, in multiples of the
+/// text size.
+const LINE_HEIGHT: f32 = 1.3;
+
+/// The scene at time `t`, drawn onto a pixmap of `scale` pixels to each
+/// canvas pixel.
 ///
 /// # Panics
 ///
-/// If the canvas has a width or height of zero.
-pub fn draw_frame(scene: &Scene, t: f64) -> sk::Pixmap {
+/// If the canvas scaled by `scale` has a width or height of zero.
+pub fn draw_frame(scene: &Scene, t: f64, scale: f64) -> sk::Pixmap {
     let canvas = &scene.canvas;
-    let mut pixmap =
-        sk::Pixmap::new(canvas.width, canvas.height).expect("the canvas has a nonzero size");
+    let size = |n: u32| (n as f64 * scale).round() as u32;
+    let mut pixmap = sk::Pixmap::new(size(canvas.width), size(canvas.height))
+        .expect("the canvas has a nonzero size");
     pixmap.fill(sk_color(canvas.background));
-    draw_primitives(&mut pixmap, &scene.draw(t));
+    let transform = sk::Transform::from_scale(scale as f32, scale as f32);
+    draw_primitives(&mut pixmap, &scene.draw(t), transform, None);
     pixmap
 }
 
-fn draw_primitives(pixmap: &mut sk::Pixmap, prims: &[Primitive]) {
-    let font = Face::parse(FONT, 0).expect("the embedded font parses");
+/// The part of the scene at time `t` that falls in a `width` by
+/// `height` pixmap, with the canvas drawn at `scale` pixels to each
+/// canvas pixel and its top-left corner at `origin`. Pixels off the
+/// canvas stay transparent.
+///
+/// # Panics
+///
+/// If `width` or `height` is zero.
+pub fn draw_view(
+    scene: &Scene,
+    t: f64,
+    width: u32,
+    height: u32,
+    scale: f64,
+    origin: Point,
+) -> sk::Pixmap {
+    let mut pixmap = sk::Pixmap::new(width, height).expect("the view has a nonzero size");
+    let transform = sk::Transform::from_scale(scale as f32, scale as f32)
+        .post_translate(origin.x as f32, origin.y as f32);
+    let canvas = &scene.canvas;
+    let Some(rect) = sk::Rect::from_xywh(0.0, 0.0, canvas.width as f32, canvas.height as f32)
+    else {
+        return pixmap;
+    };
+    let path = sk::PathBuilder::from_rect(rect);
+    let mut mask = sk::Mask::new(width, height).expect("the view has a nonzero size");
+    mask.fill_path(&path, sk::FillRule::Winding, true, transform);
+    pixmap.fill_path(
+        &path,
+        &paint(canvas.background),
+        sk::FillRule::Winding,
+        transform,
+        None,
+    );
+    draw_primitives(&mut pixmap, &scene.draw(t), transform, Some(&mask));
+    pixmap
+}
+
+fn draw_primitives(
+    pixmap: &mut sk::Pixmap,
+    prims: &[Primitive],
+    transform: sk::Transform,
+    mask: Option<&sk::Mask>,
+) {
+    let face = |data| Face::parse(data, 0).expect("the embedded font parses");
+    let fonts = [face(MONO), face(SANS), face(SANS_BOLD), face(SANS_ITALIC)];
+    let paint_path = |pixmap: &mut sk::Pixmap, path: &sk::Path, fill, stroke| {
+        paint_path(pixmap, path, fill, stroke, transform, mask)
+    };
     for prim in prims {
         match prim {
             Primitive::Rect {
                 origin,
                 size,
+                radius,
                 fill,
                 stroke,
             } => {
-                let rect = sk::Rect::from_xywh(
-                    origin.x as f32,
-                    origin.y as f32,
-                    size.x as f32,
-                    size.y as f32,
-                );
-                if let Some(rect) = rect {
-                    paint_path(pixmap, &sk::PathBuilder::from_rect(rect), *fill, *stroke);
+                if let Some(path) = rounded_rect(*origin, *size, *radius) {
+                    paint_path(pixmap, &path, *fill, *stroke);
                 }
             }
             Primitive::Ellipse {
@@ -81,14 +133,13 @@ fn draw_primitives(pixmap: &mut sk::Pixmap, prims: &[Primitive]) {
             }
             Primitive::Text {
                 origin,
-                text,
+                runs,
                 size,
-                color,
                 h_align,
                 v_align,
             } => {
-                if let Some(path) = text_path(&font, text, *origin, *size, *h_align, *v_align) {
-                    paint_path(pixmap, &path, Some(*color), None);
+                for (path, color) in text_paths(&fonts, runs, *origin, *size, *h_align, *v_align) {
+                    paint_path(pixmap, &path, Some(color), None);
                 }
             }
         }
@@ -100,20 +151,58 @@ fn paint_path(
     path: &sk::Path,
     fill: Option<Color>,
     stroke: Option<Stroke>,
+    transform: sk::Transform,
+    mask: Option<&sk::Mask>,
 ) {
-    let identity = sk::Transform::identity();
     if let Some(color) = fill {
         let paint = paint(color);
-        pixmap.fill_path(path, &paint, sk::FillRule::Winding, identity, None);
+        pixmap.fill_path(path, &paint, sk::FillRule::Winding, transform, mask);
     }
     if let Some(stroke) = stroke {
         let style = sk::Stroke {
             width: stroke.width as f32,
             line_join: sk::LineJoin::Round,
+            dash: stroke
+                .dash
+                .and_then(|[on, off]| sk::StrokeDash::new(vec![on as f32, off as f32], 0.0)),
             ..sk::Stroke::default()
         };
-        pixmap.stroke_path(path, &paint(stroke.color), &style, identity, None);
+        pixmap.stroke_path(path, &paint(stroke.color), &style, transform, mask);
     }
+}
+
+/// The outline of the rectangle at `origin` of `size`, with corners
+/// rounded to `radius`.
+fn rounded_rect(origin: Point, size: Point, radius: f64) -> Option<sk::Path> {
+    let rect = sk::Rect::from_xywh(
+        origin.x as f32,
+        origin.y as f32,
+        size.x as f32,
+        size.y as f32,
+    )?;
+    let r = (radius as f32)
+        .min(rect.width() / 2.0)
+        .min(rect.height() / 2.0);
+    if r <= 0.0 {
+        return Some(sk::PathBuilder::from_rect(rect));
+    }
+
+    // a cubic's control points at this fraction of the radius from
+    // each end give a quarter circle to within 0.03%
+    let k = r * (1.0 - 0.552_284_8);
+    let (l, t, rt, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    let mut p = sk::PathBuilder::new();
+    p.move_to(l + r, t);
+    p.line_to(rt - r, t);
+    p.cubic_to(rt - k, t, rt, t + k, rt, t + r);
+    p.line_to(rt, b - r);
+    p.cubic_to(rt, b - k, rt - k, b, rt - r, b);
+    p.line_to(l + r, b);
+    p.cubic_to(l + k, b, l, b - k, l, b - r);
+    p.line_to(l, t + r);
+    p.cubic_to(l, t + k, l + k, t, l + r, t);
+    p.close();
+    p.finish()
 }
 
 fn paint(color: Color) -> sk::Paint<'static> {
@@ -140,52 +229,105 @@ fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
     builder.finish()
 }
 
-/// The outline of `text` set in the embedded font, placed so `origin`
-/// sits where the alignments say.
-fn text_path(
-    font: &Face,
-    text: &str,
+/// The outline of each piece of `runs`, set in the embedded fonts and
+/// placed so `origin` sits where the alignments say, with its color.
+fn text_paths(
+    fonts: &[Face; 4],
+    runs: &[Run],
     origin: Point,
     size: f64,
     h_align: HAlign,
     v_align: VAlign,
-) -> Option<sk::Path> {
-    let scale = size as f32 / font.units_per_em() as f32;
-    let glyphs: Vec<GlyphId> = text
-        .chars()
-        .map(|c| font.glyph_index(c).unwrap_or(GlyphId(0)))
-        .collect();
-    let advance = |g: GlyphId| font.glyph_hor_advance(g).unwrap_or(0) as f32 * scale;
-    let width: f32 = glyphs.iter().map(|&g| advance(g)).sum();
+) -> Vec<(sk::Path, Color)> {
+    let face = |font: Font| {
+        &fonts[match font {
+            Font::Mono => 0,
+            Font::Sans => 1,
+            Font::SansBold => 2,
+            Font::SansItalic => 3,
+        }]
+    };
+    let scale = |face: &Face| size as f32 / face.units_per_em() as f32;
 
-    let x = origin.x as f32
-        - match h_align {
-            HAlign::Left => 0.0,
-            HAlign::Center => width / 2.0,
-            HAlign::Right => width,
-        };
-    let baseline = origin.y as f32
+    // each line as pieces of one font and color
+    let mut lines: Vec<Vec<(&str, Font, Color)>> = vec![Vec::new()];
+    for run in runs {
+        for (k, piece) in run.text.split('\n').enumerate() {
+            if k > 0 {
+                lines.push(Vec::new());
+            }
+            if !piece.is_empty() {
+                lines.last_mut().unwrap().push((piece, run.font, run.color));
+            }
+        }
+    }
+
+    let first = face(runs.first().map_or(Font::Mono, |r| r.font));
+    let line_height = LINE_HEIGHT * size as f32;
+    let first_baseline = origin.y as f32
+        - match v_align {
+            VAlign::Top | VAlign::Baseline => 0.0,
+            VAlign::Middle => (lines.len() - 1) as f32 * line_height / 2.0,
+        }
         + match v_align {
-            VAlign::Top => font.ascender() as f32 * scale,
+            VAlign::Top => first.ascender() as f32 * scale(first),
 
             // half the capital height rather than half the
             // ascender to descender span, so a digit or a
             // capital sits in the middle of a grid cell
-            VAlign::Middle => font.capital_height().unwrap_or(font.ascender()) as f32 * scale / 2.0,
+            VAlign::Middle => {
+                first.capital_height().unwrap_or(first.ascender()) as f32 * scale(first) / 2.0
+            }
             VAlign::Baseline => 0.0,
         };
 
-    let mut outline = Outline {
-        builder: sk::PathBuilder::new(),
-        x,
-        y: baseline,
-        scale,
+    let glyphs = |face: &Face, text: &str| -> Vec<GlyphId> {
+        text.chars()
+            .map(|c| face.glyph_index(c).unwrap_or(GlyphId(0)))
+            .collect()
     };
-    for g in glyphs {
-        font.outline_glyph(g, &mut outline);
-        outline.x += advance(g);
+    let advance =
+        |face: &Face, g: GlyphId| face.glyph_hor_advance(g).unwrap_or(0) as f32 * scale(face);
+
+    let mut out = Vec::new();
+    let mut y = first_baseline;
+    for line in &lines {
+        let width: f32 = line
+            .iter()
+            .map(|&(text, font, _)| {
+                let face = face(font);
+                glyphs(face, text)
+                    .iter()
+                    .map(|&g| advance(face, g))
+                    .sum::<f32>()
+            })
+            .sum();
+        let mut x = origin.x as f32
+            - match h_align {
+                HAlign::Left => 0.0,
+                HAlign::Center => width / 2.0,
+                HAlign::Right => width,
+            };
+        for &(text, font, color) in line {
+            let face = face(font);
+            let mut outline = Outline {
+                builder: sk::PathBuilder::new(),
+                x,
+                y,
+                scale: scale(face),
+            };
+            for g in glyphs(face, text) {
+                face.outline_glyph(g, &mut outline);
+                outline.x += advance(face, g);
+            }
+            x = outline.x;
+            if let Some(path) = outline.builder.finish() {
+                out.push((path, color));
+            }
+        }
+        y += line_height;
     }
-    outline.builder.finish()
+    out
 }
 
 /// A glyph outline being copied into a path, in canvas pixels.
@@ -274,10 +416,11 @@ mod tests {
         let rect = Primitive::Rect {
             origin: Point::new(5.0, 6.0),
             size: Point::new(4.0, 3.0),
+            radius: 0.0,
             fill: Some(RED),
             stroke: None,
         };
-        draw_primitives(&mut pixmap, &[rect]);
+        draw_primitives(&mut pixmap, &[rect], sk::Transform::identity(), None);
         assert_eq!(ink(&pixmap), [5, 6, 9, 9]);
         let p = pixmap.pixel(6, 7).unwrap();
         assert_eq!((p.red(), p.green(), p.blue()), (255, 0, 0));
@@ -292,12 +435,9 @@ mod tests {
                 Point::new(25.0, 5.0),
                 Point::new(25.0, 25.0),
             ],
-            stroke: Stroke {
-                color: RED,
-                width: 2.0,
-            },
+            stroke: Stroke::solid(RED, 2.0),
         };
-        draw_primitives(&mut pixmap, &[line]);
+        draw_primitives(&mut pixmap, &[line], sk::Transform::identity(), None);
         assert!(!is_white(&pixmap, 15, 5));
         assert!(!is_white(&pixmap, 25, 15));
         assert!(is_white(&pixmap, 15, 15));
@@ -308,13 +448,16 @@ mod tests {
         let mut pixmap = blank(80, 80);
         let text = Primitive::Text {
             origin: Point::new(40.0, 40.0),
-            text: "8".into(),
+            runs: vec![Run {
+                text: "8".into(),
+                font: Font::Mono,
+                color: Color::BLACK,
+            }],
             size: 40.0,
-            color: Color::BLACK,
             h_align: HAlign::Center,
             v_align: VAlign::Middle,
         };
-        draw_primitives(&mut pixmap, &[text]);
+        draw_primitives(&mut pixmap, &[text], sk::Transform::identity(), None);
         let [left, top, right, bottom] = ink(&pixmap);
         assert!(right > left && bottom > top, "nothing was drawn");
         let mid_x = (left + right) as f64 / 2.0;
@@ -328,17 +471,44 @@ mod tests {
         let mut pixmap = blank(200, 60);
         let text = |s: &str| Primitive::Text {
             origin: Point::new(10.0, 40.0),
-            text: s.into(),
+            runs: vec![Run {
+                text: s.into(),
+                font: Font::Mono,
+                color: Color::BLACK,
+            }],
             size: 30.0,
-            color: Color::BLACK,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };
-        draw_primitives(&mut pixmap, &[text("a\u{10fffd}b")]);
+        draw_primitives(
+            &mut pixmap,
+            &[text("a\u{10fffd}b")],
+            sk::Transform::identity(),
+            None,
+        );
         let with_gap = ink(&pixmap);
         let mut pixmap = blank(200, 60);
-        draw_primitives(&mut pixmap, &[text("a b")]);
+        draw_primitives(&mut pixmap, &[text("a b")], sk::Transform::identity(), None);
         assert_eq!(with_gap[2], ink(&pixmap)[2]);
+    }
+
+    #[test]
+    fn a_view_draws_the_canvas_scaled_and_moved_and_nothing_off_it() {
+        let scene = Scene {
+            canvas: crate::scene::Canvas {
+                width: 10,
+                height: 10,
+                fps: 1,
+                duration: 0.0,
+                background: RED,
+            },
+            objects: Vec::new(),
+        };
+        let pixmap = draw_view(&scene, 0.0, 40, 40, 2.0, Point::new(5.0, 5.0));
+        let red = |x, y| pixmap.pixel(x, y).unwrap().red() == 255;
+        assert!(red(5, 5) && red(24, 24));
+        assert_eq!(pixmap.pixel(4, 4).unwrap().alpha(), 0);
+        assert_eq!(pixmap.pixel(25, 25).unwrap().alpha(), 0);
     }
 
     #[test]
@@ -353,7 +523,7 @@ mod tests {
             },
             objects: Vec::new(),
         };
-        let pixmap = draw_frame(&scene, 0.0);
+        let pixmap = draw_frame(&scene, 0.0, 1.0);
         assert_eq!((pixmap.width(), pixmap.height()), (12, 7));
         let p = pixmap.pixel(11, 6).unwrap();
         assert_eq!((p.red(), p.green(), p.blue()), (255, 0, 0));

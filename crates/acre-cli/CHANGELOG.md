@@ -18,3 +18,7 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `acre render FILE` draws the file and writes a PNG image. `--out` names the
   image file, where it used to name a directory. Without `--out` the image goes
   beside the source with a `.png` extension.
+- `acre render --scale N` writes the image at N image pixels to each canvas
+  pixel.
+- `acre fmt FILE...` rewrites drawings in acre's one layout. `--check` lists
+  the files that would change and writes nothing.

@@ -72,6 +72,37 @@ impl Color {
 pub struct Stroke {
     pub color: Color,
     pub width: f64,
+    /// The lengths of a dash and of the gap after it, or `None` for a
+    /// solid line.
+    pub dash: Option<[f64; 2]>,
+}
+
+impl Stroke {
+    pub const fn solid(color: Color, width: f64) -> Self {
+        Stroke {
+            color,
+            width,
+            dash: None,
+        }
+    }
+}
+
+/// A stretch of text in one font and one color.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Run {
+    pub text: String,
+    pub font: Font,
+    pub color: Color,
+}
+
+/// The typeface text is set in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Font {
+    #[default]
+    Mono,
+    Sans,
+    SansBold,
+    SansItalic,
 }
 
 /// Where a text's origin sits on its box, horizontally.
@@ -98,6 +129,8 @@ pub enum Primitive {
     Rect {
         origin: Point,
         size: Point,
+        /// The radius of the rounded corners.
+        radius: f64,
         fill: Option<Color>,
         stroke: Option<Stroke>,
     },
@@ -124,12 +157,76 @@ pub enum Primitive {
     },
     Text {
         origin: Point,
-        text: String,
+        /// One or more lines, split at `\n` in any run.
+        runs: Vec<Run>,
         size: f64,
-        color: Color,
         h_align: HAlign,
         v_align: VAlign,
     },
+}
+
+/// The box around `prims`, as its top-left and bottom-right corners, or
+/// `None` when they cover nothing. Text is measured roughly, at 0.6 of
+/// its size to a character, since the scene holds no font.
+pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
+    let mut min = Point::new(f64::INFINITY, f64::INFINITY);
+    let mut max = Point::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let mut add = |p: Point, pad: f64| {
+        min = Point::new(min.x.min(p.x - pad), min.y.min(p.y - pad));
+        max = Point::new(max.x.max(p.x + pad), max.y.max(p.y + pad));
+    };
+    for prim in prims {
+        match prim {
+            Primitive::Rect { origin, size, .. } => {
+                add(*origin, 0.0);
+                add(*origin + *size, 0.0);
+            }
+            Primitive::Ellipse { center, radius, .. } => {
+                add(*center - *radius, 0.0);
+                add(*center + *radius, 0.0);
+            }
+            Primitive::Line { from, to, stroke } => {
+                add(*from, stroke.width / 2.0);
+                add(*to, stroke.width / 2.0);
+            }
+            Primitive::Polyline { points, stroke } => {
+                for p in points {
+                    add(*p, stroke.width / 2.0);
+                }
+            }
+            Primitive::Polygon { points, .. } => {
+                for p in points {
+                    add(*p, 0.0);
+                }
+            }
+            Primitive::Text {
+                origin,
+                runs,
+                size,
+                h_align,
+                v_align,
+            } => {
+                let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                let lines: Vec<&str> = text.split('\n').collect();
+                let longest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                let width = longest as f64 * size * 0.6;
+                let height = lines.len() as f64 * size * 1.3;
+                let left = match h_align {
+                    HAlign::Left => origin.x,
+                    HAlign::Center => origin.x - width / 2.0,
+                    HAlign::Right => origin.x - width,
+                };
+                let top = match v_align {
+                    VAlign::Top => origin.y,
+                    VAlign::Middle => origin.y - height / 2.0,
+                    VAlign::Baseline => origin.y - size,
+                };
+                add(Point::new(left, top), 0.0);
+                add(Point::new(left + width, top + height), 0.0);
+            }
+        }
+    }
+    (min.x <= max.x).then_some((min, max))
 }
 
 impl Primitive {
@@ -152,7 +249,11 @@ impl Primitive {
             Primitive::Line { stroke, .. } | Primitive::Polyline { stroke, .. } => {
                 stroke.color = stroke.color.faded(opacity);
             }
-            Primitive::Text { color, .. } => *color = color.faded(opacity),
+            Primitive::Text { runs, .. } => {
+                for run in runs {
+                    run.color = run.color.faded(opacity);
+                }
+            }
         }
     }
 }

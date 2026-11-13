@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
+use super::expand::expand;
+use super::markup;
+use super::schema;
 use super::{
-    Canvas, Color, Connector, HAlign, Kind, Label, Object, Point, Scene, Shape, Stroke, Text,
+    Brace, Canvas, Color, Connector, Font, HAlign, Kind, Label, Object, Point, Row, RowCell, Ruler,
+    Scene, Shape, Side, Stroke, Text,
 };
-use crate::lang::{Error, Node, Program, Property, Span, ValueKind};
+use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
 
 const STROKE_WIDTH: f64 = 2.0;
 const TEXT_SIZE: f64 = 16.0;
@@ -27,47 +31,43 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
         }
         [node] => node,
     };
-    let props = Props::new(canvas, &["size", "background"], true)?;
+    let (canvas, colors) = expand(canvas)?;
+    let canvas = &canvas;
+    let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
     let [width, height] = size.numbers::<2>()?;
     let background = match props.get("background") {
         Some(p) => p.color()?,
         None => Color::WHITE,
     };
+    let mut names = Names {
+        font: match props.get("font") {
+            Some(p) => font(p)?,
+            None => Font::Mono,
+        },
+        colors,
+        palettes: HashMap::new(),
+        shapes: HashMap::new(),
+        rows: HashMap::new(),
+    };
 
-    let mut shapes: HashMap<&str, Shape> = HashMap::new();
+    // palettes, then named shapes and rows, so that a node may
+    // name any of them wherever it sits in the file
     for node in &canvas.children {
-        if let (Some(oval), Some(name)) = (shape_kind(node), &node.name)
-            && shapes.insert(&name.text, shape(node, oval)?).is_some()
-        {
-            return Err(Error::new(
-                name.span,
-                format!("two shapes are named `{}`", name.text),
-            ));
+        if node.kind.text == "palette" {
+            let name = node
+                .name
+                .as_ref()
+                .ok_or_else(|| Error::new(node.kind.span, "a `palette` needs a name"))?;
+            let palette = palette(node)?;
+            if names.palettes.insert(&name.text, palette).is_some() {
+                return Err(twice("palettes", name));
+            }
         }
     }
-
+    name_things(&canvas.children, Point::ZERO, &mut names)?;
     let mut objects = Vec::new();
-    for node in &canvas.children {
-        let kind = match (shape_kind(node), &node.name) {
-            (Some(_), Some(name)) => Kind::Shape(shapes[name.text.as_str()].clone()),
-            (Some(oval), None) => Kind::Shape(shape(node, oval)?),
-            (None, _) => match node.kind.text.as_str() {
-                "line" => Kind::Connector(connector(node, &shapes, false)?),
-                "arrow" => Kind::Connector(connector(node, &shapes, true)?),
-                "text" => Kind::Text(text(node)?),
-                other => {
-                    return Err(Error::new(
-                        node.kind.span,
-                        format!(
-                            "unknown node `{other}`; a canvas holds box, ellipse, line, arrow and text"
-                        ),
-                    ));
-                }
-            },
-        };
-        objects.push(Object::new(kind));
-    }
+    add_objects(&canvas.children, Point::ZERO, &names, &mut objects)?;
 
     Ok(Scene {
         canvas: Canvas {
@@ -81,85 +81,392 @@ pub fn build(program: &Program) -> Result<Scene, Error> {
     })
 }
 
-fn shape_kind(node: &Node) -> Option<bool> {
-    match node.kind.text.as_str() {
-        "box" => Some(false),
-        "ellipse" => Some(true),
-        _ => None,
+/// Build every named shape and row in `nodes` and the groups among them,
+/// in source order, into `names`.
+fn name_things<'a>(nodes: &'a [Node], offset: Point, names: &mut Names<'a>) -> Result<(), Error> {
+    for node in nodes {
+        if node.kind.text == "group" {
+            let at = group_at(node, names, offset)?;
+            name_things(&node.children, at, names)?;
+            continue;
+        }
+        let Some(name) = &node.name else { continue };
+        let taken = match node.kind.text.as_str() {
+            "box" | "ellipse" => {
+                let shape = shape(node, names, offset)?;
+                names.shapes.insert(&name.text, shape).is_some()
+                    || names.rows.contains_key(name.text.as_str())
+            }
+            "row" => {
+                let row = row(node, names, offset)?;
+                names.rows.insert(&name.text, row).is_some()
+                    || names.shapes.contains_key(name.text.as_str())
+            }
+            _ => false,
+        };
+        if taken {
+            return Err(twice("things", name));
+        }
+    }
+    Ok(())
+}
+
+/// Append the objects `nodes` draw, with the groups among them opened,
+/// to `out` in source order.
+fn add_objects(
+    nodes: &[Node],
+    offset: Point,
+    names: &Names,
+    out: &mut Vec<Object>,
+) -> Result<(), Error> {
+    for node in nodes {
+        let named = node.name.as_ref().map(|n| n.text.as_str());
+        let kind = match node.kind.text.as_str() {
+            "palette" => continue,
+            "group" => {
+                add_objects(&node.children, group_at(node, names, offset)?, names, out)?;
+                continue;
+            }
+            "line" | "arrow" => {
+                let head = node.kind.text == "arrow";
+                let repeat = node
+                    .properties
+                    .iter()
+                    .find(|p| p.key.text == "repeat")
+                    .map_or(Ok(1), |p| p.count())?;
+                for shift in 0..repeat {
+                    let c = connector(node, names, head, offset, shift)?;
+                    out.push(Object::new(Kind::Connector(c)).from_source(node.span));
+                }
+                continue;
+            }
+            "box" | "ellipse" => match named {
+                Some(name) => Kind::Shape(names.shapes[name].clone()),
+                None => Kind::Shape(shape(node, names, offset)?),
+            },
+            "row" => match named {
+                Some(name) => Kind::Row(names.rows[name].clone()),
+                None => Kind::Row(row(node, names, offset)?),
+            },
+            "text" => Kind::Text(text(node, names, offset)?),
+            "table" => {
+                for t in table(node, names, offset)? {
+                    out.push(Object::new(Kind::Text(t)).from_source(node.span));
+                }
+                continue;
+            }
+            "brace" => Kind::Brace(brace(node, names, offset)?),
+            "ruler" => Kind::Ruler(ruler(node, names, offset)?),
+            other => {
+                return Err(Error::new(
+                    node.kind.span,
+                    format!(
+                        "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
+                         text, table, row, brace, ruler, group, palette and style"
+                    ),
+                ));
+            }
+        };
+        out.push(Object::new(kind).from_source(node.span));
+    }
+    Ok(())
+}
+
+/// Where a group puts the origin of the nodes in it.
+fn group_at(node: &Node, names: &Names, offset: Point) -> Result<Point, Error> {
+    let props = Props::new(node, &keys("group"), true)?;
+    match props.get("at") {
+        Some(p) => at(p, names, offset),
+        None => Ok(offset),
     }
 }
 
-fn shape(node: &Node, oval: bool) -> Result<Shape, Error> {
-    let props = Props::new(
-        node,
-        &[
-            "at",
-            "size",
-            "fill",
-            "stroke",
-            "stroke-width",
-            "text",
-            "text-size",
-            "text-color",
-        ],
-        false,
-    )?;
-    let [x, y] = props.require("at")?.numbers::<2>()?;
+/// The point an `at` names: two numbers from the origin of the group it
+/// sits in, or a shape, row or row cell's top-left corner and two
+/// optional numbers from there.
+fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
+    if let [first, ..] = p.values.as_slice()
+        && let ValueKind::Number(_) = first.kind
+    {
+        let [x, y] = p.numbers::<2>()?;
+        return Ok(offset + Point::new(x, y));
+    }
+    // a row's name and one number is a cell, so with three values the
+    // two numbers are the offset from the whole row
+    let named = match p.values.len() {
+        3 => &p.values[..1],
+        4 => &p.values[..2],
+        _ => &p.values[..],
+    };
+    let (thing, _) = target(p, named, names, 0)?;
+    match &p.values[named.len()..] {
+        [] => Ok(thing.origin),
+        [dx, dy] => match (&dx.kind, &dy.kind) {
+            (ValueKind::Number(dx), ValueKind::Number(dy)) => {
+                Ok(thing.origin + Point::new(*dx, *dy))
+            }
+            _ => Err(p.expected("a name and two numbers")),
+        },
+        _ => Err(p.expected("two numbers, or a name and two optional numbers")),
+    }
+}
+
+/// The property names node kind `kind` takes.
+fn keys(kind: &str) -> Vec<&'static str> {
+    schema::node(kind)
+        .expect("every kind the builder reads is in the schema")
+        .keys()
+}
+
+/// What the nodes of a canvas may refer to by name, and the canvas's
+/// default font.
+struct Names<'a> {
+    font: Font,
+    /// The `let` names that stand for one color, for markup.
+    colors: HashMap<String, Color>,
+    palettes: HashMap<&'a str, Palette>,
+    shapes: HashMap<&'a str, Shape>,
+    rows: HashMap<&'a str, Row>,
+}
+
+/// How a palette draws each cell text it lists.
+type Palette = HashMap<String, Symbol>;
+
+struct Symbol {
+    fill: Color,
+    note: Option<String>,
+    text_color: Option<Color>,
+}
+
+fn twice(what: &str, name: &crate::lang::Word) -> Error {
+    Error::new(name.span, format!("two {what} are named `{}`", name.text))
+}
+
+fn palette(node: &Node) -> Result<Palette, Error> {
+    if let Some(child) = node.children.first() {
+        return Err(Error::new(child.kind.span, "a `palette` holds no nodes"));
+    }
+    let mut out = Palette::new();
+    for p in &node.properties {
+        if p.key.text != "symbol" {
+            return Err(Error::new(
+                p.key.span,
+                "a `palette` holds only `symbol` lines",
+            ));
+        }
+        let bad = || {
+            Error::new(
+                p.span,
+                "`symbol` takes a string, a fill, and an optional note and text color",
+            )
+        };
+        let [text, fill, rest @ ..] = p.values.as_slice() else {
+            return Err(bad());
+        };
+        let (ValueKind::Str(text), ValueKind::Color(fill)) = (&text.kind, &fill.kind) else {
+            return Err(bad());
+        };
+        let mut symbol = Symbol {
+            fill: rgba(fill),
+            note: None,
+            text_color: None,
+        };
+        for v in rest {
+            match &v.kind {
+                ValueKind::Str(n) if symbol.note.is_none() && symbol.text_color.is_none() => {
+                    symbol.note = Some(n.clone())
+                }
+                ValueKind::Color(c) if symbol.text_color.is_none() => {
+                    symbol.text_color = Some(rgba(c))
+                }
+                _ => return Err(bad()),
+            }
+        }
+        out.insert(text.clone(), symbol);
+    }
+    Ok(out)
+}
+
+fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
+    let props = Props::new(node, &keys("box"), false)?;
+    let origin = at(props.require("at")?, names, offset)?;
     let [w, h] = props.require("size")?.numbers::<2>()?;
     let fill = match props.get("fill") {
         Some(p) => p.color_or_none()?,
         None => Some(Color::WHITE),
     };
     Ok(Shape {
-        origin: Point::new(x, y),
+        origin,
         size: Point::new(w, h),
-        oval,
+        oval: node.kind.text == "ellipse",
+        radius: props.number_or("radius", 0.0)?,
         fill,
-        stroke: props.stroke()?,
-        label: props.label("text", "text-size", "text-color")?,
+        stroke: props.stroke(Some(Color::BLACK))?,
+        label: props.label("text", "text-size", "text-color", names)?,
     })
 }
 
-fn connector(node: &Node, shapes: &HashMap<&str, Shape>, head: bool) -> Result<Connector, Error> {
-    let props = Props::new(
-        node,
-        &[
-            "from",
-            "to",
-            "stroke",
-            "stroke-width",
-            "label",
-            "text-size",
-            "text-color",
-        ],
-        false,
-    )?;
-    let from = end(props.require("from")?, shapes)?;
-    let to = end(props.require("to")?, shapes)?;
+fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
+    let props = Props::new(node, &keys("row"), true)?;
+    let origin = at(props.require("at")?, names, offset)?;
+    let [unit_w, unit_h] = props.require("unit")?.numbers::<2>()?;
+    let span = props.count_or("span", 1)?;
+    let palette = match props.get("palette") {
+        None => None,
+        Some(p) => {
+            let name = p.word()?;
+            Some(
+                names
+                    .palettes
+                    .get(name)
+                    .ok_or_else(|| Error::new(p.span, format!("no palette is named `{name}`")))?,
+            )
+        }
+    };
+    let notes = match props.get("notes") {
+        None => false,
+        Some(p) => match p.word()? {
+            "show" => true,
+            "hide" => false,
+            _ => return Err(Error::new(p.span, "`notes` is show or hide")),
+        },
+    };
+    let fill = match props.get("fill") {
+        Some(p) => p.color_or_none()?,
+        None => Some(Color::WHITE),
+    };
+    let stroke = props.stroke(Some(Color::BLACK))?;
+    let font = props.font_or(names.font)?;
+    let label = |text: &str| -> Result<Label, Error> {
+        Ok(Label::plain(
+            text,
+            props.number_or("text-size", TEXT_SIZE)?,
+            font,
+            props.color_or("text-color", Color::BLACK)?,
+        ))
+    };
+    let note = |text: &str| -> Result<Label, Error> {
+        Ok(Label::plain(
+            text,
+            props.number_or("note-size", TEXT_SIZE * 0.7)?,
+            match props.get("note-font") {
+                Some(p) => self::font(p)?,
+                None => Font::Mono,
+            },
+            props.color_or("note-color", Color::BLACK)?,
+        ))
+    };
+
+    let mut cells = Vec::new();
+    let mut start = 0;
+    let mut push = |text: &str, span: usize, cell: Option<&Props>| -> Result<(), Error> {
+        let from_palette = palette.and_then(|p| p.get(text));
+        let mut out = RowCell {
+            start,
+            span,
+            fill: from_palette.map_or(fill, |s| Some(s.fill)),
+            stroke,
+            label: (!text.is_empty()).then(|| label(text)).transpose()?,
+            note: match from_palette.and_then(|s| s.note.as_ref()) {
+                Some(n) if notes => Some(note(n)?),
+                _ => None,
+            },
+        };
+        if let (Some(l), Some(c)) = (&mut out.label, from_palette.and_then(|s| s.text_color)) {
+            l.set_color(c);
+        }
+        if let Some(cell) = cell {
+            if let Some(p) = cell.get("fill") {
+                out.fill = p.color_or_none()?;
+            }
+            if cell.get("stroke").is_some()
+                || cell.get("stroke-width").is_some()
+                || cell.get("dash").is_some()
+            {
+                out.stroke = cell.stroke(stroke.map(|s| s.color))?;
+            }
+            if let Some(l) = &mut out.label
+                && let Some(p) = cell.get("text-color")
+            {
+                l.set_color(p.color()?);
+            }
+            if let Some(p) = cell.get("note") {
+                out.note = Some(note(&p.string()?)?);
+            }
+        }
+        start += span;
+        cells.push(out);
+        Ok(())
+    };
+    if let Some(p) = props.get("chars") {
+        for c in p.string()?.chars() {
+            push(c.encode_utf8(&mut [0; 4]), span, None)?;
+        }
+    }
+    if let Some(p) = props.get("cells") {
+        for v in &p.values {
+            match &v.kind {
+                ValueKind::Str(text) => push(text, span, None)?,
+                _ => return Err(Error::new(v.span, "`cells` takes strings")),
+            }
+        }
+    }
+    for child in &node.children {
+        if child.kind.text != "cell" {
+            return Err(Error::new(
+                child.kind.span,
+                format!("a `row` holds `cell` nodes, not `{}`", child.kind.text),
+            ));
+        }
+        let cell = Props::new(child, &keys("cell"), false)?;
+        let text = match cell.get("text") {
+            Some(p) => p.string()?,
+            None => String::new(),
+        };
+        push(&text, cell.count_or("span", span)?, Some(&cell))?;
+    }
+    Ok(Row {
+        origin,
+        unit: Point::new(unit_w, unit_h),
+        gap: props.number_or("gap", 0.0)?,
+        radius: props.number_or("radius", 0.0)?,
+        cells,
+    })
+}
+
+fn connector(
+    node: &Node,
+    names: &Names,
+    head: bool,
+    offset: Point,
+    shift: usize,
+) -> Result<Connector, Error> {
+    let props = Props::new(node, &keys("line"), false)?;
+    let from = end(props.require("from")?, names, offset, shift)?;
+    let to = end(props.require("to")?, names, offset, shift)?;
     let center = |end: &End| match end {
         End::Point(p) => *p,
-        End::Shape(s) => s.center(),
+        End::Box(s) => s.center(),
     };
     let on_edge = |end: &End, other: &End| match end {
         End::Point(p) => *p,
-        End::Shape(s) => s.edge_toward(center(other)),
+        End::Box(s) => s.edge_toward(center(other)),
     };
-    let stroke = props.stroke()?.unwrap_or(Stroke {
-        color: Color::BLACK,
-        width: STROKE_WIDTH,
-    });
+    let stroke = props
+        .stroke(Some(Color::BLACK))?
+        .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
     Ok(Connector {
         from: on_edge(&from, &to),
         to: on_edge(&to, &from),
         stroke,
         head,
-        label: props.label("label", "text-size", "text-color")?,
+        label: props.label("label", "text-size", "text-color", names)?,
     })
 }
 
-fn text(node: &Node) -> Result<Text, Error> {
-    let props = Props::new(node, &["at", "text", "size", "color", "align"], false)?;
-    let [x, y] = props.require("at")?.numbers::<2>()?;
+fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
+    let props = Props::new(node, &keys("text"), false)?;
+    let origin = at(props.require("at")?, names, offset)?;
     let align = match props.get("align") {
         None => HAlign::Left,
         Some(p) => match p.word()? {
@@ -170,31 +477,319 @@ fn text(node: &Node) -> Result<Text, Error> {
         },
     };
     let label = props
-        .label("text", "size", "color")?
+        .label("text", "size", "color", names)?
         .ok_or_else(|| Error::new(node.kind.span, "`text` needs `text`"))?;
     Ok(Text {
-        origin: Point::new(x, y),
+        origin,
         label,
         align,
     })
 }
 
-enum End<'a> {
-    Point(Point),
-    Shape(&'a Shape),
+/// The texts of a table: one `row` line of strings per row, with each
+/// string set at its column's x and aligned to it.
+fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> {
+    let (rows, rest): (Vec<&Property>, Vec<&Property>) =
+        node.properties.iter().partition(|p| p.key.text == "row");
+    let settings = Node {
+        properties: rest.into_iter().cloned().collect(),
+        ..node.clone()
+    };
+    let props = Props::new(&settings, &keys("table"), false)?;
+    let origin = at(props.require("at")?, names, offset)?;
+    let columns = props.require("columns")?;
+    let xs: Vec<f64> = columns
+        .values
+        .iter()
+        .map(|v| match v.kind {
+            ValueKind::Number(n) => Ok(n),
+            _ => Err(columns.expected("numbers")),
+        })
+        .collect::<Result<_, _>>()?;
+    let aligns: Vec<HAlign> = match props.get("align") {
+        None => vec![HAlign::Left; xs.len()],
+        Some(p) => p
+            .values
+            .iter()
+            .map(|v| match &v.kind {
+                ValueKind::Word(w) if w == "left" => Ok(HAlign::Left),
+                ValueKind::Word(w) if w == "center" => Ok(HAlign::Center),
+                ValueKind::Word(w) if w == "right" => Ok(HAlign::Right),
+                _ => Err(Error::new(v.span, "an alignment is left, center or right")),
+            })
+            .collect::<Result<_, _>>()?,
+    };
+    if aligns.len() != xs.len() {
+        return Err(Error::new(
+            node.kind.span,
+            "a `table` takes one `align` per column",
+        ));
+    }
+    let height = props.number_or("row-height", TEXT_SIZE * 1.5)?;
+    let size = props.number_or("size", TEXT_SIZE)?;
+    let font = props.font_or(names.font)?;
+    let color = props.color_or("color", Color::BLACK)?;
+
+    let mut out = Vec::new();
+    for (k, row) in rows.iter().enumerate() {
+        if row.values.len() > xs.len() {
+            return Err(Error::new(
+                row.values[xs.len()].span,
+                format!("the table has {} columns", xs.len()),
+            ));
+        }
+        for (column, v) in row.values.iter().enumerate() {
+            let ValueKind::Str(text) = &v.kind else {
+                return Err(Error::new(v.span, "a table's cells are strings"));
+            };
+            let runs = markup::runs(text, font, color, &names.colors)
+                .map_err(|message| Error::new(v.span, message))?;
+            out.push(Text {
+                origin: origin + Point::new(xs[column], k as f64 * height),
+                label: Label { runs, size },
+                align: aligns[column],
+            });
+        }
+    }
+    Ok(out)
 }
 
-fn end<'a>(p: &Property, shapes: &'a HashMap<&str, Shape>) -> Result<End<'a>, Error> {
-    match p.values.as_slice() {
-        [v] => match &v.kind {
-            ValueKind::Word(name) => shapes
-                .get(name.as_str())
-                .map(End::Shape)
-                .ok_or_else(|| Error::new(v.span, format!("no box or ellipse is named `{name}`"))),
-            _ => Err(Error::new(v.span, "expected a shape's name or two numbers")),
+fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
+    let props = Props::new(node, &keys("brace"), false)?;
+    let side = match props.get("side") {
+        Some(p) => side(p)?,
+        None => Side::Top,
+    };
+    let gap = props.number_or("gap", 4.0)?;
+    let (from, to) = match props.get("over") {
+        Some(p) => {
+            let [left, top, right, bottom] = bounds(p, names)?;
+            match side {
+                Side::Top => (Point::new(left, top - gap), Point::new(right, top - gap)),
+                Side::Bottom => (
+                    Point::new(left, bottom + gap),
+                    Point::new(right, bottom + gap),
+                ),
+                Side::Left => (Point::new(left - gap, top), Point::new(left - gap, bottom)),
+                Side::Right => (
+                    Point::new(right + gap, top),
+                    Point::new(right + gap, bottom),
+                ),
+            }
+        }
+        None => {
+            let [x0, y0] = props.require("from")?.numbers::<2>()?;
+            let [x1, y1] = props.require("to")?.numbers::<2>()?;
+            (offset + Point::new(x0, y0), offset + Point::new(x1, y1))
+        }
+    };
+    let square = match props.get("shape") {
+        None => false,
+        Some(p) => match p.word()? {
+            "curly" => false,
+            "square" => true,
+            _ => return Err(Error::new(p.span, "`shape` is curly or square")),
         },
-        _ => p.numbers::<2>().map(|[x, y]| End::Point(Point::new(x, y))),
+    };
+    Ok(Brace {
+        from,
+        to,
+        side,
+        depth: props.number_or("depth", 10.0)?,
+        square,
+        stroke: props
+            .stroke(Some(Color::BLACK))?
+            .unwrap_or(Stroke::solid(Color::BLACK, 1.0)),
+        label: props.label("label", "text-size", "text-color", names)?,
+    })
+}
+
+fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
+    let props = Props::new(node, &keys("ruler"), false)?;
+    let origin = at(props.require("at")?, names, offset)?;
+    Ok(Ruler {
+        origin,
+        unit: props.require("unit")?.numbers::<1>()?[0],
+        count: props.count_or("count", 1)?,
+        first: props.number_or("first", 0.0)?,
+        step: props.number_or("step", 1.0)?,
+        every: props.count_or("every", 1)?,
+        side: match props.get("side") {
+            Some(p) => side(p)?,
+            None => Side::Top,
+        },
+        stroke: props
+            .stroke(Some(Color::BLACK))?
+            .unwrap_or(Stroke::solid(Color::BLACK, 1.0)),
+        label: Label::plain(
+            "",
+            props.number_or("text-size", TEXT_SIZE * 0.7)?,
+            props.font_or(names.font)?,
+            props.color_or("text-color", Color::BLACK)?,
+        ),
+    })
+}
+
+/// Where a connector ends: a point, or the outline of a box it stops at.
+enum End {
+    Point(Point),
+    Box(Shape),
+}
+
+/// The end a connector's `from` or `to` names. It is two numbers, a
+/// shape's name, or a row's name and a cell's index. A side after a
+/// name puts the end at the middle of that side.
+fn end(p: &Property, names: &Names, offset: Point, shift: usize) -> Result<End, Error> {
+    if let [first, ..] = p.values.as_slice()
+        && let ValueKind::Number(_) = first.kind
+    {
+        return p
+            .numbers::<2>()
+            .map(|[x, y]| End::Point(offset + Point::new(x, y)));
     }
+    let (thing, rest) = target(p, &p.values, names, shift)?;
+    match rest {
+        [] => Ok(End::Box(thing)),
+        [v] => match &v.kind {
+            ValueKind::Word(w) => {
+                let [left, top, right, bottom] = [
+                    thing.origin.x,
+                    thing.origin.y,
+                    thing.origin.x + thing.size.x,
+                    thing.origin.y + thing.size.y,
+                ];
+                let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
+                Ok(End::Point(match w.as_str() {
+                    "top" => Point::new(cx, top),
+                    "bottom" => Point::new(cx, bottom),
+                    "left" => Point::new(left, cy),
+                    "right" => Point::new(right, cy),
+                    _ => return Err(Error::new(v.span, "a side is top, bottom, left or right")),
+                }))
+            }
+            _ => Err(Error::new(v.span, "expected a side")),
+        },
+        [_, extra, ..] => Err(Error::new(extra.span, "too many values")),
+    }
+}
+
+/// The left, top, right and bottom of what `over` names: a shape, a
+/// whole row, or a row's cells from one index to another.
+fn bounds(p: &Property, names: &Names) -> Result<[f64; 4], Error> {
+    let corners = |s: &Shape| {
+        [
+            s.origin.x,
+            s.origin.y,
+            s.origin.x + s.size.x,
+            s.origin.y + s.size.y,
+        ]
+    };
+    let (first, rest) = target(p, &p.values, names, 0)?;
+    let [left, top, mut right, mut bottom] = corners(&first);
+    match rest {
+        [] => {}
+        [last] => {
+            let mut to = p.values[..1].to_vec();
+            to.push(last.clone());
+            let (last, _) = target(p, &to, names, 0)?;
+            let c = corners(&last);
+            right = c[2];
+            bottom = c[3];
+        }
+        [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
+    }
+    Ok([left, top, right, bottom])
+}
+
+/// The box that the leading values of `values` name, as a shape, and
+/// the values after them. A name alone is a shape or a whole row. A
+/// row's name and a number is one of its cells.
+fn target<'v>(
+    p: &Property,
+    values: &'v [Value],
+    names: &Names,
+    shift: usize,
+) -> Result<(Shape, &'v [Value]), Error> {
+    let Some((name, rest)) = values.split_first() else {
+        return Err(p.expected("a name"));
+    };
+    let ValueKind::Word(word) = &name.kind else {
+        return Err(Error::new(name.span, "expected a name"));
+    };
+    let as_box = |origin: Point, size: Point| Shape {
+        origin,
+        size,
+        oval: false,
+        radius: 0.0,
+        fill: None,
+        stroke: None,
+        label: None,
+    };
+    if let Some(shape) = names.shapes.get(word.as_str()) {
+        return Ok((shape.clone(), rest));
+    }
+    let Some(row) = names.rows.get(word.as_str()) else {
+        return Err(Error::new(
+            name.span,
+            format!("no box, ellipse or row is named `{word}`"),
+        ));
+    };
+    match rest.split_first() {
+        Some((
+            Value {
+                kind: ValueKind::Number(n),
+                span,
+            },
+            rest,
+        )) => {
+            let index = *n as usize + shift;
+            if n.fract() != 0.0 || *n < 0.0 || index >= row.cells.len() {
+                return Err(Error::new(
+                    *span,
+                    format!("row `{word}` has cells 0 to {}", row.cells.len() - 1),
+                ));
+            }
+            let (origin, size) = row.cell_rect(index);
+            Ok((as_box(origin, size), rest))
+        }
+        _ => {
+            let units: usize = row.cells.iter().map(|c| c.span).sum();
+            let size = Point::new(units as f64 * row.unit.x, row.unit.y);
+            Ok((as_box(row.origin, size), rest))
+        }
+    }
+}
+
+fn side(p: &Property) -> Result<Side, Error> {
+    match p.word()? {
+        "top" => Ok(Side::Top),
+        "bottom" => Ok(Side::Bottom),
+        "left" => Ok(Side::Left),
+        "right" => Ok(Side::Right),
+        _ => Err(Error::new(p.span, "a side is top, bottom, left or right")),
+    }
+}
+
+fn font(p: &Property) -> Result<Font, Error> {
+    match p.word()? {
+        "mono" => Ok(Font::Mono),
+        "sans" => Ok(Font::Sans),
+        "sans-bold" => Ok(Font::SansBold),
+        "sans-italic" => Ok(Font::SansItalic),
+        _ => Err(Error::new(
+            p.span,
+            "`font` is mono, sans, sans-bold or sans-italic",
+        )),
+    }
+}
+
+fn rgba([r, g, b, a]: &[u8; 4]) -> Color {
+    Color::rgba(
+        *r as f32 / 255.0,
+        *g as f32 / 255.0,
+        *b as f32 / 255.0,
+        *a as f32 / 255.0,
+    )
 }
 
 fn pixels(v: f64, p: &Property) -> Result<u32, Error> {
@@ -252,33 +847,69 @@ impl<'a> Props<'a> {
         })
     }
 
-    /// `stroke` and `stroke-width`, or `None` for `stroke none`.
-    fn stroke(&self) -> Result<Option<Stroke>, Error> {
-        let color = match self.get("stroke") {
-            Some(p) => p.color_or_none()?,
-            None => Some(Color::BLACK),
-        };
-        let width = match self.get("stroke-width") {
-            Some(p) => p.numbers::<1>()?[0],
-            None => STROKE_WIDTH,
-        };
-        Ok(color.map(|color| Stroke { color, width }))
+    fn number_or(&self, key: &str, default: f64) -> Result<f64, Error> {
+        match self.get(key) {
+            Some(p) => Ok(p.numbers::<1>()?[0]),
+            None => Ok(default),
+        }
     }
 
-    fn label(&self, text: &str, size: &str, color: &str) -> Result<Option<Label>, Error> {
+    fn count_or(&self, key: &str, default: usize) -> Result<usize, Error> {
+        match self.get(key) {
+            Some(p) => p.count(),
+            None => Ok(default),
+        }
+    }
+
+    fn color_or(&self, key: &str, default: Color) -> Result<Color, Error> {
+        match self.get(key) {
+            Some(p) => p.color(),
+            None => Ok(default),
+        }
+    }
+
+    fn font_or(&self, default: Font) -> Result<Font, Error> {
+        match self.get("font") {
+            Some(p) => font(p),
+            None => Ok(default),
+        }
+    }
+
+    /// `stroke`, `stroke-width` and `dash`, or `None` for `stroke none`
+    /// or when neither `stroke` nor `color` gives a color.
+    fn stroke(&self, color: Option<Color>) -> Result<Option<Stroke>, Error> {
+        let color = match self.get("stroke") {
+            Some(p) => p.color_or_none()?,
+            None => color,
+        };
+        let width = self.number_or("stroke-width", STROKE_WIDTH)?;
+        let dash = match self.get("dash") {
+            Some(p) => Some(p.numbers::<2>()?),
+            None => None,
+        };
+        Ok(color.map(|color| Stroke { color, width, dash }))
+    }
+
+    fn label(
+        &self,
+        text: &str,
+        size: &str,
+        color: &str,
+        names: &Names,
+    ) -> Result<Option<Label>, Error> {
         let Some(p) = self.get(text) else {
             return Ok(None);
         };
+        let runs = markup::runs(
+            &p.string()?,
+            self.font_or(names.font)?,
+            self.color_or(color, Color::BLACK)?,
+            &names.colors,
+        )
+        .map_err(|message| Error::new(p.span, message))?;
         Ok(Some(Label {
-            text: p.string()?,
-            size: match self.get(size) {
-                Some(p) => p.numbers::<1>()?[0],
-                None => TEXT_SIZE,
-            },
-            color: match self.get(color) {
-                Some(p) => p.color()?,
-                None => Color::BLACK,
-            },
+            runs,
+            size: self.number_or(size, TEXT_SIZE)?,
         }))
     }
 }
@@ -300,6 +931,14 @@ impl Property {
             }
         }
         Ok(out)
+    }
+
+    fn count(&self) -> Result<usize, Error> {
+        let n = self.numbers::<1>()?[0];
+        if n < 0.0 || n.fract() != 0.0 {
+            return Err(self.expected("a whole number"));
+        }
+        Ok(n as usize)
     }
 
     fn string(&self) -> Result<String, Error> {
@@ -330,12 +969,7 @@ impl Property {
     fn color_or_none(&self) -> Result<Option<Color>, Error> {
         match self.values.as_slice() {
             [v] => match &v.kind {
-                ValueKind::Color([r, g, b, a]) => Ok(Some(Color::rgba(
-                    *r as f32 / 255.0,
-                    *g as f32 / 255.0,
-                    *b as f32 / 255.0,
-                    *a as f32 / 255.0,
-                ))),
+                ValueKind::Color(c) => Ok(Some(rgba(c))),
                 ValueKind::Word(w) if w == "none" => Ok(None),
                 _ => Err(self.expected("a color or `none`")),
             },
@@ -427,13 +1061,13 @@ mod tests {
                 2,
                 17,
                 "`box` has no property `colour`; it takes at, size, fill, stroke, \
-                 stroke-width, text, text-size, text-color"
+                 stroke-width, dash, radius, text, text-size, text-color, font, style"
                     .into()
             )
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  arrow { from a; to 1 1; } }").unwrap_err(),
-            (2, 16, "no box or ellipse is named `a`".into())
+            (2, 16, "no box, ellipse or row is named `a`".into())
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  box { at 1; size 2 2; } }").unwrap_err(),
@@ -452,7 +1086,7 @@ mod tests {
                 "canvas { size 10 10;\n box a { at 0 0; size 1 1; }\n box a { at 0 0; size 1 1; } }"
             )
             .unwrap_err(),
-            (3, 6, "two shapes are named `a`".into())
+            (3, 6, "two things are named `a`".into())
         );
     }
 
@@ -468,5 +1102,130 @@ mod tests {
             }
             other => panic!("expected a shape, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_row_lays_cells_end_to_end_and_takes_fills_from_its_palette() {
+        let s = scene(
+            r#"canvas { size 200 100;
+                palette dna { symbol "A" #ff0000 "01"; }
+                row r {
+                    at 10 20; unit 10 30; span 2; palette dna; notes show;
+                    cells "A" "C";
+                    cell { span 1; fill none; }
+                }
+                brace { over r 0 1; side bottom; gap 0; }
+                arrow { from 0 0; to r 2 top; } }"#,
+        )
+        .unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        let starts: Vec<(usize, usize)> = row.cells.iter().map(|c| (c.start, c.span)).collect();
+        assert_eq!(starts, [(0, 2), (2, 2), (4, 1)]);
+        assert_eq!(row.cells[0].fill, Some(Color::rgb(1.0, 0.0, 0.0)));
+        assert_eq!(row.cells[0].note.as_ref().unwrap().text(), "01");
+        assert_eq!(row.cells[1].fill, Some(Color::WHITE));
+        assert_eq!(row.cells[1].note, None);
+        assert_eq!(row.cells[2].fill, None);
+        let Kind::Brace(brace) = &s.objects[1].kind else {
+            panic!("expected a brace");
+        };
+        assert_eq!(
+            (brace.from, brace.to),
+            (Point::new(10.0, 50.0), Point::new(50.0, 50.0))
+        );
+        let Kind::Connector(arrow) = &s.objects[2].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(arrow.to, Point::new(55.0, 20.0));
+    }
+
+    #[test]
+    fn a_row_cell_past_the_end_is_an_error() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n row r { at 0 0; unit 1 1; cells \"a\"; }\n arrow { from r 1; to 0 0; } }")
+                .unwrap_err(),
+            (3, 17, "row `r` has cells 0 to 0".into())
+        );
+    }
+
+    #[test]
+    fn a_group_moves_what_it_holds_and_at_can_start_from_a_name() {
+        let s = scene(
+            r#"canvas { size 200 200;
+                let ink #ff0000;
+                style tile { unit 10 10; stroke ink; }
+                group {
+                    at 100 50;
+                    row r { at 0 0; style tile; chars "ab"; }
+                    text { at r 5 -20; text "r"; }
+                }
+                line { from r 0 bottom; to 0 0; repeat 2; } }"#,
+        )
+        .unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        assert_eq!(row.origin, Point::new(100.0, 50.0));
+        assert_eq!(row.cells.len(), 2);
+        assert_eq!(
+            row.cells[0].stroke.unwrap().color,
+            Color::rgb(1.0, 0.0, 0.0)
+        );
+        let Kind::Text(text) = &s.objects[1].kind else {
+            panic!("expected a text");
+        };
+        assert_eq!(text.origin, Point::new(105.0, 30.0));
+        let froms: Vec<Point> = s.objects[2..]
+            .iter()
+            .map(|o| match &o.kind {
+                Kind::Connector(c) => c.from,
+                other => panic!("expected a line, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(froms, [Point::new(105.0, 60.0), Point::new(115.0, 60.0)]);
+    }
+
+    #[test]
+    fn a_table_sets_each_string_at_its_column_and_row() {
+        let s = scene(
+            r#"canvas { size 100 100; let red #ff0000;
+                table { at 10 20; columns 0 50; align left right; row-height 30;
+                    row "a" "{red b}"; row "c"; } }"#,
+        )
+        .unwrap();
+        let placed: Vec<(Point, HAlign, String)> = s
+            .objects
+            .iter()
+            .map(|o| match &o.kind {
+                Kind::Text(t) => (t.origin, t.align, t.label.text()),
+                other => panic!("expected a text, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            placed,
+            [
+                (Point::new(10.0, 20.0), HAlign::Left, "a".into()),
+                (Point::new(60.0, 20.0), HAlign::Right, "b".into()),
+                (Point::new(10.0, 50.0), HAlign::Left, "c".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn each_object_knows_its_node_and_a_point_finds_the_smallest() {
+        let src = "canvas { size 100 100;
+                box big { at 0 0; size 100 100; }
+                box small { at 10 10; size 20 20; } }";
+        let s = scene(src).unwrap();
+        let node = |i: usize| {
+            let span = s.objects[i].source;
+            &src[span.start..span.end]
+        };
+        assert_eq!(node(1), "box small { at 10 10; size 20 20; }");
+        assert_eq!(s.object_at(Point::new(15.0, 15.0), 0.0), Some(1));
+        assert_eq!(s.object_at(Point::new(50.0, 50.0), 0.0), Some(0));
+        assert_eq!(s.object_at(Point::new(150.0, 50.0), 0.0), None);
     }
 }

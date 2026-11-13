@@ -9,6 +9,10 @@ pub(super) enum Tok {
     Open,
     Close,
     Semi,
+    LParen,
+    RParen,
+    /// `+`, `-`, `*` or `/` inside parentheses.
+    Op(char),
     Comment,
 }
 
@@ -75,19 +79,34 @@ pub(super) fn next_token(src: &str, i: &mut usize) -> Option<Result<Token, Error
                 Err(e) => return Some(Err(e)),
             }
         }
+        b'(' => {
+            *i += 1;
+            Tok::LParen
+        }
+        b')' => {
+            *i += 1;
+            Tok::RParen
+        }
+        b'+' | b'*' | b'/' => {
+            *i += 1;
+            Tok::Op(b as char)
+        }
+        b'-' if !bytes
+            .get(start + 1)
+            .is_some_and(|c| c.is_ascii_digit() || *c == b'.') =>
+        {
+            *i += 1;
+            Tok::Op('-')
+        }
         b'-' | b'0'..=b'9' => {
             if b == b'-' {
                 *i += 1;
             }
-            let digits = *i;
             while *i < bytes.len() && (bytes[*i].is_ascii_digit() || bytes[*i] == b'.') {
                 *i += 1;
             }
             let span = Span { start, end: *i };
             let text = &src[start..*i];
-            if *i == digits {
-                return Some(Err(Error::new(span, "expected a number after `-`")));
-            }
             match text.parse() {
                 Ok(value) => Tok::Number(value),
                 Err(_) => return Some(Err(Error::new(span, format!("`{text}` is not a number")))),
@@ -128,6 +147,13 @@ fn string(src: &str, start: usize) -> Result<(String, usize), Error> {
                 Some((_, '"')) => text.push('"'),
                 Some((_, '\\')) => text.push('\\'),
                 Some((_, 'n')) => text.push('\n'),
+
+                // kept with their backslash for the markup in labels
+                // to read
+                Some((_, c @ ('{' | '}' | '`' | '*'))) => {
+                    text.push('\\');
+                    text.push(c);
+                }
                 Some((esc, c)) => {
                     let at = start + 1 + esc;
                     let span = Span {

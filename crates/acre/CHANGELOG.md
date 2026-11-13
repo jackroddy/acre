@@ -16,6 +16,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that tree into a `Scene`. `render::draw_frame` draws a scene into a pixmap.
 - `lang::highlight` returns every token in a source with a class, for coloring
   it in an editor. Unlike `lang::parse`, it reads past errors.
+- A `row` node draws a run of cells on a grid of equal units. Each cell covers
+  a whole number of units. `cells` lists texts, and a `cell` child adds a cell
+  with its own span, fill, stroke or note.
+- A `palette` node maps cell texts to fills and notes. A row names one with
+  `palette`, and `notes show` writes each note under its cell, one character to
+  a unit.
+- A `brace` node draws a curly or square bracket with a label. `over` places it
+  along a shape, a row, or a run of a row's cells.
+- A `ruler` node draws a numbered scale of equal units.
+- `from` and `to` on a line or an arrow can name a row's cell by index, and a
+  side of a shape or cell.
+- `font` picks `mono`, `sans`, `sans-bold` or `sans-italic` for a node's text.
+  On the canvas it sets the default. The sans faces are Noto Sans.
+- `dash` on a stroke and `radius` on a box. A `\n` in a string starts a new line.
+- `let NAME VALUES;` on the canvas names a list of values, and the bare word
+  `NAME` stands for them in any later property.
+- A `style` node names a set of properties. `style NAME;` gives a node each one
+  it does not set itself.
+- A `group` node moves the nodes inside it by its `at`.
+- `at NAME dx dy` places a node relative to the top-left corner of a shape, a
+  row or a row's cell.
+- `chars "..."` on a row adds one cell per character.
+- `repeat N` on a line or an arrow draws it N times, with each named cell one
+  further along each time.
+- A palette `symbol` may give a text color after its note.
+- A number may be an arithmetic expression in parentheses, such as
+  `(64 * u + 76)`, over numbers and `let` names. A minus between two terms
+  needs spaces around it.
+- Text marks up its runs. `` `code` `` sets mono, `**bold**` sets bold sans, and
+  `{NAME text}` colors text with a `let` color or `{#rrggbb text}`. A backslash
+  before one of these marks takes it as it is.
+- A `table` node sets rows of strings in columns, each aligned to its own x.
+- A `let` may not use a word acre reads itself, such as `left` or `none`.
+- `lang::format` rewrites source in one layout: four spaces of indent per
+  brace, one space between tokens, none inside `( )`, at most one blank line.
+  It keeps comments and the line breaks between items.
+- `render::draw_view` draws the part of a scene that falls in a pixmap of any
+  size, at any scale and offset, clipped to the canvas.
+- Each `scene::Object` carries `source`, the span of the node that made it.
+  `Scene::bounds` gives the box around an object, and `Scene::object_at` the
+  smallest object under a point.
+- `scene::schema` lists every node kind, the properties each takes, the values
+  each property takes, and what each is for. The builder checks nodes against
+  it.
+- `lang::context_at` gives the nodes around a byte offset, the property it sits
+  in, and the word under it, reading past errors.
+
+### Changed
+
+- `lang::highlight` splits strings at their markup, marks the words a `let`
+  defines as `Highlight::Name`, and gives each color, and each `let` name that
+  stands for one, as `Highlight::Color` with its value.
+- `render::draw_frame` takes a scale, the number of image pixels to each canvas
+  pixel.
 
 ### Removed
 

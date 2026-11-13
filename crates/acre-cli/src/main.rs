@@ -25,6 +25,19 @@ enum Command {
     Check(CheckArgs),
     /// Render a drawing to a PNG image.
     Render(RenderArgs),
+    /// Rewrite drawings in acre's one layout.
+    Fmt(FmtArgs),
+}
+
+#[derive(Args)]
+struct FmtArgs {
+    /// Report the files that would change, and write nothing
+    #[arg(long)]
+    check: bool,
+
+    /// The drawings to format
+    #[arg(value_name = "file", required = true)]
+    files: Vec<PathBuf>,
 }
 
 #[derive(Args)]
@@ -40,6 +53,10 @@ struct RenderArgs {
     #[arg(long, value_name = "path")]
     out: Option<PathBuf>,
 
+    /// Image pixels to each canvas pixel
+    #[arg(long, value_name = "n", default_value_t = 1.0)]
+    scale: f64,
+
     /// The drawing to render
     #[arg(value_name = "file")]
     file: PathBuf,
@@ -50,10 +67,33 @@ fn main() -> anyhow::Result<()> {
         Command::Check(args) => {
             load(&args.file)?;
         }
+        Command::Fmt(args) => {
+            let mut unformatted = Vec::new();
+            for path in &args.files {
+                let src = fs::read_to_string(path)
+                    .with_context(|| format!("cannot read {}", path.display()))?;
+                let formatted = lang::format(&src).map_err(|e| {
+                    let (line, col) = e.line_col(&src);
+                    anyhow!("{}:{line}:{col}: {}", path.display(), e.message)
+                })?;
+                if formatted == src {
+                    continue;
+                }
+                if args.check {
+                    unformatted.push(path.display().to_string());
+                } else {
+                    fs::write(path, formatted)
+                        .with_context(|| format!("cannot write {}", path.display()))?;
+                }
+            }
+            if !unformatted.is_empty() {
+                return Err(anyhow!("not formatted: {}", unformatted.join(", ")));
+            }
+        }
         Command::Render(args) => {
             let scene = load(&args.file)?;
             let out = args.out.unwrap_or_else(|| args.file.with_extension("png"));
-            render::draw_frame(&scene, 0.0)
+            render::draw_frame(&scene, 0.0, args.scale)
                 .save_png(&out)
                 .with_context(|| format!("cannot write {}", out.display()))?;
         }

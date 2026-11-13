@@ -174,7 +174,7 @@ fn both_examples_render_every_frame() {
         let count = scene.canvas.frame_count();
         let width = count.to_string().len().max(4);
         for frame in 0..count {
-            let pixmap = acre::render::draw_frame(&scene, scene.canvas.time_of(frame));
+            let pixmap = acre::render::draw_frame(&scene, scene.canvas.time_of(frame), 1.0);
             assert_eq!(pixmap.width(), scene.canvas.width);
             if let Some(out) = &out {
                 let dir = out.join(name);

@@ -1,11 +1,11 @@
-use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
+use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 
-/// Text with its size and color, placed by whatever holds it.
+/// Text in runs of font and color at one size, placed by whatever
+/// holds it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Label {
-    pub text: String,
+    pub runs: Vec<Run>,
     pub size: f64,
-    pub color: Color,
 }
 
 /// A box or an ellipse filling the rectangle at `origin` of `size`, with
@@ -15,6 +15,8 @@ pub struct Shape {
     pub origin: Point,
     pub size: Point,
     pub oval: bool,
+    /// The radius of a box's rounded corners.
+    pub radius: f64,
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
     pub label: Option<Label>,
@@ -37,6 +39,59 @@ pub struct Text {
     pub origin: Point,
     pub label: Label,
     pub align: HAlign,
+}
+
+/// Which way from the thing it marks a brace or a ruler's labels face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl Side {
+    /// The unit vector pointing out of this side.
+    fn outward(self) -> Point {
+        match self {
+            Side::Top => Point::new(0.0, -1.0),
+            Side::Bottom => Point::new(0.0, 1.0),
+            Side::Left => Point::new(-1.0, 0.0),
+            Side::Right => Point::new(1.0, 0.0),
+        }
+    }
+}
+
+/// A curly or square bracket from `from` to `to`, opening toward the
+/// thing it marks and pointing to `side`, with an optional label
+/// beyond its tip.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Brace {
+    pub from: Point,
+    pub to: Point,
+    pub side: Side,
+    pub depth: f64,
+    pub square: bool,
+    pub stroke: Stroke,
+    pub label: Option<Label>,
+}
+
+/// A scale of `count` equal units from `origin`, with a tick at each
+/// boundary and a number over every `every`th unit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ruler {
+    pub origin: Point,
+    pub unit: f64,
+    pub count: usize,
+    /// The number over the first unit.
+    pub first: f64,
+    /// How much the number grows from one unit to the next.
+    pub step: f64,
+    pub every: usize,
+    /// Where the numbers sit; the ticks point the other way.
+    pub side: Side,
+    pub stroke: Stroke,
+    pub label: Label,
 }
 
 impl Shape {
@@ -73,6 +128,7 @@ impl Shape {
             out.push(Primitive::Rect {
                 origin: self.origin,
                 size: self.size,
+                radius: self.radius,
                 fill: self.fill,
                 stroke: self.stroke,
             });
@@ -117,6 +173,122 @@ impl Connector {
     }
 }
 
+impl Brace {
+    pub fn draw(&self, out: &mut Vec<Primitive>) {
+        let d = self.to - self.from;
+        let len = (d.x * d.x + d.y * d.y).sqrt();
+        if len == 0.0 {
+            return;
+        }
+        let along = d * (1.0 / len);
+        let n = self.side.outward();
+        let mid = (self.from + self.to) * 0.5;
+        let tip = if self.square {
+            let h = self.depth;
+            out.push(Primitive::Polyline {
+                points: vec![self.from, self.from + n * h, self.to + n * h, self.to],
+                stroke: self.stroke,
+            });
+            mid + n * h
+        } else {
+            // each half is a quarter turn out of the end, a straight
+            // run, and a quarter turn into the tip:
+            //
+            //   from ╮________╭ tip ╮________╭ to
+            //
+            // r is half the depth, and at most a quarter of the length
+            // so the turns never overlap
+            let r = (self.depth / 2.0).min(len / 4.0);
+            let mut points = Vec::new();
+            quad(
+                &mut points,
+                self.from,
+                self.from + n * r,
+                self.from + along * r + n * r,
+            );
+            quad(
+                &mut points,
+                mid - along * r + n * r,
+                mid + n * r,
+                mid + n * (2.0 * r),
+            );
+            quad(
+                &mut points,
+                mid + n * (2.0 * r),
+                mid + n * r,
+                mid + along * r + n * r,
+            );
+            quad(
+                &mut points,
+                self.to - along * r + n * r,
+                self.to + n * r,
+                self.to,
+            );
+            out.push(Primitive::Polyline {
+                points,
+                stroke: self.stroke,
+            });
+            mid + n * (2.0 * r)
+        };
+        if let Some(label) = &self.label {
+            let at = tip + n * 6.0;
+            let (h, v) = match self.side {
+                Side::Top => (HAlign::Center, VAlign::Baseline),
+                Side::Bottom => (HAlign::Center, VAlign::Top),
+                Side::Left => (HAlign::Right, VAlign::Middle),
+                Side::Right => (HAlign::Left, VAlign::Middle),
+            };
+            out.push(label.at(at, h, v));
+        }
+    }
+}
+
+/// Append the points of the quadratic curve from `a` through control
+/// `c` to `b`, `a` included.
+fn quad(points: &mut Vec<Point>, a: Point, c: Point, b: Point) {
+    const STEPS: usize = 12;
+    for i in 0..=STEPS {
+        let t = i as f64 / STEPS as f64;
+        let u = 1.0 - t;
+        points.push(a * (u * u) + c * (2.0 * u * t) + b * (t * t));
+    }
+}
+
+impl Ruler {
+    pub fn draw(&self, out: &mut Vec<Primitive>) {
+        let end = self.origin + Point::new(self.unit * self.count as f64, 0.0);
+        out.push(Primitive::Line {
+            from: self.origin,
+            to: end,
+            stroke: self.stroke,
+        });
+        let out_dir = self.side.outward();
+        for i in 0..=self.count {
+            let x = self.origin.x + i as f64 * self.unit;
+            let major = self.every > 0 && i % self.every == 0;
+            let tick = if major { 5.0 } else { 3.0 };
+            let base = Point::new(x, self.origin.y);
+            out.push(Primitive::Line {
+                from: base,
+                to: base - out_dir * tick,
+                stroke: self.stroke,
+            });
+        }
+        let every = self.every.max(1);
+        for i in (0..self.count).step_by(every) {
+            let value = self.first + self.step * i as f64;
+            let at = Point::new(self.origin.x + (i as f64 + 0.5) * self.unit, self.origin.y)
+                + out_dir * 4.0;
+            let v = match self.side {
+                Side::Bottom => VAlign::Top,
+                _ => VAlign::Baseline,
+            };
+            let label = self.label.with_text(format!("{value}"));
+            out.push(label.at(at, HAlign::Center, v));
+        }
+    }
+}
+
 impl Text {
     pub fn draw(&self, out: &mut Vec<Primitive>) {
         out.push(self.label.at(self.origin, self.align, VAlign::Top));
@@ -124,12 +296,43 @@ impl Text {
 }
 
 impl Label {
-    fn at(&self, origin: Point, h_align: HAlign, v_align: VAlign) -> Primitive {
+    /// Text in one font and color.
+    pub fn plain(text: impl Into<String>, size: f64, font: Font, color: Color) -> Self {
+        Label {
+            runs: vec![Run {
+                text: text.into(),
+                font,
+                color,
+            }],
+            size,
+        }
+    }
+
+    /// The text of every run, in order.
+    pub fn text(&self) -> String {
+        self.runs.iter().map(|r| r.text.as_str()).collect()
+    }
+
+    /// `text` in the font and color of this label's first run.
+    pub fn with_text(&self, text: impl Into<String>) -> Self {
+        let (font, color) = self
+            .runs
+            .first()
+            .map_or((Font::Mono, Color::BLACK), |r| (r.font, r.color));
+        Label::plain(text, self.size, font, color)
+    }
+
+    pub fn set_color(&mut self, color: Color) {
+        for run in &mut self.runs {
+            run.color = color;
+        }
+    }
+
+    pub(super) fn at(&self, origin: Point, h_align: HAlign, v_align: VAlign) -> Primitive {
         Primitive::Text {
             origin,
-            text: self.text.clone(),
+            runs: self.runs.clone(),
             size: self.size,
-            color: self.color,
             h_align,
             v_align,
         }
@@ -145,6 +348,7 @@ mod tests {
             origin: Point::new(0.0, 0.0),
             size: Point::new(100.0, 40.0),
             oval,
+            radius: 0.0,
             fill: None,
             stroke: None,
             label: None,
@@ -181,10 +385,7 @@ mod tests {
         let arrow = Connector {
             from: Point::new(0.0, 0.0),
             to: Point::new(100.0, 0.0),
-            stroke: Stroke {
-                color: Color::BLACK,
-                width: 2.0,
-            },
+            stroke: Stroke::solid(Color::BLACK, 2.0),
             head: true,
             label: None,
         };

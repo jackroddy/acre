@@ -1,4 +1,4 @@
-use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
+use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 use super::track::{Lerp, Track};
 
 /// The data interval an axis shows.
@@ -122,10 +122,7 @@ impl Plot {
             size,
             x,
             y,
-            axis_stroke: Stroke {
-                color: Color::BLACK,
-                width: 1.0,
-            },
+            axis_stroke: Stroke::solid(Color::BLACK, 1.0),
             text_size: 14.0,
             text_color: Color::BLACK,
             series: Vec::new(),
@@ -222,9 +219,12 @@ impl Plot {
     fn text(&self, origin: Point, text: &str, h_align: HAlign, v_align: VAlign) -> Primitive {
         Primitive::Text {
             origin,
-            text: text.to_string(),
+            runs: vec![Run {
+                text: text.to_string(),
+                font: Font::Mono,
+                color: self.text_color,
+            }],
             size: self.text_size,
-            color: self.text_color,
             h_align,
             v_align,
         }
@@ -256,7 +256,7 @@ impl Plot {
                 if points.len() >= 2 {
                     out.push(Primitive::Polyline {
                         points,
-                        stroke: Stroke { color, width },
+                        stroke: Stroke::solid(color, width),
                     });
                 }
             }
@@ -277,6 +277,7 @@ impl Plot {
                     out.push(Primitive::Rect {
                         origin: Point::new(base.x, base.y.min(top.y)),
                         size: Point::new(top.x - base.x, (top.y - base.y).abs()),
+                        radius: 0.0,
                         fill: Some(color),
                         stroke: None,
                     });

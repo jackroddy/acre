@@ -15,7 +15,7 @@ fn every_example_draws() {
             .unwrap_or_else(|e| panic!("{}: {:?}: {}", path.display(), e.line_col(&src), e));
         let scene = acre::scene::build(&program)
             .unwrap_or_else(|e| panic!("{}: {:?}: {}", path.display(), e.line_col(&src), e));
-        acre::render::draw_frame(&scene, 0.0);
+        acre::render::draw_frame(&scene, 0.0, 1.0);
         count += 1;
     }
     assert!(count > 0);

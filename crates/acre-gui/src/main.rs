@@ -3,7 +3,9 @@
 
 mod app;
 mod config;
+mod editor;
 mod recent;
+mod view;
 
 use std::path::PathBuf;
 
@@ -31,7 +33,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eframe::run_native(
         "acre-gui",
         options,
-        Box::new(move |_cc| Ok(Box::new(app::App::new(config, config_error, cli.file)))),
+        Box::new(move |cc| {
+            // Ctrl+= and Ctrl+- zoom the render, not egui's whole window
+            cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            Ok(Box::new(app::App::new(config, config_error, cli.file)))
+        }),
     )?;
     Ok(())
 }

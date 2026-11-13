@@ -1,4 +1,4 @@
-use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
+use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 use super::track::Track;
 
 /// A grid of cells holding text, which covers arrays, vectors and
@@ -56,10 +56,7 @@ impl Grid {
             cell_size: Point::new(40.0, 40.0),
             gap: 4.0,
             text_size: 20.0,
-            stroke: Some(Stroke {
-                color: Color::BLACK,
-                width: 1.0,
-            }),
+            stroke: Some(Stroke::solid(Color::BLACK, 1.0)),
             cells,
         }
     }
@@ -87,14 +84,18 @@ impl Grid {
             out.push(Primitive::Rect {
                 origin: corner,
                 size: self.cell_size,
+                radius: 0.0,
                 fill: Some(cell.fill.at(t)),
                 stroke: self.stroke,
             });
             out.push(Primitive::Text {
                 origin: corner + self.cell_size * 0.5,
-                text: cell.text.at(t),
+                runs: vec![Run {
+                    text: cell.text.at(t),
+                    font: Font::Mono,
+                    color: cell.text_color.at(t),
+                }],
                 size: self.text_size,
-                color: cell.text_color.at(t),
                 h_align: HAlign::Center,
                 v_align: VAlign::Middle,
             });
@@ -145,13 +146,13 @@ mod tests {
         match &out[1] {
             Primitive::Text {
                 origin,
-                text,
+                runs,
                 h_align,
                 v_align,
                 ..
             } => {
                 assert_eq!(*origin, Point::new(5.0, 10.0));
-                assert_eq!(text, "7");
+                assert_eq!(runs[0].text, "7");
                 assert_eq!(*h_align, HAlign::Center);
                 assert_eq!(*v_align, VAlign::Middle);
             }

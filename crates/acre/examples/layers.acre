@@ -5,10 +5,10 @@ canvas {
 
     text { at 320 24; text "acre"; size 20; align center; }
 
-    box lang   { at 40 76;  size 120 48; text "lang"; }
-    box scene  { at 260 76; size 120 48; text "scene"; }
+    box lang { at 40 76; size 120 48; text "lang"; }
+    box scene { at 260 76; size 120 48; text "scene"; }
     ellipse render { at 480 76; size 120 48; text "render"; fill #fff2cc; }
 
-    arrow { from lang; to scene;   label "Program"; text-size 13; }
+    arrow { from lang; to scene; label "Program"; text-size 13; }
     arrow { from scene; to render; label "primitives"; text-size 13; }
 }

@@ -7,17 +7,24 @@
 
 mod build;
 pub mod diagram;
+mod expand;
 pub mod grid;
+mod markup;
 pub mod plot;
 pub mod primitive;
+pub mod row;
+pub mod schema;
 pub mod track;
 
 pub use build::build;
-pub use diagram::{Connector, Label, Shape, Text};
+pub use diagram::{Brace, Connector, Label, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
-pub use primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
+pub use primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
+pub use row::{Row, RowCell};
 pub use track::{Easing, Keyframe, Lerp, Track};
+
+use crate::lang::Span;
 
 /// The output frame: its size in pixels, timing, and background.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +64,9 @@ pub struct Object {
     pub opacity: Track<f64>,
     /// When the object is on the canvas; absent means always.
     pub lifetime: Option<Lifetime>,
+    /// The node in the source that made the object, or an empty span
+    /// for an object made in code.
+    pub source: Span,
 }
 
 /// What an object is.
@@ -67,6 +77,9 @@ pub enum Kind {
     Shape(Shape),
     Connector(Connector),
     Text(Text),
+    Row(Row),
+    Brace(Brace),
+    Ruler(Ruler),
 }
 
 /// A half-open interval of seconds, `start..end`.
@@ -89,7 +102,13 @@ impl Object {
             kind: kind.into(),
             opacity: Track::Constant(1.0),
             lifetime: None,
+            source: Span::default(),
         }
+    }
+
+    /// This object, made by the node at `source`.
+    pub fn from_source(self, source: Span) -> Self {
+        Object { source, ..self }
     }
 
     /// Append this object at time `t` to `out`.
@@ -108,6 +127,9 @@ impl Object {
             Kind::Shape(shape) => shape.draw(out),
             Kind::Connector(connector) => connector.draw(out),
             Kind::Text(text) => text.draw(out),
+            Kind::Row(row) => row.draw(out),
+            Kind::Brace(brace) => brace.draw(out),
+            Kind::Ruler(ruler) => ruler.draw(out),
         }
         if opacity < 1.0 {
             for prim in &mut out[start..] {
@@ -137,6 +159,34 @@ impl Scene {
             object.draw(t, &mut out);
         }
         out
+    }
+
+    /// The box around what object `index` draws at time `t`, as its
+    /// top-left and bottom-right corners, or `None` when it draws
+    /// nothing.
+    pub fn bounds(&self, index: usize, t: f64) -> Option<(Point, Point)> {
+        let mut prims = Vec::new();
+        self.objects[index].draw(t, &mut prims);
+        primitive::bounds(&prims)
+    }
+
+    /// The object whose box holds `point` at time `t`, the smallest when
+    /// several do and the one painted last among equals.
+    pub fn object_at(&self, point: Point, t: f64) -> Option<usize> {
+        let mut best: Option<(usize, f64)> = None;
+        for index in 0..self.objects.len() {
+            let Some((min, max)) = self.bounds(index, t) else {
+                continue;
+            };
+            if point.x < min.x || point.x > max.x || point.y < min.y || point.y > max.y {
+                continue;
+            }
+            let area = (max.x - min.x) * (max.y - min.y);
+            if best.is_none_or(|(_, a)| area <= a) {
+                best = Some((index, area));
+            }
+        }
+        best.map(|(index, _)| index)
     }
 }
 
@@ -205,7 +255,7 @@ mod tests {
             other => panic!("expected rect, got {other:?}"),
         }
         match &prims[1] {
-            Primitive::Text { color, .. } => assert_eq!(color.a, 0.5),
+            Primitive::Text { runs, .. } => assert_eq!(runs[0].color.a, 0.5),
             other => panic!("expected text, got {other:?}"),
         }
     }
