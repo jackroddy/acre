@@ -1,0 +1,28 @@
+{
+  "id": "acre-dde620",
+  "title": "acre draws libsufr's key schemes, masked and unmasked, with the code's structure",
+  "body": "libsufr's `build.rs` now splits key making into `Packing` and a `KeyScheme` trait with two implementations, `UnmaskedKeys` and `MaskedKeys`. `crates/acre/examples/prefix-encoder.acre` uses the old name `PrefixEncoder` and shows only the unmasked keys. The new figure, `examples/key-schemes.acre`, replaces it. It shows how the types fit together, `Packing` once, both schemes on one text with a 24-character spaced seed mask, and how each orders ties and takes an LCP. Every field of `Packing`, `UnmaskedKeys` and `MaskedKeys` appears.",
+  "type": "task",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T05:17:53.898801538Z",
+  "updated_at": "2026-11-13T05:17:53.898801538Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f4067bd",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
