@@ -1,0 +1,28 @@
+{
+  "id": "acre-329c2b",
+  "title": "acre writes a drawing as SVG",
+  "body": "acre renders only to PNG, through `render::draw_frame` and `acre render`. A figure for a paper needs vector output. Jack wants this when he publishes a figure, not before. The scene already lowers to a short list of `Primitive`s, so an SVG writer is a second renderer over the same list, with text set as outlines or as `<text>` in the embedded fonts.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-13T01:14:46.971389521Z",
+  "updated_at": "2026-11-13T01:14:46.971389521Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "38a8b36",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
