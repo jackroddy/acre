@@ -301,8 +301,8 @@ fn ink(fonts: &Fonts, line: &Line) -> (f64, f64) {
 ///
 /// Without `justify` the breaks are greedy. With it they are chosen
 /// for the whole line at once by [`even_breaks`], and every line but
-/// the last has its spaces outside code spans stretched to fill
-/// `width`.
+/// the last has its spaces outside code spans stretched or shrunk to
+/// fill `width`.
 fn wrap(line: Line, width: f64, justify: bool) -> Vec<Line> {
     let glyphs = line.glyphs;
     let mono = |g: &Glyph| {
@@ -383,6 +383,11 @@ fn greedy_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
 // TeX's Computer Modern sets a space of 1/3 em with a stretch of 1/6 em
 const STRETCH: f64 = 0.5;
 
+/// How far a space may shrink, as a share of its width.
+//
+// TeX's Computer Modern sets a space of 1/3 em with a shrink of 1/9 em
+const SHRINK: f64 = 1.0 / 3.0;
+
 /// The badness of a line that cannot stretch to fill the width, or
 /// that overflows it.
 //
@@ -400,19 +405,25 @@ const LINE_PENALTY: f64 = 10.0;
 /// lines at [`INF_BAD`].
 const CODE_BREAK: f64 = 1e9;
 
-/// The penalty for a last line holding one word under longer lines.
+/// The share of the width below which a last line is short.
+const SHORT_LAST: f64 = 1.0 / 3.0;
+
+/// The penalty for an empty last line under longer lines, falling to
+/// nothing as the line grows to [`SHORT_LAST`] of the width.
 //
-// at 150 the breaker takes a lone last word rather than stretch an
-// earlier line's spaces to about 1.6 times their width
-const LONE_WORD: f64 = 150.0;
+// at 150 the breaker leaves one short word on the last line rather
+// than stretch an earlier line's spaces to about 1.6 times their width
+const SHORT_LAST_PENALTY: f64 = 150.0;
 
 /// The spaces to break `glyphs` at so the lines come out about as long
 /// as one another within `width`, by the method of Knuth and Plass,
 /// "Breaking Paragraphs into Lines" (1981).
 ///
-/// The last line costs nothing for being short, but a lone word on it
-/// pays [`LONE_WORD`]. A line wider than `width` is allowed only when
-/// no break inside it exists.
+/// Spaces outside code spans may stretch by [`STRETCH`] and shrink by
+/// [`SHRINK`] of their width. The last line costs nothing for being
+/// short, but one shorter than [`SHORT_LAST`] of `width` pays up to
+/// [`SHORT_LAST_PENALTY`]. A line wider than `width` once shrunk is
+/// allowed only when no break inside it exists.
 fn even_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
     let n = glyphs.len();
 
@@ -439,21 +450,28 @@ fn even_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
         for (k, &end) in ends.iter().enumerate().skip(from.map_or(0, |k| k + 1)) {
             let line = &glyphs[start..end];
             let natural = natural_width(line);
-            let first = from.map_or(k == 0, |f| k == f + 1);
-            if natural > width && !first {
-                break;
-            }
             let last = end == n;
             let gaps: f64 = gaps(line, &code[start..end]).map(|i| line[i].advance).sum();
             let shortfall = width - natural;
-            let badness = if natural > width {
+            let overfull = if last {
+                natural > width
+            } else {
+                -shortfall > gaps * SHRINK + 1e-9
+            };
+            let first = from.map_or(k == 0, |f| k == f + 1);
+            if overfull && !first {
+                break;
+            }
+            let badness = if overfull {
                 INF_BAD
-            } else if last || shortfall <= 1e-9 {
+            } else if last || shortfall.abs() <= 1e-9 {
                 0.0
+            } else if shortfall < 0.0 {
+                100.0 * (-shortfall / (gaps * SHRINK)).powi(3)
             } else if gaps > 0.0 {
                 // uncapped, unlike TeX, so that of two loose lines the
-                // looser costs more: spaces never shrink here, and a
-                // narrow width can leave no break without one
+                // looser costs more: a narrow width can leave no break
+                // without one
                 100.0 * (shortfall / (gaps * STRETCH)).powi(3)
             } else {
                 INF_BAD
@@ -462,8 +480,10 @@ fn even_breaks(glyphs: &[Glyph], code: &[bool], width: f64) -> Vec<usize> {
             if !last && code[end] {
                 demerits += CODE_BREAK * CODE_BREAK;
             }
-            if last && from.is_some() && gaps == 0.0 {
-                demerits += LONE_WORD * LONE_WORD;
+            let short = width * SHORT_LAST;
+            if last && from.is_some() && natural < short {
+                let penalty = SHORT_LAST_PENALTY * (1.0 - natural / short);
+                demerits += penalty * penalty;
             }
             if reached + demerits < best[k] {
                 best[k] = reached + demerits;
@@ -501,13 +521,14 @@ fn gaps<'a>(glyphs: &'a [Glyph], code: &'a [bool]) -> impl Iterator<Item = usize
     (first..last).filter(move |&i| glyphs[i].space && !code[i])
 }
 
-/// Widen the spaces of `line` that [`gaps`] picks, each in proportion
-/// to its width, so the line fills `width`.
+/// Widen or narrow the spaces of `line` that [`gaps`] picks, each in
+/// proportion to its width, so the line fills `width`. A line that
+/// would need its spaces narrowed past [`SHRINK`] is left as it is.
 fn stretch(line: &mut Line, code: &[bool], width: f64) {
     let gaps: Vec<usize> = gaps(&line.glyphs, code).collect();
     let total: f64 = gaps.iter().map(|&i| line.glyphs[i].advance).sum();
     let extra = width - line.width;
-    if total <= 0.0 || extra <= 0.0 {
+    if total <= 0.0 || extra == 0.0 || -extra > total * SHRINK + 1e-9 {
         return;
     }
     let mut shift = 0.0;
@@ -741,18 +762,81 @@ mod tests {
     #[test]
     fn the_even_breaker_keeps_a_short_word_off_the_last_line() {
         let char = unkerned("a", Font::Mono, 10.0);
-        let runs = [run("aa bb cc dd ee f g", Font::Mono)];
+        let runs = [run("aa bb cc dd ee ff gg hh ii j", Font::Mono)];
 
-        // the greedy breaks fill the first line and leave `g` alone
-        let ragged = layout(&runs, 10.0, Some(char * 16.0));
+        // the greedy breaks fill the first line and leave `j` alone
+        let ragged = layout(&runs, 10.0, Some(char * 26.0));
         let counts: Vec<usize> = ragged.lines.iter().map(|l| l.glyphs.len()).collect();
-        assert_eq!(counts, [16, 1]);
+        assert_eq!(counts, [26, 1]);
 
-        // spreading two characters over four spaces costs less
-        let even = justified(&runs, 10.0, char * 16.0);
+        // spreading three characters over seven spaces costs less
+        let even = justified(&runs, 10.0, char * 26.0);
         let counts: Vec<usize> = even.lines.iter().map(|l| l.glyphs.len()).collect();
-        assert_eq!(counts, [14, 3]);
-        assert!((even.lines[0].width - char * 16.0).abs() < 1e-9);
+        assert_eq!(counts, [23, 4]);
+        assert!((even.lines[0].width - char * 26.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_paragraph_on_one_line_pays_nothing_for_being_short() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let l = justified(&[run("aa b", Font::Mono)], 10.0, char * 26.0);
+        assert_eq!(l.lines.len(), 1);
+        assert!((l.lines[0].width - 4.0 * char).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_justified_line_shrinks_its_spaces_rather_than_stretch_the_one_before() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let runs = [run("aa bb cc dd ee ff gg hhhhhhhhhh", Font::Mono)];
+
+        // the first 20 characters overflow 19 by one, which their six
+        // spaces take by shrinking to 5/6 of their width
+        let even = justified(&runs, 10.0, char * 19.0);
+        let counts: Vec<usize> = even.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(counts, [20, 10]);
+        let first = &even.lines[0];
+        assert!((first.width - char * 19.0).abs() < 1e-9);
+        assert!((ink_end(first) - char * 19.0).abs() < 1e-9);
+        let space = first.glyphs.iter().find(|g| g.space).unwrap();
+        assert!((space.advance - char * 5.0 / 6.0).abs() < 1e-9);
+
+        // the greedy breaks never shrink
+        let ragged = layout(&runs, 10.0, Some(char * 19.0));
+        let counts: Vec<usize> = ragged.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(counts, [17, 13]);
+    }
+
+    #[test]
+    fn a_shrunk_line_leaves_the_spaces_in_a_code_span_alone() {
+        let char = unkerned("a", Font::Mono, 10.0);
+        let sans_space = unkerned(" ", Font::Sans, 10.0);
+        let runs = [
+            run("see ", Font::Sans),
+            run("a b", Font::Mono),
+            run(
+                " for it and more words after it, and then a good many more",
+                Font::Sans,
+            ),
+        ];
+
+        // the width falls just short of the end of `words`
+        let natural = layout(&runs, 10.0, None);
+        let words = natural.text.find(" after").unwrap();
+        let end = natural.lines[0]
+            .glyphs
+            .iter()
+            .find(|g| g.text.start == words)
+            .unwrap()
+            .x;
+        let l = justified(&runs, 10.0, end - 1.0);
+        let first = &l.lines[0];
+        assert!((first.width - (end - 1.0)).abs() < 1e-9);
+        assert_eq!(&l.text[first.glyphs.last().unwrap().text.clone()], "s");
+        let space = first.glyphs.iter().position(|g| g.space).unwrap();
+        assert!(first.glyphs[space].advance < sans_space);
+        let code = space + 2;
+        assert!(first.glyphs[code].space);
+        assert!((first.glyphs[code].advance - char).abs() < 1e-9);
     }
 
     #[test]

@@ -41,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `text-align justify` on `text` and on a box's text sets each wrapped line
   flush with both edges. It needs `width`. acre chooses a justified paragraph's
   breaks to keep the total looseness of its lines low, so the lines come out
-  about the same length. Only the spaces outside code spans widen. The last line of a
+  about the same length. Only the spaces outside code spans change width. They
+  widen, or narrow to two thirds of their width. A last line shorter than a
+  third of `width` counts against a set of breaks, so acre moves a word or two
+  down to it unless that leaves the lines above too loose. The last line of a
   paragraph, a line that ends at `\n` and a line of one word keep their natural
   spacing. Ragged text breaks as before.
 - A first version of the acre language, for still drawings. A file holds one
