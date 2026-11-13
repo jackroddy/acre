@@ -1,7 +1,7 @@
 [package]
 name = "acre-gui"
 version = "0.1.0"
-description = "an editor for acre drawings: the source beside its render, updated as you type"
+description = "a viewer for acre drawings: the render of a file, or of what an editor sends, updated as it changes"
 readme = "../../README.md"
 edition.workspace = true
 authors.workspace = true
@@ -14,4 +14,4 @@ clap = { version = "4", features = ["derive"] }
 eframe = "0.37"
 rfd = "0.18"
 serde = { version = "1", features = ["derive"] }
-toml = "1"
+serde_json = "1"

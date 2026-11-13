@@ -3,8 +3,8 @@
 A Rust tool that reads a drawing written in its own small language and
 renders it. It is a cargo workspace of three crates under `crates/`. `acre` is
 the library. `acre-cli` builds the `acre` command, which checks and renders
-files. `acre-gui` builds `acre-gui`, the editor and the main way a person works
-with acre.
+files. `acre-gui` builds `acre-gui`, the viewer. Jack writes acre in neovim,
+and the plugin in `editors/nvim/` drives the viewer from there.
 
 Work and facts live in foam, not here: `foam ready` for what is open, `foam
 memories` for what earlier sessions found. This file holds the rules.

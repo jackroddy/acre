@@ -1,8 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::xdg_dir;
-
 const KEPT: usize = 10;
 
 /// Recently opened files, newest first, kept in
@@ -49,6 +47,16 @@ fn push_front(files: &mut Vec<PathBuf>, file: PathBuf) {
     files.retain(|f| *f != file);
     files.insert(0, file);
     files.truncate(KEPT);
+}
+
+/// `$var` when it holds an absolute path, else `$HOME/fallback`.
+pub fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os(var).map(PathBuf::from)
+        && dir.is_absolute()
+    {
+        return Some(dir);
+    }
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(fallback))
 }
 
 #[cfg(test)]

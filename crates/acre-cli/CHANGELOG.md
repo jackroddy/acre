@@ -22,3 +22,5 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   pixel.
 - `acre fmt FILE...` rewrites drawings in acre's one layout. `--check` lists
   the files that would change and writes nothing.
+- `acre fmt -` formats stdin and writes the result to stdout, for an editor's
+  format command.

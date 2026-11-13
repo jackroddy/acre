@@ -1,9 +1,8 @@
-//! acre-gui: an editor for acre drawings, with the source beside its
-//! render.
+//! acre-gui: a viewer for acre drawings. It renders a file and follows
+//! its changes, or renders what an editor sends it over stdin.
 
 mod app;
-mod config;
-mod editor;
+mod link;
 mod recent;
 mod view;
 
@@ -13,30 +12,34 @@ use clap::Parser;
 use eframe::egui;
 
 #[derive(Parser)]
-#[command(name = "acre-gui", about = "an editor for acre drawings")]
+#[command(name = "acre-gui", about = "a viewer for acre drawings")]
 struct Cli {
-    /// The drawing to open [default: the last one opened]
+    /// Render the source an editor sends as JSON lines on stdin, and answer on stdout
+    #[arg(long, conflicts_with = "file")]
+    stdio: bool,
+
+    /// The drawing to show [default: the last one opened]
     #[arg(value_name = "file")]
     file: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let (config, config_error) = config::load();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("acre")
             .with_app_id("acre-gui")
-            .with_inner_size([1200.0, 720.0]),
+            .with_inner_size([900.0, 720.0]),
         ..Default::default()
     };
     eframe::run_native(
         "acre-gui",
         options,
         Box::new(move |cc| {
-            // Ctrl+= and Ctrl+- zoom the render, not egui's whole window
+            // egui's own Ctrl+= and Ctrl+- zoom of the whole window
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            Ok(Box::new(app::App::new(config, config_error, cli.file)))
+            let link = cli.stdio.then(|| link::Link::start(cc.egui_ctx.clone()));
+            Ok(Box::new(app::App::new(cli.file, link)))
         }),
     )?;
     Ok(())

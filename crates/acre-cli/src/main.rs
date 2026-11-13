@@ -4,6 +4,7 @@
 //! image.
 
 use std::fs;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow};
@@ -35,7 +36,7 @@ struct FmtArgs {
     #[arg(long)]
     check: bool,
 
-    /// The drawings to format
+    /// The drawings to format, or `-` to format stdin to stdout
     #[arg(value_name = "file", required = true)]
     files: Vec<PathBuf>,
 }
@@ -66,6 +67,25 @@ fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Check(args) => {
             load(&args.file)?;
+        }
+        Command::Fmt(args) if args.files == [Path::new("-")] => {
+            let mut src = String::new();
+            io::stdin()
+                .read_to_string(&mut src)
+                .context("cannot read stdin")?;
+            let formatted = lang::format(&src).map_err(|e| {
+                let (line, col) = e.line_col(&src);
+                anyhow!("<stdin>:{line}:{col}: {}", e.message)
+            })?;
+            if args.check {
+                if formatted != src {
+                    return Err(anyhow!("not formatted: <stdin>"));
+                }
+            } else {
+                io::stdout()
+                    .write_all(formatted.as_bytes())
+                    .context("cannot write stdout")?;
+            }
         }
         Command::Fmt(args) => {
             let mut unformatted = Vec::new();
