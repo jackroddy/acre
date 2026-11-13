@@ -3,26 +3,29 @@
   "title": "An arrow label overlaps a vertical arrow",
   "body": "`Connector::draw` in `crates/acre/src/scene/diagram.rs` centres a label 6 px above the midpoint of its line. On a vertical arrow the text sits across the line. One fix offsets the label along the line's normal and picks the text alignment from the side it lands on.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-1eb1c3",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-13T07:25:27.117990899Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-09T23:27:03.926414851Z",
-  "updated_at": "2026-11-13T07:10:27.117990899Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-13T07:14:22.078503999Z",
+  "closed_at": "2026-11-13T07:14:22.078503999Z",
+  "close_reason": "Fixed in 6e74f14. A label is offset along the line's normal by its measured extent, so it clears a vertical or diagonal line. Unit tests cover vertical, diagonal and horizontal lines.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "38a8b36",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "6e74f14",
+      "branch": "dev"
+    }
   }
 }
