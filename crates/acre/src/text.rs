@@ -40,6 +40,10 @@ pub struct Glyph {
     pub x: f64,
     /// Up from the baseline is negative, as on the canvas.
     pub y: f64,
+    /// How far the line moves on after this glyph.
+    pub advance: f64,
+    /// Whether the glyph sets a space, where a line may break.
+    pub space: bool,
     pub color: Color,
 }
 
@@ -121,8 +125,10 @@ impl Layout {
     }
 }
 
-/// `runs` shaped at `size` pixels and broken into lines at each `\n`.
-pub fn layout(runs: &[Run], size: f64) -> Layout {
+/// `runs` shaped at `size` pixels and broken into lines at each `\n`,
+/// and at spaces to keep lines within `width` when it is given. A word
+/// wider than `width` takes a line of its own.
+pub fn layout(runs: &[Run], size: f64, width: Option<f64>) -> Layout {
     let first = face(runs.first().map_or(Font::Mono, |r| r.font));
     let per_unit = |face: &Face| size / face.units_per_em() as f64;
     let mut lines = vec![Line {
@@ -147,16 +153,22 @@ pub fn layout(runs: &[Run], size: f64) -> Layout {
             buffer.push_str(piece);
             let shaped = rustybuzz::shape(face, &[], buffer);
             for (info, pos) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
+                let advance = pos.x_advance as f64 * scale;
                 line.glyphs.push(Glyph {
                     font: run.font,
                     id: info.glyph_id as u16,
                     x: line.width + pos.x_offset as f64 * scale,
                     y: -pos.y_offset as f64 * scale,
+                    advance,
+                    space: piece[info.cluster as usize..].starts_with(' '),
                     color: run.color,
                 });
-                line.width += pos.x_advance as f64 * scale;
+                line.width += advance;
             }
         }
+    }
+    if let Some(width) = width {
+        lines = lines.into_iter().flat_map(|l| wrap(l, width)).collect();
     }
     let scale = per_unit(first);
     Layout {
@@ -166,6 +178,55 @@ pub fn layout(runs: &[Run], size: f64) -> Layout {
         descent: -(first.descender() as f64) * scale,
         cap_height: first.capital_height().unwrap_or(first.ascender()) as f64 * scale,
     }
+}
+
+/// `line` broken at spaces into lines no wider than `width`, greedily.
+/// The space at a break is dropped.
+fn wrap(line: Line, width: f64) -> Vec<Line> {
+    let glyphs = line.glyphs;
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut last_space = None;
+    let mut i = 0;
+    while i < glyphs.len() {
+        let left = glyphs[start].x;
+        let end = glyphs[i].x + glyphs[i].advance - left;
+        if end > width
+            && !glyphs[i].space
+            && let Some(space) = last_space
+        {
+            out.push(line_of(&glyphs[start..space]));
+            start = space + 1;
+            last_space = None;
+            i = start;
+            continue;
+        }
+        if glyphs[i].space {
+            last_space = Some(i);
+        }
+        i += 1;
+    }
+    out.push(line_of(&glyphs[start..]));
+    out
+}
+
+/// A line of `glyphs` moved to start at 0, without trailing spaces in
+/// its width.
+fn line_of(glyphs: &[Glyph]) -> Line {
+    let left = glyphs.first().map_or(0.0, |g| g.x);
+    let glyphs: Vec<Glyph> = glyphs
+        .iter()
+        .map(|g| Glyph {
+            x: g.x - left,
+            ..*g
+        })
+        .collect();
+    let width = glyphs
+        .iter()
+        .rev()
+        .find(|g| !g.space)
+        .map_or(0.0, |g| g.x + g.advance);
+    Line { glyphs, width }
 }
 
 #[cfg(test)]
@@ -194,7 +255,7 @@ mod tests {
 
     #[test]
     fn a_kerned_pair_is_narrower_than_its_advances() {
-        let width = layout(&[run("AV", Font::Sans)], 100.0).width();
+        let width = layout(&[run("AV", Font::Sans)], 100.0, None).width();
         assert!(
             width < unkerned("AV", Font::Sans, 100.0) - 1.0,
             "AV is {width} wide"
@@ -203,7 +264,11 @@ mod tests {
 
     #[test]
     fn runs_follow_one_another_and_lines_break_at_newlines() {
-        let l = layout(&[run("ab", Font::Mono), run("c\nde", Font::Sans)], 20.0);
+        let l = layout(
+            &[run("ab", Font::Mono), run("c\nde", Font::Sans)],
+            20.0,
+            None,
+        );
         assert_eq!(l.lines.len(), 2);
         let first = &l.lines[0];
         assert_eq!(first.glyphs.len(), 3);
@@ -213,8 +278,26 @@ mod tests {
     }
 
     #[test]
+    fn lines_wrap_at_spaces_within_the_width_and_keep_their_runs() {
+        // each mono character is 6 pixels wide at size 10
+        let char = unkerned("a", Font::Mono, 10.0);
+        let l = layout(
+            &[run("aaa bbb ", Font::Mono), run("ccc dddddddd", Font::Sans)],
+            10.0,
+            Some(char * 7.5),
+        );
+        let texts: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(texts, [7, 3, 8]);
+        assert!(l.lines[0].width <= char * 7.5);
+        assert_eq!(l.lines[1].glyphs[0].font, Font::Sans);
+        assert_eq!(l.lines[1].glyphs[0].x, 0.0);
+        // the last word is wider than the width, so it overflows alone
+        assert!(l.lines[2].width > char * 7.5);
+    }
+
+    #[test]
     fn placing_centers_each_line_and_steps_down_one_line_height() {
-        let l = layout(&[run("aaaa\naa", Font::Mono)], 10.0);
+        let l = layout(&[run("aaaa\naa", Font::Mono)], 10.0, None);
         let starts = l.place(Point::new(100.0, 50.0), HAlign::Center, VAlign::Baseline);
         assert!((starts[0].x - (100.0 - l.lines[0].width / 2.0)).abs() < 1e-9);
         assert!((starts[1].x - (100.0 - l.lines[1].width / 2.0)).abs() < 1e-9);

@@ -6,6 +6,8 @@ use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlig
 pub struct Label {
     pub runs: Vec<Run>,
     pub size: f64,
+    /// The width lines wrap within, at spaces.
+    pub width: Option<f64>,
 }
 
 /// A box or an ellipse filling the rectangle at `origin` of `size`, with
@@ -20,6 +22,11 @@ pub struct Shape {
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
     pub label: Option<Label>,
+    /// The space between the outline and the label, across and down.
+    pub padding: Point,
+    /// Where the label sits across the box, from the top inside the
+    /// padding, or `None` to center it both ways.
+    pub text_align: Option<HAlign>,
 }
 
 /// A straight line, with an optional arrowhead at `to` and an optional
@@ -133,8 +140,18 @@ impl Shape {
                 stroke: self.stroke,
             });
         }
-        if let Some(label) = &self.label {
-            out.push(label.at(self.center(), HAlign::Center, VAlign::Middle));
+        let Some(label) = &self.label else { return };
+        match self.text_align {
+            None => out.push(label.at(self.center(), HAlign::Center, VAlign::Middle)),
+            Some(align) => {
+                let x = match align {
+                    HAlign::Left => self.origin.x + self.padding.x,
+                    HAlign::Center => self.center().x,
+                    HAlign::Right => self.origin.x + self.size.x - self.padding.x,
+                };
+                let y = self.origin.y + self.padding.y;
+                out.push(label.at(Point::new(x, y), align, VAlign::Top));
+            }
         }
     }
 }
@@ -305,13 +322,14 @@ impl Label {
                 color,
             }],
             size,
+            width: None,
         }
     }
 
     /// The width and height the text takes when set, from the first
     /// line's ascent to the last line's descent.
     pub fn size(&self) -> Point {
-        let layout = crate::text::layout(&self.runs, self.size);
+        let layout = crate::text::layout(&self.runs, self.size, self.width);
         let (min, max) = layout.extent(Point::ZERO, HAlign::Left, VAlign::Top);
         max - min
     }
@@ -341,6 +359,7 @@ impl Label {
             origin,
             runs: self.runs.clone(),
             size: self.size,
+            width: self.width,
             h_align,
             v_align,
         }
@@ -360,6 +379,8 @@ mod tests {
             fill: None,
             stroke: None,
             label: None,
+            padding: Point::ZERO,
+            text_align: None,
         }
     }
 

@@ -160,6 +160,8 @@ pub enum Primitive {
         /// One or more lines, split at `\n` in any run.
         runs: Vec<Run>,
         size: f64,
+        /// The width lines wrap within, at spaces.
+        width: Option<f64>,
         h_align: HAlign,
         v_align: VAlign,
     },
@@ -203,11 +205,12 @@ pub fn bounds(prims: &[Primitive]) -> Option<(Point, Point)> {
                 origin,
                 runs,
                 size,
+                width,
                 h_align,
                 v_align,
             } => {
                 let (min, max) =
-                    crate::text::layout(runs, *size).extent(*origin, *h_align, *v_align);
+                    crate::text::layout(runs, *size, *width).extent(*origin, *h_align, *v_align);
                 add(min, 0.0);
                 add(max, 0.0);
             }

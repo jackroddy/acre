@@ -74,16 +74,31 @@ const STYLE: Property = prop("style", "NAME...", "the styles whose properties it
 
 const SHAPE: &[Property] = &[
     AT,
-    prop("size", "W H", "the width and height"),
+    prop(
+        "size",
+        "W H",
+        "the width and height; without it, the size of the text and its padding",
+    ),
     FILL,
     STROKE,
     STROKE_WIDTH,
     DASH,
     RADIUS,
-    prop("text", "\"TEXT\"", "text centered inside, with markup"),
+    prop("text", "\"TEXT\"", "text inside, with markup"),
     TEXT_SIZE,
     TEXT_COLOR,
     FONT,
+    prop("width", "N", "the width the text wraps within, at spaces"),
+    prop(
+        "padding",
+        "N | X Y",
+        "the space between the outline and the text",
+    ),
+    prop(
+        "text-align",
+        "left | center | right",
+        "the text from the top inside the padding; without it, the text is centered",
+    ),
     STYLE,
 ];
 
@@ -220,6 +235,7 @@ pub const NODES: &[NodeKind] = &[
                 "left | center | right",
                 "where `at` sits along the text",
             ),
+            prop("width", "N", "the width the text wraps within, at spaces"),
             FONT,
             STYLE,
         ],

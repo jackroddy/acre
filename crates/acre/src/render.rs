@@ -125,10 +125,11 @@ fn draw_primitives(
                 origin,
                 runs,
                 size,
+                width,
                 h_align,
                 v_align,
             } => {
-                for (path, color) in text_paths(runs, *origin, *size, *h_align, *v_align) {
+                for (path, color) in text_paths(runs, *origin, *size, *width, *h_align, *v_align) {
                     paint_path(pixmap, &path, Some(color), None);
                 }
             }
@@ -226,10 +227,11 @@ fn text_paths(
     runs: &[Run],
     origin: Point,
     size: f64,
+    width: Option<f64>,
     h_align: HAlign,
     v_align: VAlign,
 ) -> Vec<(sk::Path, Color)> {
-    let layout = text::layout(runs, size);
+    let layout = text::layout(runs, size, width);
     let starts = layout.place(origin, h_align, v_align);
     let mut out = Vec::new();
     let mut builder = sk::PathBuilder::new();
@@ -384,6 +386,7 @@ mod tests {
                 color: Color::BLACK,
             }],
             size: 40.0,
+            width: None,
             h_align: HAlign::Center,
             v_align: VAlign::Middle,
         };
@@ -407,6 +410,7 @@ mod tests {
                 color: Color::BLACK,
             }],
             size: 30.0,
+            width: None,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };
@@ -448,12 +452,13 @@ mod tests {
             font: Font::Sans,
             color: Color::BLACK,
         }];
-        let width = text::layout(&runs, 30.0).width();
+        let width = text::layout(&runs, 30.0, None).width();
         let mut pixmap = blank(300, 60);
         let label = Primitive::Text {
             origin: Point::new(10.0, 40.0),
             runs,
             size: 30.0,
+            width: None,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
         };

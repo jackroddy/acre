@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `font` picks `mono`, `sans`, `sans-bold` or `sans-italic` for a node's text.
   On the canvas it sets the default. The sans faces are Noto Sans.
 - `dash` on a stroke and `radius` on a box. A `\n` in a string starts a new line.
+- `width N` on `text`, and on a box's text, wraps lines at spaces to fit N
+  pixels. A box without `size` takes the size of its text plus `padding`.
+  `text-align` sets the text in a box from the top, inside the padding, at the
+  left, center or right.
 - `let NAME VALUES;` on the canvas names a list of values, and the bare word
   `NAME` stands for them in any later property.
 - A `style` node names a set of properties. `style NAME;` gives a node each one

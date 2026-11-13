@@ -225,6 +225,7 @@ impl Plot {
                 color: self.text_color,
             }],
             size: self.text_size,
+            width: None,
             h_align,
             v_align,
         }

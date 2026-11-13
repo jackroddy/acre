@@ -96,6 +96,7 @@ impl Grid {
                     color: cell.text_color.at(t),
                 }],
                 size: self.text_size,
+                width: None,
                 h_align: HAlign::Center,
                 v_align: VAlign::Middle,
             });

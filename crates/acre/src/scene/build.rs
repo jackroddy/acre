@@ -290,19 +290,59 @@ fn palette(node: &Node) -> Result<Palette, Error> {
 fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     let props = Props::new(node, &keys("box"), false)?;
     let origin = at(props.require("at")?, names, offset)?;
-    let [w, h] = props.require("size")?.numbers::<2>()?;
     let fill = match props.get("fill") {
         Some(p) => p.color_or_none()?,
         None => Some(Color::WHITE),
     };
+    let mut label = props.label("text", "text-size", "text-color", names)?;
+    if let (Some(label), Some(p)) = (&mut label, props.get("width")) {
+        label.width = Some(p.numbers::<1>()?[0]);
+    }
+    let padding = match props.get("padding") {
+        None => Point::ZERO,
+        Some(p) => match p.values.len() {
+            1 => {
+                let [n] = p.numbers::<1>()?;
+                Point::new(n, n)
+            }
+            _ => {
+                let [x, y] = p.numbers::<2>()?;
+                Point::new(x, y)
+            }
+        },
+    };
+    let size = match (props.get("size"), &label) {
+        (Some(p), _) => {
+            let [w, h] = p.numbers::<2>()?;
+            Point::new(w, h)
+        }
+        (None, Some(label)) => label.size() + padding * 2.0,
+        (None, None) => {
+            return Err(Error::new(
+                node.kind.span,
+                format!("`{}` needs `size` or `text`", node.kind.text),
+            ));
+        }
+    };
+    let text_align = match props.get("text-align") {
+        None => None,
+        Some(p) => Some(match p.word()? {
+            "left" => HAlign::Left,
+            "center" => HAlign::Center,
+            "right" => HAlign::Right,
+            _ => return Err(Error::new(p.span, "`text-align` is left, center or right")),
+        }),
+    };
     Ok(Shape {
         origin,
-        size: Point::new(w, h),
+        size,
         oval: node.kind.text == "ellipse",
         radius: props.number_or("radius", 0.0)?,
         fill,
         stroke: props.stroke(Some(Color::BLACK))?,
-        label: props.label("text", "text-size", "text-color", names)?,
+        label,
+        padding,
+        text_align,
     })
 }
 
@@ -476,9 +516,12 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
             _ => return Err(Error::new(p.span, "`align` is left, center or right")),
         },
     };
-    let label = props
+    let mut label = props
         .label("text", "size", "color", names)?
         .ok_or_else(|| Error::new(node.kind.span, "`text` needs `text`"))?;
+    if let Some(p) = props.get("width") {
+        label.width = Some(p.numbers::<1>()?[0]);
+    }
     Ok(Text {
         origin,
         label,
@@ -546,7 +589,11 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
                 .map_err(|message| Error::new(v.span, message))?;
             out.push(Text {
                 origin: origin + Point::new(xs[column], k as f64 * height),
-                label: Label { runs, size },
+                label: Label {
+                    runs,
+                    size,
+                    width: None,
+                },
                 align: aligns[column],
             });
         }
@@ -724,6 +771,8 @@ fn target<'v>(
         fill: None,
         stroke: None,
         label: None,
+        padding: Point::ZERO,
+        text_align: None,
     };
     if let Some(shape) = names.shapes.get(word.as_str()) {
         return Ok((shape.clone(), rest));
@@ -910,6 +959,7 @@ impl<'a> Props<'a> {
         Ok(Some(Label {
             runs,
             size: self.number_or(size, TEXT_SIZE)?,
+            width: None,
         }))
     }
 }
@@ -1061,7 +1111,8 @@ mod tests {
                 2,
                 17,
                 "`box` has no property `colour`; it takes at, size, fill, stroke, \
-                 stroke-width, dash, radius, text, text-size, text-color, font, style"
+                 stroke-width, dash, radius, text, text-size, text-color, font, width, \
+                 padding, text-align, style"
                     .into()
             )
         );
@@ -1227,5 +1278,28 @@ mod tests {
         assert_eq!(s.object_at(Point::new(15.0, 15.0), 0.0), Some(1));
         assert_eq!(s.object_at(Point::new(50.0, 50.0), 0.0), Some(0));
         assert_eq!(s.object_at(Point::new(150.0, 50.0), 0.0), None);
+    }
+
+    #[test]
+    fn a_box_without_a_size_fits_its_wrapped_text_and_padding() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                box { at 0 0; text "one two three four"; width 60; padding 10 5; text-align left; } }"#,
+        )
+        .unwrap();
+        let Kind::Shape(b) = &s.objects[0].kind else {
+            panic!("expected a box");
+        };
+        let label = b.label.as_ref().unwrap();
+        assert_eq!(b.size, label.size() + Point::new(20.0, 10.0));
+        assert!(label.size().x <= 60.0);
+        assert!(
+            label.size().y > 2.0 * label.size * 1.3,
+            "the text wrapped to three lines or more"
+        );
+        assert!(
+            scene("canvas { size 10 10; box { at 0 0; } }").is_err(),
+            "a box needs a size or text"
+        );
     }
 }
