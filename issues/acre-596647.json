@@ -3,26 +3,29 @@
   "title": "A ruler with side left still draws a horizontal scale",
   "body": "`ruler` takes `side top`, `bottom`, `left` or `right`. At `c846b14`, `ruler { count 120; unit 2; every 20; side left; }` draws a horizontal scale, the same as `side top`. acre gives no error.\n\nThe cloud-search and pipeline figures needed target positions down the left of a 362-row matrix. `gen.py` and `gen_cloud.py` wrote them as `text` nodes at computed heights.\n\n## Proposal\n\n`side left` and `side right` draw a vertical scale, with ticks and numbers on that side. If `side` is meant to place only the numbers, a `direction down` property does the same job. Either way, a ruler can run down a drawing.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-fb60bb",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T20:58:55.356167098Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.223873234Z",
-  "updated_at": "2026-11-19T20:43:55.356167098Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:45:11.372454821Z",
+  "closed_at": "2026-11-19T20:45:11.372454821Z",
+  "close_reason": "Landed in 97d96f9 on dev. `side left` and `side right` run the ruler down from `at`, with ticks and numbers on that side. Test: `a_ruler_on_the_left_or_right_runs_down_with_its_ticks_and_numbers_on_that_side`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "743a77a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "97d96f9",
+      "branch": "dev"
+    }
   }
 }
