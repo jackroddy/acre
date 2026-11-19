@@ -148,6 +148,7 @@ pub struct Run {
 pub enum Font {
     #[default]
     Mono,
+    MonoBold,
     Sans,
     SansBold,
     SansItalic,

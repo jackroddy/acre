@@ -200,6 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   escape. `\$` is a dollar sign, and a `$` with no partner is an error.
 - A `math` node sets one formula in display style, placed by its top edge like
   `text`: `math { text """\sum_{i=1}^n i = \frac{n(n+1)}{2}"""; size 24; }`.
+- `font mono-bold` sets text in JetBrains Mono NL Bold, which acre embeds
+  beside the regular face. `Font::MonoBold` names it.
 
 ### Changed
 
@@ -270,6 +272,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `ruler` with `side left` or `side right` runs down from `at`, with its
   ticks and numbers on that side. It used to draw the horizontal scale of
   `side top`.
+- acre sets a code span inside `**bold**` markup in bold mono. It used to set
+  it in regular mono, like a code span outside bold.
 
 ## [0.1.0] - 2026-09-30
 

@@ -60,7 +60,7 @@ const TEXT_SIZE: Property = prop("text-size", "N", "the size of the text in pixe
 const TEXT_COLOR: Property = prop("text-color", "COLOR", "the color of the text");
 const FONT: Property = prop(
     "font",
-    "mono | sans | sans-bold | sans-italic | NAME",
+    "mono | mono-bold | sans | sans-bold | sans-italic | NAME",
     "the text's font; a NAME is one `fonts` registers",
 );
 const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup");
@@ -245,7 +245,7 @@ pub const NODES: &[NodeKind] = &[
             FONT,
             prop(
                 "note-font",
-                "mono | sans | sans-bold | sans-italic",
+                "mono | mono-bold | sans | sans-bold | sans-italic",
                 "the notes' font",
             ),
             ANCHOR,
@@ -453,7 +453,7 @@ pub const NODES: &[NodeKind] = &[
             prop("title-color", "COLOR", "the heading's color"),
             prop(
                 "title-font",
-                "mono | sans | sans-bold | sans-italic",
+                "mono | mono-bold | sans | sans-bold | sans-italic",
                 "the heading's font",
             ),
             prop("number-color", "COLOR", "the color of the panel's number"),

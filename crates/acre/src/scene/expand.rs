@@ -16,6 +16,7 @@ const RESERVED: &[&str] = &[
     "curly",
     "square",
     "mono",
+    "mono-bold",
     "sans",
     "sans-bold",
     "sans-italic",

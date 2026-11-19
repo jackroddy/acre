@@ -375,7 +375,7 @@ fn wrap(line: Line, width: f64, justify: bool) -> Vec<Line> {
         matches!(
             g.mark,
             Mark::Outline {
-                font: Font::Mono,
+                font: Font::Mono | Font::MonoBold,
                 ..
             }
         )
@@ -735,6 +735,15 @@ mod tests {
         let char = unkerned("a", Font::Mono, 10.0);
         let runs = [run("xx ", Font::Sans), run("a b c", Font::Mono)];
         // "xx a b" would fit, but the break goes before the span
+        let l = layout(&runs, 10.0, Some(char * 6.0));
+        let widths: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
+        assert_eq!(widths, [2, 5]);
+    }
+
+    #[test]
+    fn a_bold_code_span_breaks_like_a_code_span() {
+        let char = unkerned("a", Font::MonoBold, 10.0);
+        let runs = [run("xx ", Font::Sans), run("a b c", Font::MonoBold)];
         let l = layout(&runs, 10.0, Some(char * 6.0));
         let widths: Vec<usize> = l.lines.iter().map(|l| l.glyphs.len()).collect();
         assert_eq!(widths, [2, 5]);

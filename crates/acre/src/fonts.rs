@@ -1,4 +1,4 @@
-//! The fonts a drawing is set in: the four text faces and the math font
+//! The fonts a drawing is set in: the five text faces and the math font
 //! acre embeds, and any a file registers with `fonts`.
 //!
 //! `text` measures with a [`Fonts`], `math` sets formulas from its math
@@ -14,6 +14,7 @@ use crate::math::MathFont;
 use crate::scene::Font;
 
 static MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+static MONO_BOLD: &[u8] = include_bytes!("../assets/fonts/JetBrainsMonoNL-Bold.ttf");
 static SANS: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 static SANS_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
 static SANS_ITALIC: &[u8] = include_bytes!("../assets/fonts/NotoSans-Italic.ttf");
@@ -22,7 +23,13 @@ static MATH: &[u8] = include_bytes!("../assets/fonts/NotoSansMath-Regular.ttf");
 static EMBEDDED: LazyLock<Fonts> = LazyLock::new(|| {
     let face = |data: &'static [u8]| Typeface::parse(data).expect("the embedded font parses");
     Fonts(Arc::new(Set {
-        text: vec![face(MONO), face(SANS), face(SANS_BOLD), face(SANS_ITALIC)],
+        text: vec![
+            face(MONO),
+            face(SANS),
+            face(SANS_BOLD),
+            face(SANS_ITALIC),
+            face(MONO_BOLD),
+        ],
         names: Vec::new(),
         math: MathFont::parse(MATH).expect("the embedded math font parses"),
     }))
@@ -60,16 +67,17 @@ impl Typeface {
 pub struct Fonts(Arc<Set>);
 
 struct Set {
-    /// Mono, sans, sans bold and sans italic, then each registered font.
+    /// Mono, sans, sans bold, sans italic and mono bold, then each
+    /// registered font.
     text: Vec<Typeface>,
     /// The name of each registered font, in the order of `text` after
-    /// the four embedded faces.
+    /// the embedded faces.
     names: Vec<String>,
     math: MathFont,
 }
 
 /// How many text faces acre embeds.
-const EMBEDDED_TEXT: usize = 4;
+const EMBEDDED_TEXT: usize = 5;
 
 impl Fonts {
     /// The embedded fonts with `custom` registered under their names,
@@ -122,6 +130,7 @@ fn index(font: Font) -> usize {
         Font::Sans => 1,
         Font::SansBold => 2,
         Font::SansItalic => 3,
+        Font::MonoBold => 4,
         Font::Custom(k) => EMBEDDED_TEXT + k as usize,
         Font::Math => unreachable!("the math font is not a text face"),
     }

@@ -91,7 +91,7 @@ fn listed_fonts(canvas: &Node) -> Result<Vec<FontFile>, Error> {
     Ok(out)
 }
 
-const BUILT_IN_FONTS: [&str; 4] = ["mono", "sans", "sans-bold", "sans-italic"];
+const BUILT_IN_FONTS: [&str; 5] = ["mono", "mono-bold", "sans", "sans-bold", "sans-italic"];
 
 /// The fonts `listed` names, from their files' `bytes` in the same
 /// order.
@@ -1920,13 +1920,14 @@ fn font(p: &Property, fonts: &Fonts) -> Result<Font, Error> {
     let name = p.word()?;
     match name {
         "mono" => Ok(Font::Mono),
+        "mono-bold" => Ok(Font::MonoBold),
         "sans" => Ok(Font::Sans),
         "sans-bold" => Ok(Font::SansBold),
         "sans-italic" => Ok(Font::SansItalic),
         _ => fonts.lookup(name).ok_or_else(|| {
             Error::new(
                 p.span,
-                "`font` is mono, sans, sans-bold, sans-italic or a name from `fonts`",
+                "`font` is mono, mono-bold, sans, sans-bold, sans-italic or a name from `fonts`",
             )
         }),
     }

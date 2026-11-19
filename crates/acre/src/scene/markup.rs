@@ -5,8 +5,9 @@ use super::primitive::{Color, Font, Run};
 /// The runs a label's text marks up, starting in `font` and `color`.
 ///
 /// `` `code` `` sets text in the mono font, `**bold**` in the bold sans
-/// font, and `{NAME text}` colors `text` with the color `colors` gives
-/// `NAME`, or with `{#rrggbb text}`. `$formula$` is LaTeX math, as one
+/// font, and code inside bold in the bold mono font. `{NAME text}`
+/// colors `text` with the color `colors` gives `NAME`, or with
+/// `{#rrggbb text}`. `$formula$` is LaTeX math, as one
 /// run in the math font. A line that starts with `- ` is a list item,
 /// and its `- ` becomes a bullet run, `•` in `color`. A backslash takes the
 /// character after it as it is, so `\$` is a dollar sign and a line that
@@ -32,7 +33,8 @@ pub fn runs(
             return;
         }
         let font = match (mono, bold) {
-            (true, _) => Font::Mono,
+            (true, true) => Font::MonoBold,
+            (true, false) => Font::Mono,
             (false, true) => Font::SansBold,
             (false, false) => font,
         };
@@ -188,6 +190,21 @@ mod tests {
                 (" ".into(), Font::Sans, RED),
                 ("e".into(), Font::Mono, RED),
                 (" {f}".into(), Font::Sans, Color::BLACK),
+            ]
+        );
+    }
+
+    #[test]
+    fn code_inside_bold_is_bold_mono() {
+        assert_eq!(
+            styles("**a `b` c** `d **e**`"),
+            [
+                ("a ".into(), Font::SansBold, Color::BLACK),
+                ("b".into(), Font::MonoBold, Color::BLACK),
+                (" c".into(), Font::SansBold, Color::BLACK),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("d ".into(), Font::Mono, Color::BLACK),
+                ("e".into(), Font::MonoBold, Color::BLACK),
             ]
         );
     }

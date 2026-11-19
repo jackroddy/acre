@@ -344,7 +344,7 @@ mod tests {
     fn text_embeds_its_fonts_as_subsets() {
         let doc = pdf(r#"canvas {
             size 300 100;
-            text { at 10 10; text "Sans and `mono` and $x^2$"; font sans; }
+            text { at 10 10; text "Sans and `mono` and **`bold`** and $x^2$"; font sans; }
         }"#);
         let mut fonts: Vec<String> = doc
             .objects
@@ -358,7 +358,7 @@ mod tests {
             })
             .collect();
         fonts.sort();
-        assert_eq!(fonts.len(), 3, "{fonts:?}");
+        assert_eq!(fonts.len(), 4, "{fonts:?}");
         // a subset's name is six capitals and a plus before the font's
         assert!(fonts.iter().all(|f| f.as_bytes()[6] == b'+'), "{fonts:?}");
         assert!(fonts.iter().any(|f| f.ends_with("+NotoSans-Regular")));
@@ -367,6 +367,7 @@ mod tests {
                 .iter()
                 .any(|f| f.ends_with("+JetBrainsMonoNL-Regular"))
         );
+        assert!(fonts.iter().any(|f| f.ends_with("+JetBrainsMonoNL-Bold")));
         assert!(fonts.iter().any(|f| f.ends_with("+NotoSansMath-Regular")));
     }
 

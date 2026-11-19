@@ -263,6 +263,7 @@ impl Svg<'_> {
         let def = face.outline_glyph(GlyphId(id), &mut outline).map(|_| {
             let name = match font {
                 Font::Mono => "mono".to_string(),
+                Font::MonoBold => "mono-bold".to_string(),
                 Font::Sans => "sans".to_string(),
                 Font::SansBold => "sans-bold".to_string(),
                 Font::SansItalic => "sans-italic".to_string(),
