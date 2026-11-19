@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-19T21:00:11.381204949Z",
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.252409132Z",
-  "updated_at": "2026-11-19T20:45:11.381204949Z",
+  "updated_at": "2026-11-19T20:47:10.988073126Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "16e2ad6a",
+      "at": "2026-11-19T20:47:10.988072546Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "How a route leaves a corner, as built in `6374cb1`:\n\n- A corner end faces out along its diagonal, at 45 degrees whatever the box's shape. A curve's handle runs that way.\n- An elbow has to leave along an axis. It picks whichever of the corner's two sides faces the other end more, by comparing the two components of the vector to the other end. From `bottom-right` to an end mostly to the right it leaves right, and to an end mostly below it leaves down. Between two corners that face each other this gives a Z that turns halfway. A corner to a side perpendicular to the chosen axis gives an L.\n- On an ellipse the corner is where the diagonal of its box crosses the outline, not the box's corner, which lies off the ellipse.\n\n`connector::square` holds the elbow rule and `build::corner` holds the placement.",
+      "commit": "6374cb1",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "743a77a",
