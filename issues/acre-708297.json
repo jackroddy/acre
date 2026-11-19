@@ -3,26 +3,29 @@
   "title": "An arrow can loop from a box back to itself",
   "body": "An arrow cannot run from a box back to the same box. At `c846b14`, `arrow { from a; to a; route curve; }` draws nothing, and acre gives no error.\n\nA profile HMM has states that loop to themselves. In the cloud-search figure these are N, C and each insert state I. The figure draws the HMM around two profile positions and has no way to draw those loops. It says \"N, C and each I also loop to themselves\" in a note instead. State machines and automata draw self-loops all the time.\n\n## Proposal\n\n- An arrow whose `from` and `to` name the same thing draws a loop out of one side and back into it. `side` picks the side, and the default is `top`.\n- An arrow that draws nothing is an error.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-fb60bb",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T21:02:11.015648288Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.261697419Z",
-  "updated_at": "2026-11-19T20:47:11.015648288Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:49:26.231127567Z",
+  "closed_at": "2026-11-19T20:49:26.231127567Z",
+  "close_reason": "Landed in 84eb63e on dev. A line or arrow from a thing to itself loops out of the side `side` names, top by default, and follows the thing as it moves. A `side` on a non-loop and a line whose ends meet are errors. The syntax note is on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "743a77a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "84eb63e",
+      "branch": "dev"
+    }
   }
 }
