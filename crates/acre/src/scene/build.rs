@@ -2095,6 +2095,7 @@ impl Property {
 mod tests {
     use super::*;
     use crate::lang::parse;
+    use crate::scene::primitive::{Primitive, VAlign};
 
     fn scene(src: &str) -> Result<Scene, (usize, usize, String)> {
         let program = parse(src).unwrap();
@@ -2307,6 +2308,46 @@ mod tests {
                 .unwrap_err(),
             (3, 17, "expected a name".into())
         );
+    }
+
+    #[test]
+    fn a_ruler_on_the_left_or_right_runs_down_with_its_ticks_and_numbers_on_that_side() {
+        let s = scene(
+            "canvas { size 200 200;
+                ruler { at 50 10; unit 20; count 3; side left; }
+                ruler { at 150 10; unit 20; count 3; every 2; side right; } }",
+        )
+        .unwrap();
+        for (i, dx, h) in [(0, -1.0, HAlign::Right), (1, 1.0, HAlign::Left)] {
+            let Kind::Ruler(ruler) = &s.objects[i].kind else {
+                panic!("expected a ruler");
+            };
+            let x = ruler.origin.x;
+            let mut out = Vec::new();
+            ruler.draw(&mut out);
+            let Primitive::Line { from, to, .. } = &out[0] else {
+                panic!("expected the ruler's line");
+            };
+            assert_eq!((*from, *to), (Point::new(x, 10.0), Point::new(x, 70.0)));
+            let Primitive::Line { from, to, .. } = &out[1] else {
+                panic!("expected a tick");
+            };
+            assert_eq!(
+                (*from, *to),
+                (Point::new(x, 10.0), Point::new(x + dx * 5.0, 10.0))
+            );
+            let Primitive::Text {
+                origin,
+                h_align,
+                v_align,
+                ..
+            } = &out[5]
+            else {
+                panic!("expected a number");
+            };
+            assert_eq!(*origin, Point::new(x + dx * 8.0, 20.0));
+            assert_eq!((*h_align, *v_align), (h, VAlign::Middle));
+        }
     }
 
     #[test]

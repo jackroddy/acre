@@ -400,12 +400,16 @@ pub const NODES: &[NodeKind] = &[
         about: "a scale of equal units with numbers",
         properties: &[
             AT,
-            prop("unit", "N", "the width of one unit"),
+            prop("unit", "N", "the length of one unit"),
             prop("count", "N", "how many units"),
             prop("first", "N", "the number over the first unit"),
             prop("step", "N", "how much each number grows"),
             prop("every", "N", "a number over every Nth unit"),
-            SIDE,
+            prop(
+                "side",
+                "top | bottom | left | right",
+                "where the numbers sit; a top or bottom ruler runs right from `at` with its ticks pointing away from the numbers, and a left or right ruler runs down with its ticks and numbers on that side",
+            ),
             STROKE,
             STROKE_WIDTH,
             TEXT_SIZE,

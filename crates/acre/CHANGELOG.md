@@ -253,6 +253,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `brace { over a b; }` spans the box around every thing named after `over`.
   It used to cover `a` alone. A brace over several things follows the first
   as it moves. A word after `over` that names nothing is an error.
+- A `ruler` with `side left` or `side right` runs down from `at`, with its
+  ticks and numbers on that side. It used to draw the horizontal scale of
+  `side top`.
 
 ## [0.1.0] - 2026-09-30
 

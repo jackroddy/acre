@@ -93,7 +93,8 @@ pub struct Ruler {
     /// How much the number grows from one unit to the next.
     pub step: f64,
     pub every: usize,
-    /// Where the numbers sit; the ticks point the other way.
+    /// Where the numbers sit. A `left` or `right` ruler runs down with
+    /// its ticks on that side, and a `top` or `bottom` one points them away.
     pub side: Side,
     pub stroke: Stroke,
     pub label: Label,
@@ -237,35 +238,43 @@ fn quad(points: &mut Vec<Point>, a: Point, c: Point, b: Point) {
 
 impl Ruler {
     pub fn draw(&self, out: &mut Vec<Primitive>) {
-        let end = self.origin + Point::new(self.unit * self.count as f64, 0.0);
+        let vertical = matches!(self.side, Side::Left | Side::Right);
+        let along = if vertical {
+            Point::new(0.0, 1.0)
+        } else {
+            Point::new(1.0, 0.0)
+        };
         out.push(Primitive::Line {
             from: self.origin,
-            to: end,
+            to: self.origin + along * (self.unit * self.count as f64),
             stroke: self.stroke,
         });
         let out_dir = self.side.outward();
+        // a vertical ruler's ticks stand out on the side its numbers
+        // are on, and a horizontal ruler's point away from them
+        let tick_dir = if vertical { out_dir } else { out_dir * -1.0 };
         for i in 0..=self.count {
-            let x = self.origin.x + i as f64 * self.unit;
             let major = self.every > 0 && i % self.every == 0;
             let tick = if major { 5.0 } else { 3.0 };
-            let base = Point::new(x, self.origin.y);
+            let base = self.origin + along * (i as f64 * self.unit);
             out.push(Primitive::Line {
                 from: base,
-                to: base - out_dir * tick,
+                to: base + tick_dir * tick,
                 stroke: self.stroke,
             });
         }
         let every = self.every.max(1);
+        let (h, v, reach) = match self.side {
+            Side::Top => (HAlign::Center, VAlign::Baseline, 4.0),
+            Side::Bottom => (HAlign::Center, VAlign::Top, 4.0),
+            Side::Left => (HAlign::Right, VAlign::Middle, 8.0),
+            Side::Right => (HAlign::Left, VAlign::Middle, 8.0),
+        };
         for i in (0..self.count).step_by(every) {
             let value = self.first + self.step * i as f64;
-            let at = Point::new(self.origin.x + (i as f64 + 0.5) * self.unit, self.origin.y)
-                + out_dir * 4.0;
-            let v = match self.side {
-                Side::Bottom => VAlign::Top,
-                _ => VAlign::Baseline,
-            };
+            let at = self.origin + along * ((i as f64 + 0.5) * self.unit) + out_dir * reach;
             let label = self.label.with_text(format!("{value}"));
-            out.push(label.at(at, HAlign::Center, v));
+            out.push(label.at(at, h, v));
         }
     }
 }
