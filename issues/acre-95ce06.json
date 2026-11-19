@@ -3,26 +3,29 @@
   "title": "Bold markup has no effect on a monospace code span",
   "body": "`markup::runs` in `crates/acre/src/scene/markup.rs` picks a run's font from two flags. A code span takes `Font::Mono` whether or not bold markup surrounds it, because acre embeds only JetBrains Mono NL Regular. A bold code name therefore draws in regular mono, and it looks no different from the code names in the text around it.\n\n`figures/key-schemes.acre` shows it in three places. The headings of the `UnmaskedKeys`, `MaskedKeys` and `Packing` boxes in section 1 are bold code names. So are the column headings of the table in section 5, and the `bmi2` in the heading \"pext and bmi2\".\n\n## Proposal\n\n- Embed JetBrains Mono NL Bold beside the regular face. It is OFL, like the regular face, and its license is the `OFL.txt` already in `crates/acre/assets/fonts/`.\n- Add `Font::MonoBold`, and map a code span inside bold markup to it.\n- `font` accepts `mono-bold`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T21:06:19.781751316Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T07:38:33.185344989Z",
-  "updated_at": "2026-11-19T20:51:19.781751316Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:53:55.641651946Z",
+  "closed_at": "2026-11-19T20:53:55.641651946Z",
+  "close_reason": "Landed on dev in ac3a49f. acre embeds JetBrains Mono NL Bold from the JetBrains Mono 2.304 GitHub release. That release's regular face is byte-identical to the one acre already embedded. Markup maps code inside bold to `Font::MonoBold`, and `font mono-bold` selects it. Renders of the drawings in the checkout changed only where a code span is bold, `figures/key-schemes.acre` among them.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "2a3a569",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "ac3a49f",
+      "branch": "dev"
+    }
   }
 }
