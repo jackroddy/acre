@@ -375,8 +375,8 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "over",
-                "NAME | ROW [N [M]]",
-                "the thing, row or run of cells it brackets",
+                "NAME... | ROW [N [M]]...",
+                "the things, rows or runs of cells it brackets; with more than one, it spans the box around them all and follows the first",
             ),
             prop("from", "X Y", "where it starts, without `over`"),
             prop("to", "X Y", "where it ends, without `over`"),

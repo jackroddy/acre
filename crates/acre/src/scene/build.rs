@@ -1695,9 +1695,11 @@ fn end(
     Ok((end, Some(source)))
 }
 
-/// The left, top, right and bottom of what `over` names: a shape, a
-/// whole row, or a row's cells from one index to another, and the
-/// thing, which is one cell only when `over` names one.
+/// The left, top, right and bottom of the box around everything `over`
+/// names, and the thing the brace follows. Each name is a shape, a
+/// whole row, a row's cell, or a row's cells from one index to another.
+/// The brace follows the first name, which is one cell only when it
+/// names one.
 fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Target), Error> {
     let corners = |s: &Shape| {
         [
@@ -1707,26 +1709,43 @@ fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Target), Error> {
             s.origin.y + s.size.y,
         ]
     };
-    let (first, mut cell, rest) = target(p, &p.values, names, 0)?;
-    let [left, top, mut right, mut bottom] = corners(&first);
-    match rest {
-        [] => {}
-        [last] => {
+    let mut values = p.values.as_slice();
+    let mut around: Option<[f64; 4]> = None;
+    let mut follow = None;
+    while !values.is_empty() {
+        let (first, mut cell, mut rest) = target(p, values, names, 0)?;
+        let [left, top, mut right, mut bottom] = corners(&first);
+        // a second number after a cell or a code line ends a run
+        if values.len() - rest.len() == 2
+            && let Some((
+                last @ Value {
+                    kind: ValueKind::Number(_),
+                    ..
+                },
+                after,
+            )) = rest.split_first()
+        {
             cell = None;
-            let mut to = p.values[..1].to_vec();
-            to.push(last.clone());
-            let (last, _, _) = target(p, &to, names, 0)?;
+            let (last, _, _) = target(p, &[values[0].clone(), last.clone()], names, 0)?;
             let c = corners(&last);
             right = c[2];
             bottom = c[3];
+            rest = after;
         }
-        [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
+        follow.get_or_insert(Target {
+            source: names.source_of(&values[0]),
+            cell,
+        });
+        around = Some(match around {
+            None => [left, top, right, bottom],
+            Some([l, t, r, b]) => [l.min(left), t.min(top), r.max(right), b.max(bottom)],
+        });
+        values = rest;
     }
-    let target = Target {
-        source: names.source_of(&p.values[0]),
-        cell,
-    };
-    Ok(([left, top, right, bottom], target))
+    match (around, follow) {
+        (Some(around), Some(follow)) => Ok((around, follow)),
+        _ => Err(p.expected("a name")),
+    }
 }
 
 /// The box that the leading values of `values` name, as a shape, the
@@ -2247,6 +2266,47 @@ mod tests {
             panic!("expected an arrow");
         };
         assert_eq!(arrow.to, Point::new(55.0, 20.0));
+    }
+
+    #[test]
+    fn a_brace_over_several_names_spans_the_box_around_them() {
+        let s = scene(
+            "canvas { size 300 200;
+                box a { at 10 20; size 50 30; }
+                box b { at 100 40; size 60 30; }
+                row r { at 0 100; unit 10 10; cells \"x\" \"y\" \"z\"; }
+                brace { over a b; side bottom; gap 0; }
+                brace { over b a r 1 2; side left; gap 0; } }",
+        )
+        .unwrap();
+        let Kind::Brace(two) = &s.objects[3].kind else {
+            panic!("expected a brace");
+        };
+        assert_eq!(
+            (two.from, two.to),
+            (Point::new(10.0, 70.0), Point::new(160.0, 70.0))
+        );
+        let Kind::Brace(three) = &s.objects[4].kind else {
+            panic!("expected a brace");
+        };
+        assert_eq!(
+            (three.from, three.to),
+            (Point::new(10.0, 20.0), Point::new(10.0, 110.0))
+        );
+    }
+
+    #[test]
+    fn a_brace_over_a_name_that_names_nothing_is_an_error() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n brace { over a nope; } }")
+                .unwrap_err(),
+            (3, 17, "no box, ellipse, row or code is named `nope`".into())
+        );
+        assert_eq!(
+            scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n brace { over a 3; } }")
+                .unwrap_err(),
+            (3, 17, "expected a name".into())
+        );
     }
 
     #[test]

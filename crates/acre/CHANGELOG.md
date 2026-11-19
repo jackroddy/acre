@@ -248,6 +248,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `acre` command. It now comes from the `acre-cli` crate, and this crate is
   a library only.
 
+### Fixed
+
+- `brace { over a b; }` spans the box around every thing named after `over`.
+  It used to cover `a` alone. A brace over several things follows the first
+  as it moves. A word after `over` that names nothing is an error.
+
 ## [0.1.0] - 2026-09-30
 
 ### Added
