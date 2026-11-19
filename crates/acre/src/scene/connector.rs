@@ -63,6 +63,9 @@ pub struct Connector {
     /// The things `from` and `to` are attached to, which they follow as
     /// those things move and scale.
     pub follow: [Option<Box<Follow>>; 2],
+    /// Whether both ends sit on one side of one thing, so the route
+    /// leaves that side and comes back into it.
+    pub looped: bool,
 }
 
 /// Where a connector ends: a point, or the outline of a box it stops at.
@@ -146,6 +149,9 @@ const CURVE_STEPS: usize = 24;
 /// How far past both ends an elbow steps out when its ends face the
 /// same way.
 const STEP_OUT: f64 = 24.0;
+
+/// How far a loop's curve stands out from the side it leaves, about.
+const LOOP_REACH: f64 = 28.0;
 
 /// `dir` when it runs along an axis. A corner's diagonal becomes the
 /// axis of whichever of the corner's two sides faces `toward` more.
@@ -231,9 +237,9 @@ impl Connector {
     fn path(&self) -> Vec<Point> {
         let (a, b) = (self.from, self.to);
         let mut points = match self.route {
-            Route::Straight => vec![a, b],
+            Route::Straight if !self.looped => vec![a, b],
             Route::Elbow => self.elbow(),
-            Route::Curve => {
+            Route::Straight | Route::Curve => {
                 let (c1, c2) = self.handles();
                 (0..=CURVE_STEPS)
                     .map(|i| {
@@ -292,6 +298,18 @@ impl Connector {
     fn handles(&self) -> (Point, Point) {
         let (a, b) = (self.from, self.to);
         let d = b - a;
+        if self.looped
+            && let Some(out) = self.from_dir
+        {
+            // each handle stands out LOOP_REACH and leans away from
+            // the other end, so the loop bulges wider than its ends
+            let apart = d * (1.0 / length(d));
+            let lean = apart * (LOOP_REACH / 2.0);
+            return (
+                a + out * (LOOP_REACH * 1.4) - lean,
+                b + out * (LOOP_REACH * 1.4) + lean,
+            );
+        }
         // with no side, a handle runs along the longer axis toward the
         // other end, for half the distance along it
         let along_x = d.x.abs() >= d.y.abs();
@@ -470,6 +488,7 @@ mod tests {
             label_side: LabelSide::Above,
             label_at: 0.5,
             follow: [None, None],
+            looped: false,
         }
     }
 
@@ -708,6 +727,18 @@ mod tests {
         let (c1, c2) = c.handles();
         assert_eq!(c1, Point::new(50.0 * h, 50.0 * h));
         assert_eq!(c2, Point::new(100.0 - 50.0 * h, 50.0 * h));
+    }
+
+    #[test]
+    fn a_straight_loop_draws_as_a_curve_out_of_its_side() {
+        let mut c = with_sides(connector((0.0, 0.0), (20.0, 0.0)), (0.0, -1.0), (0.0, -1.0));
+        c.looped = true;
+        let path = c.path();
+        assert_eq!(path.len(), CURVE_STEPS + 1);
+        let top = path.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        assert!((top + 0.75 * 1.4 * LOOP_REACH).abs() < 1e-9);
+        // it leans out past both ends
+        assert!(path.iter().any(|p| p.x < 0.0) && path.iter().any(|p| p.x > 20.0));
     }
 
     #[test]

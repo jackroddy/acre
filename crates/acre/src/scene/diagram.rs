@@ -54,7 +54,7 @@ pub enum Side {
 
 impl Side {
     /// The unit vector pointing out of this side.
-    fn outward(self) -> Point {
+    pub(super) fn outward(self) -> Point {
         match self {
             Side::Top => Point::new(0.0, -1.0),
             Side::Bottom => Point::new(0.0, 1.0),

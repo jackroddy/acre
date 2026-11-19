@@ -1164,9 +1164,33 @@ fn connector(
     shift: usize,
 ) -> Result<Connector, Error> {
     let props = Props::new(node, &keys("line"), false)?;
-    let (from, from_target) = end(props.require("from")?, names, offset, shift)?;
-    let (to, to_target) = end(props.require("to")?, names, offset, shift)?;
+    let (mut from, from_target) = end(props.require("from")?, names, offset, shift)?;
+    let to_prop = props.require("to")?;
+    let (mut to, to_target) = end(to_prop, names, offset, shift)?;
+    let looped = match (&from, &to) {
+        (End::Box(thing), End::Box(_)) if from_target == to_target => {
+            let side = match props.get("side") {
+                Some(p) => side(p)?,
+                None => Side::Top,
+            };
+            (from, to) = loop_ends(thing, side);
+            true
+        }
+        _ => false,
+    };
+    if !looped && let Some(p) = props.get("side") {
+        return Err(Error::new(
+            p.span,
+            "`side` places a loop, whose `from` and `to` name one thing with no side",
+        ));
+    }
     let ([from_at, to_at], [from_dir, to_dir]) = connector::place(&from, &to);
+    if from_at == to_at {
+        return Err(Error::new(
+            to_prop.span,
+            "this end meets the other, so the line draws nothing",
+        ));
+    }
     let follow =
         |end: End, target: Option<Target>| target.map(|target| Box::new(Follow { target, end }));
     let stroke = props
@@ -1178,6 +1202,7 @@ fn connector(
         from_dir,
         to_dir,
         follow: [follow(from, from_target), follow(to, to_target)],
+        looped,
         stroke,
         route: props.choice(
             "route",
@@ -1704,6 +1729,32 @@ fn end(
         [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
     };
     Ok((end, Some(source)))
+}
+
+/// How far apart, at most, a loop's ends sit on their side.
+const LOOP_SPREAD: f64 = 20.0;
+
+/// The ends of a loop out of `side` of `thing` and back into it, a
+/// little either side of the side's middle. The loop runs clockwise.
+fn loop_ends(thing: &Shape, side: Side) -> (End, End) {
+    let out = side.outward();
+    let along = Point::new(-out.y, out.x);
+    let half = thing.size * 0.5;
+    let half_side = (along.x * half.x + along.y * half.y).abs();
+    let depth = (out.x * half.x + out.y * half.y).abs();
+    let s = (half_side / 2.0).min(LOOP_SPREAD / 2.0);
+    // on an ellipse the ends sit on the outline, short of the
+    // box's side
+    let depth = if thing.oval && half_side > 0.0 {
+        depth * (1.0 - (s / half_side).powi(2)).sqrt()
+    } else {
+        depth
+    };
+    let at = |sign: f64| thing.center() + out * depth + along * (sign * s);
+    (
+        End::Side { at: at(-1.0), out },
+        End::Side { at: at(1.0), out },
+    )
 }
 
 /// The corner of `thing` that `sx` and `sy` point to, each -1 or 1, and
@@ -2409,6 +2460,73 @@ mod tests {
                 "a side is top, bottom, left or right, and a corner is top-left, top-right, bottom-left or bottom-right"
                     .into()
             )
+        );
+    }
+
+    #[test]
+    fn an_arrow_from_a_thing_to_itself_loops_out_of_one_side() {
+        let s = scene(
+            "canvas { size 300 200;
+                box a { at 100 100; size 80 40; }
+                ellipse e { at 0 0; size 40 20; }
+                arrow { from a; to a; }
+                arrow { from a; to a; side right; }
+                arrow { from e; to e; side bottom; } }",
+        )
+        .unwrap();
+        let ends = |i: usize| {
+            let Kind::Connector(c) = &s.objects[i].kind else {
+                panic!("expected an arrow");
+            };
+            assert!(c.looped);
+            (c.from, c.to, c.from_dir)
+        };
+        assert_eq!(
+            ends(2),
+            (
+                Point::new(130.0, 100.0),
+                Point::new(150.0, 100.0),
+                Some(Point::new(0.0, -1.0))
+            )
+        );
+        assert_eq!(
+            ends(3),
+            (
+                Point::new(180.0, 110.0),
+                Point::new(180.0, 130.0),
+                Some(Point::new(1.0, 0.0))
+            )
+        );
+        // the ends sit 20 apart on the outline of a 40 by 20 ellipse
+        let (from, to, _) = ends(4);
+        assert_eq!((from.x, to.x), (30.0, 10.0));
+        assert!((from.y - (10.0 + 10.0 * 0.75_f64.sqrt())).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_side_on_a_line_that_is_not_a_loop_is_an_error() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n line { from a; to 9 9; side top; } }")
+                .unwrap_err(),
+            (
+                3,
+                25,
+                "`side` places a loop, whose `from` and `to` name one thing with no side".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_line_whose_ends_meet_is_an_error() {
+        let message = "this end meets the other, so the line draws nothing";
+        assert_eq!(
+            scene("canvas { size 10 10;\n arrow { from 5 5; to 5 5; } }").unwrap_err(),
+            (2, 20, message.into())
+        );
+        assert_eq!(
+            scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n arrow { from a top; to a top; } }")
+                .unwrap_err(),
+            (3, 22, message.into())
         );
     }
 

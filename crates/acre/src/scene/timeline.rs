@@ -882,6 +882,28 @@ mod tests {
     }
 
     #[test]
+    fn a_loop_follows_the_moved_thing() {
+        let s = canvas(
+            "box a { at 0 100; size 100 40; }
+             line { from a; to a; }
+             timeline { 0s to 1s { move a 50 -60; } }",
+        );
+        let ends = |t: f64| {
+            let mut prims = Vec::new();
+            s.draw_object(&s.objects[1], t, &mut prims);
+            match &prims[0] {
+                Primitive::Polyline { points, .. } => (points[0], *points.last().unwrap()),
+                other => panic!("expected a polyline, got {other:?}"),
+            }
+        };
+        assert_eq!(
+            ends(0.0),
+            (Point::new(40.0, 100.0), Point::new(60.0, 100.0))
+        );
+        assert_eq!(ends(1.0), (Point::new(90.0, 40.0), Point::new(110.0, 40.0)));
+    }
+
+    #[test]
     fn duration_runs_to_the_last_change_and_a_canvas_duration_can_lengthen_it() {
         assert_eq!(scene("").unwrap().canvas.duration, 0.0);
         let s = scene("timeline { 1s to 2.5s { scale a 2; } 0.5s { hide t; } }").unwrap();

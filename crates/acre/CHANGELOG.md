@@ -71,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An elbow leaves along whichever of the corner's two sides faces the other
   end more. An end on a corner follows the corner as its thing moves and
   scales.
+- A `line` or an `arrow` whose `from` and `to` name the same thing, with no
+  side, draws a loop out of one side of it and back in, clockwise. `side`
+  picks the side, `top` by default. A straight or curved loop draws as a
+  curve, and an elbow loop as three sides of a rectangle. `side` on a line
+  that is not a loop is an error. `scene::Connector` has a `looped` field.
+- A `line` or an `arrow` whose two ends meet at one point is an error. It
+  used to draw nothing.
 - `head` and `tail` on a `line` or an `arrow` are `none`, `triangle`, `open` or
   `dot`, at the end and the start. An `arrow` still has a triangle head and a
   `line` none.

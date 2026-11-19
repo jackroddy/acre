@@ -628,6 +628,7 @@ mod tests {
                     },
                 })),
             ],
+            looped: false,
         };
         let scene = Scene {
             canvas: canvas(),

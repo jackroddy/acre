@@ -150,6 +150,11 @@ const CONNECTOR: &[Property] = &[
         "F",
         "how far along the line the label sits, from 0 at `from` to 1 at `to`; the default is 0.5",
     ),
+    prop(
+        "side",
+        "top | bottom | left | right",
+        "the side a loop leaves and comes back into, when `from` and `to` name one thing with no side; the default is top, and a straight loop draws as a curve",
+    ),
     TEXT_SIZE,
     TEXT_COLOR,
     FONT,
