@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-19T21:12:14.769209599Z",
   "defer_until": null,
   "created_at": "2026-11-08T21:39:51.729443319Z",
-  "updated_at": "2026-11-19T20:57:14.769209599Z",
+  "updated_at": "2026-11-19T20:58:11.873584455Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Commit 456e6c9 draws a cell that is moved or scaled at an instant after the last row, above every cell that is not. A character that travels across a row, or from one row into another, now stays visible over the cells it passes. This does not fix the swap. Both cells of a swap move, so both are drawn late, and the one with the higher index still covers the other at the midpoint. The language can now write a swap as two `move ROW N DX DY` actions, so the bug reaches the language, as this issue said it would. The `swap` helper in `crates/acre/tests/scene_examples.rs` builds a `Grid`, which the commit does not touch.",
       "commit": "456e6c9",
+      "branch": "dev"
+    },
+    {
+      "id": "755b634f",
+      "at": "2026-11-19T20:58:11.873583425Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Fixed in b009f84, in the `swap` helper of `crates/acre/tests/scene_examples.rs`. Jack chose the first option, arcs.\n\nEach cell now lifts 48 px (one cell height plus 8), slides along the row, and drops, with ease-in-out on each leg. The cell at the lower column goes above the row and the other below. I used a lift, slide and drop and not a sampled arc. A cell moving along a circular arc starts to overlap its neighbour in the row after a few pixels of sideways travel, because the lift is still near zero. The lift-first path clears every cell it passes as well as the swap partner. The test asserts that the two boxes stay apart in x or y at 201 instants.\n\nThe same swap as a canvas `timeline` works today. A `row` with `move r 0 0 -48; move r 3 0 48;` then `move r 0 120 -48; move r 3 -120 48;` then `move r 0 120 0; move r 3 -120 0;` in three consecutive spans renders the same frames. Cell moves are absolute, so each leg names the full offset. Nothing is missing for this motion. A true curved path would still need many short spans, because `move` goes in a straight line between its ends.",
+      "commit": "b009f84",
       "branch": "dev"
     }
   ],
