@@ -16,8 +16,12 @@ fn canvas(duration: f64) -> Canvas {
 
 const HIGHLIGHT: Color = Color::rgb(1.0, 0.85, 0.4);
 
+// a little over one cell height, so a lifted cell clears the row
+const LIFT: f64 = 48.0;
+
 /// Swap the cells at columns `a` and `b` of a one-row grid between `t0`
-/// and `t1`, highlighting them first.
+/// and `t1`, highlighting them first. The cell at `a` travels above the
+/// row and the one at `b` below it: each lifts off, slides and drops.
 fn swap(grid: &mut Grid, a: usize, b: usize, t0: f64, t1: f64) {
     let shift = grid.slot(0, b) - grid.slot(0, a);
     for (col, dir) in [(a, 1.0), (b, -1.0)] {
@@ -44,17 +48,17 @@ fn swap(grid: &mut Grid, a: usize, b: usize, t0: f64, t1: f64) {
                 easing: Easing::Linear,
             },
         ]);
+        let lift = Point::new(0.0, -LIFT * dir);
+        let at = |time: f64, value: Point| Keyframe {
+            time,
+            value,
+            easing: Easing::EaseInOut,
+        };
         cell.offset = Track::keyframes(vec![
-            Keyframe {
-                time: t0 + 0.2,
-                value: Point::ZERO,
-                easing: Easing::Linear,
-            },
-            Keyframe {
-                time: t1,
-                value: shift * dir,
-                easing: Easing::EaseInOut,
-            },
+            at(t0 + 0.2, Point::ZERO),
+            at(t0 + 0.4, lift),
+            at(t1 - 0.2, shift * dir + lift),
+            at(t1, shift * dir),
         ]);
     }
 }
@@ -122,9 +126,21 @@ fn array_swap_moves_two_cells_past_each_other() {
     assert_eq!(after[3], before[0]);
     assert_eq!(after[1], before[1]);
 
+    // halfway through the slide the cells share a column, one a lift above
+    // its slot and the other a lift below
     let mid = rect_origins(&scene.draw(1.1));
-    assert_eq!(mid[0], mid[3]);
-    assert_eq!(mid[0], before[1] + (before[2] - before[1]) * 0.5);
+    let column = before[1].x + (before[2].x - before[1].x) * 0.5;
+    assert_eq!(mid[0], Point::new(column, before[0].y - LIFT));
+    assert_eq!(mid[3], Point::new(column, before[3].y + LIFT));
+
+    // the boxes never overlap, sampled finer than the frame rate
+    let size = 40.0;
+    for step in 0..=200 {
+        let origins = rect_origins(&scene.draw(step as f64 * 0.01));
+        let apart_x = (origins[0].x - origins[3].x).abs() >= size;
+        let apart_y = (origins[0].y - origins[3].y).abs() >= size;
+        assert!(apart_x || apart_y, "cells overlap at step {step}");
+    }
 
     match &scene.draw(1.0)[0] {
         Primitive::Rect { fill, .. } => assert_eq!(fill.unwrap(), HIGHLIGHT),
