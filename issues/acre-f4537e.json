@@ -3,20 +3,20 @@
   "title": "A line or arrow can end at a corner of a box",
   "body": "`line` and `arrow` take `from NAME SIDE` and `to NAME SIDE`, where SIDE is `top`, `bottom`, `left` or `right`. An end given a side meets the middle of that side.\n\nThe cloud-search figure shows one DP cell reading the cell above and to its left. The arrow for that read runs diagonally from the bottom-right corner of one box to the top-left corner of the next. With no corner anchors, the figure writes `from 180 126; to 260 186`, worked out from the boxes' positions and sizes. A side's middle would have sent the arrow across the other two cells in the picture.\n\n## Proposal\n\n`from NAME CORNER` and `to NAME CORNER`, with CORNER one of `top-left`, `top-right`, `bottom-left` or `bottom-right`.\n\n## Open\n\n- Whether a point part way along a side, such as `right 0.25`, is worth having too.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-fb60bb",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T21:00:11.381204949Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.252409132Z",
-  "updated_at": "2026-11-19T20:47:10.988073126Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:47:11.007140251Z",
+  "closed_at": "2026-11-19T20:47:11.007140251Z",
+  "close_reason": "Landed in 6374cb1 on dev. Ends take top-left, top-right, bottom-left and bottom-right, and follow animated nodes. The note above says how elbow and curve routes leave a corner. The open question about a point part way along a side, such as `right 0.25`, was left undecided and is not built.",
+  "resolution": "done",
   "notes": [
     {
       "id": "16e2ad6a",
@@ -32,6 +32,9 @@
       "commit": "743a77a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "6374cb1",
+      "branch": "dev"
+    }
   }
 }
