@@ -67,10 +67,14 @@ const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup")
 const SIDE: Property = prop("side", "top | bottom | left | right", "which way it faces");
 const FROM: Property = prop(
     "from",
-    "X Y | NAME [SIDE] | ROW N [SIDE]",
-    "where it starts: a point, or the edge of a named thing",
+    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER]",
+    "where it starts: a point, or the edge of a named thing; a SIDE is top, bottom, left or right and puts it at that side's middle, and a CORNER is top-left, top-right, bottom-left or bottom-right",
 );
-const TO: Property = prop("to", "X Y | NAME [SIDE] | ROW N [SIDE]", "where it ends");
+const TO: Property = prop(
+    "to",
+    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER]",
+    "where it ends",
+);
 const STYLE: Property = prop("style", "NAME...", "the styles whose properties it takes");
 const ANCHOR: Property = prop(
     "anchor",
@@ -123,7 +127,7 @@ const CONNECTOR: &[Property] = &[
     prop(
         "route",
         "straight | elbow | curve",
-        "the path from `from` to `to`; an elbow turns at right angles and a curve bends smoothly; an end given a side leaves or enters along it, so an elbow between perpendicular sides is an L, and an end with no side follows the longer axis",
+        "the path from `from` to `to`; an elbow turns at right angles and a curve bends smoothly; an end given a side leaves or enters along it, so an elbow between perpendicular sides is an L, and an end with no side follows the longer axis; a curve leaves a corner along its diagonal, and an elbow along whichever of the corner's two sides faces the other end more",
     ),
     prop(
         "head",

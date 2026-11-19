@@ -70,8 +70,8 @@ pub struct Connector {
 pub enum End {
     Point(Point),
     Box(Shape),
-    /// The middle of a side of a box, and the direction that points
-    /// out of the box there.
+    /// The middle of a side of a box or one of its corners, and the
+    /// direction that points out of the box there, diagonal at a corner.
     Side {
         at: Point,
         out: Point,
@@ -146,6 +146,18 @@ const CURVE_STEPS: usize = 24;
 /// How far past both ends an elbow steps out when its ends face the
 /// same way.
 const STEP_OUT: f64 = 24.0;
+
+/// `dir` when it runs along an axis. A corner's diagonal becomes the
+/// axis of whichever of the corner's two sides faces `toward` more.
+fn square(dir: Point, toward: Point) -> Point {
+    if dir.x == 0.0 || dir.y == 0.0 {
+        dir
+    } else if dir.x * toward.x >= dir.y * toward.y {
+        Point::new(dir.x.signum(), 0.0)
+    } else {
+        Point::new(0.0, dir.y.signum())
+    }
+}
 
 fn length(p: Point) -> f64 {
     (p.x * p.x + p.y * p.y).sqrt()
@@ -242,7 +254,9 @@ impl Connector {
     fn elbow(&self) -> Vec<Point> {
         let (a, b) = (self.from, self.to);
         let d = b - a;
-        match (self.from_dir, self.to_dir) {
+        let from_dir = self.from_dir.map(|dir| square(dir, d));
+        let to_dir = self.to_dir.map(|dir| square(dir, d * -1.0));
+        match (from_dir, to_dir) {
             (Some(from), Some(to)) if (from.x != 0.0) != (to.x != 0.0) => {
                 let corner = if from.x != 0.0 {
                     Point::new(b.x, a.y)
@@ -659,6 +673,41 @@ mod tests {
             c.path()[1..3],
             [Point::new(0.0, 50.0), Point::new(40.0, 50.0)]
         );
+    }
+
+    #[test]
+    fn an_elbow_leaves_a_corner_along_the_side_that_faces_the_other_end() {
+        let h = std::f64::consts::FRAC_1_SQRT_2;
+        // bottom-right to top-left with the far end mostly to the
+        // right, so the ends face right and left and it turns halfway
+        let mut c = with_sides(connector((0.0, 0.0), (100.0, 40.0)), (h, h), (-h, -h));
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [Point::new(50.0, 0.0), Point::new(50.0, 40.0)]
+        );
+        // the far end mostly below, so the ends face down and up
+        let mut c = with_sides(connector((0.0, 0.0), (40.0, 100.0)), (h, h), (-h, -h));
+        c.route = Route::Elbow;
+        assert_eq!(
+            c.path()[1..3],
+            [Point::new(0.0, 50.0), Point::new(40.0, 50.0)]
+        );
+        // bottom-right to the top of a box to its right and below:
+        // right out of the corner, then down into the top, an L
+        let mut c = with_sides(connector((0.0, 0.0), (100.0, 40.0)), (h, h), (0.0, -1.0));
+        c.route = Route::Elbow;
+        assert_eq!(c.path()[1], Point::new(100.0, 0.0));
+    }
+
+    #[test]
+    fn a_curve_leaves_a_corner_along_its_diagonal() {
+        let h = std::f64::consts::FRAC_1_SQRT_2;
+        let mut c = with_sides(connector((0.0, 0.0), (100.0, 0.0)), (h, h), (-h, h));
+        c.route = Route::Curve;
+        let (c1, c2) = c.handles();
+        assert_eq!(c1, Point::new(50.0 * h, 50.0 * h));
+        assert_eq!(c2, Point::new(100.0 - 50.0 * h, 50.0 * h));
     }
 
     #[test]

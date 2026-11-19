@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::f64::consts::FRAC_1_SQRT_2;
 
 use super::code::{self, Code};
 use super::connector::{self, End, Follow};
@@ -1647,9 +1648,10 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
     })
 }
 
-/// The end a connector's `from` or `to` names, and the thing it names. It is two numbers, a shape's name, or a row's name
-/// and a cell's index. A side after a name puts the end at the middle
-/// of that side, facing out of it.
+/// The end a connector's `from` or `to` names, and the thing it names.
+/// It is two numbers, a shape's name, or a row's name and a cell's
+/// index. A side or a corner after a name puts the end at the middle of
+/// that side or at that corner, facing out of it.
 fn end(
     p: &Property,
     names: &Names,
@@ -1684,15 +1686,36 @@ fn end(
                     "bottom" => (Point::new(cx, bottom), Point::new(0.0, 1.0)),
                     "left" => (Point::new(left, cy), Point::new(-1.0, 0.0)),
                     "right" => (Point::new(right, cy), Point::new(1.0, 0.0)),
-                    _ => return Err(Error::new(v.span, "a side is top, bottom, left or right")),
+                    "top-left" => corner(&thing, -1.0, -1.0),
+                    "top-right" => corner(&thing, 1.0, -1.0),
+                    "bottom-left" => corner(&thing, -1.0, 1.0),
+                    "bottom-right" => corner(&thing, 1.0, 1.0),
+                    _ => {
+                        return Err(Error::new(
+                            v.span,
+                            "a side is top, bottom, left or right, and a corner is top-left, top-right, bottom-left or bottom-right",
+                        ));
+                    }
                 };
                 End::Side { at, out }
             }
-            _ => return Err(Error::new(v.span, "expected a side")),
+            _ => return Err(Error::new(v.span, "expected a side or a corner")),
         },
         [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
     };
     Ok((end, Some(source)))
+}
+
+/// The corner of `thing` that `sx` and `sy` point to, each -1 or 1, and
+/// the diagonal pointing out of it.
+fn corner(thing: &Shape, sx: f64, sy: f64) -> (Point, Point) {
+    // an ellipse's corner is where the diagonal of its box crosses it
+    let reach = if thing.oval { FRAC_1_SQRT_2 } else { 1.0 };
+    let half = thing.size * (0.5 * reach);
+    (
+        thing.center() + Point::new(sx * half.x, sy * half.y),
+        Point::new(sx, sy) * FRAC_1_SQRT_2,
+    )
 }
 
 /// The left, top, right and bottom of the box around everything `over`
@@ -2348,6 +2371,45 @@ mod tests {
             assert_eq!(*origin, Point::new(x + dx * 8.0, 20.0));
             assert_eq!((*h_align, *v_align), (h, VAlign::Middle));
         }
+    }
+
+    #[test]
+    fn a_connector_end_may_sit_at_a_corner() {
+        let s = scene(
+            "canvas { size 300 200;
+                box a { at 0 0; size 100 40; }
+                ellipse e { at 200 100; size 80 40; }
+                arrow { from a bottom-right; to e top-left; }
+                line { from a top-left; to e bottom-right; } }",
+        )
+        .unwrap();
+        let Kind::Connector(c) = &s.objects[2].kind else {
+            panic!("expected an arrow");
+        };
+        let h = FRAC_1_SQRT_2;
+        assert_eq!(c.from, Point::new(100.0, 40.0));
+        assert_eq!(c.to, Point::new(240.0 - 40.0 * h, 120.0 - 20.0 * h));
+        assert_eq!(c.from_dir, Some(Point::new(h, h)));
+        assert_eq!(c.to_dir, Some(Point::new(-h, -h)));
+        let Kind::Connector(c) = &s.objects[3].kind else {
+            panic!("expected a line");
+        };
+        assert_eq!(c.from, Point::new(0.0, 0.0));
+        assert_eq!(c.to, Point::new(240.0 + 40.0 * h, 120.0 + 20.0 * h));
+    }
+
+    #[test]
+    fn a_connector_end_naming_no_side_or_corner_is_an_error() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n line { from a middle; to 0 0; } }")
+                .unwrap_err(),
+            (
+                3,
+                16,
+                "a side is top, bottom, left or right, and a corner is top-left, top-right, bottom-left or bottom-right"
+                    .into()
+            )
+        );
     }
 
     #[test]

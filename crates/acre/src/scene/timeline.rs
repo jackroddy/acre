@@ -856,6 +856,32 @@ mod tests {
     }
 
     #[test]
+    fn a_connector_on_a_corner_follows_the_moved_and_scaled_corner() {
+        let s = canvas(
+            "box a { at 0 0; size 100 40; }
+             box b { at 200 100; size 100 40; anchor top-left; }
+             line { from a bottom-right; to b top-right; }
+             timeline { 0s to 1s { move a 0 50; } 1s to 2s { scale b 2; } }",
+        );
+        let line = |t: f64| {
+            let mut prims = Vec::new();
+            s.draw_object(&s.objects[2], t, &mut prims);
+            match prims[0] {
+                Primitive::Line { from, to, .. } => (from, to),
+                ref other => panic!("expected a line, got {other:?}"),
+            }
+        };
+        assert_eq!(
+            line(0.0),
+            (Point::new(100.0, 40.0), Point::new(300.0, 100.0))
+        );
+        assert_eq!(
+            line(2.0),
+            (Point::new(100.0, 90.0), Point::new(400.0, 100.0))
+        );
+    }
+
+    #[test]
     fn duration_runs_to_the_last_change_and_a_canvas_duration_can_lengthen_it() {
         assert_eq!(scene("").unwrap().canvas.duration, 0.0);
         let s = scene("timeline { 1s to 2.5s { scale a 2; } 0.5s { hide t; } }").unwrap();

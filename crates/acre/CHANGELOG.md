@@ -64,6 +64,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or steps out past both when they face the same way. A curve's handles run out
   of each side. An end with no side follows the longer distance between the
   ends: an elbow turns halfway along it, and a curve leaves along it.
+- A connector's `from` and `to` take a corner after a name, `top-left`,
+  `top-right`, `bottom-left` or `bottom-right`, as in
+  `from a bottom-right; to b top-left;`. An ellipse's corner is where the
+  diagonal of its box crosses it. A curve leaves a corner along the diagonal.
+  An elbow leaves along whichever of the corner's two sides faces the other
+  end more. An end on a corner follows the corner as its thing moves and
+  scales.
 - `head` and `tail` on a `line` or an `arrow` are `none`, `triangle`, `open` or
   `dot`, at the end and the start. An `arrow` still has a triangle head and a
   `line` none.
