@@ -1,0 +1,28 @@
+{
+  "id": "acre-d44121",
+  "title": "Which encoder should acre use for MP4 export instead of piping to ffmpeg?",
+  "body": "`acre render --out x.mp4` streams raw frames into an `ffmpeg` process that it finds on `PATH`. Jack wants export eventually not to depend on piping to an outside program. Piping is the stopgap until this is decided. The encoder lives in `acre-cli` whichever option wins, so the `acre` library stays free of it.\n\n## Options\n\n| option | how | cost |\n|---|---|---|\n| A. FFmpeg bindings (`ffmpeg-next`) | link the system's libavcodec and libavformat in-process, and encode with x264 where FFmpeg has it | needs FFmpeg dev headers and clang at build time, and ties acre to the system FFmpeg version; support for FFmpeg 9.0 is unchecked; best quality per byte |\n| B. OpenH264 plus a Rust muxer (`openh264`, with `muxide` or `mp4`) | the crate compiles Cisco's OpenH264 from source, and a pure-Rust crate writes the MP4 container | needs only a C compiler; a weaker encoder than x264, which matters little for flat diagrams; Cisco's patent licence covers only their prebuilt binary, which matters for redistribution |\n| C. Our own H.264 encoder | write it in acre | a full encoder is a large project; one that writes only keyframes makes very large files |\n| D. AV1 with `rav1e` | a pure-Rust AV1 encoder in an MP4 | not H.264, so older players and some slide software cannot play it; slow to encode |\n\nLeaning B: it is the one self-contained option, and its quality gap barely shows on flat graphics. A wins if the smallest files matter, or if formats beyond MP4 are wanted later.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-19T20:16:14.587201341Z",
+  "updated_at": "2026-11-19T20:16:14.587201341Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "456e6c9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
