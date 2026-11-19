@@ -248,5 +248,13 @@ fn load(path: &Path) -> anyhow::Result<Scene> {
         })?;
         fonts.push(font);
     }
-    scene::build(&program, &fonts).map_err(located)
+    let scene = scene::build(&program, &fonts).map_err(located)?;
+    for c in scene.missing_glyphs() {
+        eprintln!(
+            "{}: warning: no font has a glyph for '{c}' (U+{:04X})",
+            path.display(),
+            c as u32
+        );
+    }
+    Ok(scene)
 }

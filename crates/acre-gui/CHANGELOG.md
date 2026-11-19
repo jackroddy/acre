@@ -9,6 +9,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- The viewer prints a warning on stderr for each character in a drawing's
+  text that no font has, whenever the set of those characters changes. The
+  status bar shows the first of them.
 - A drawing with a `timeline` plays in the viewer. A bar under the render
   holds a Play and Pause button, a slider over the drawing's length, the time
   as `1.25 s / 5.00 s`, and a Loop toggle that starts on. Space plays and

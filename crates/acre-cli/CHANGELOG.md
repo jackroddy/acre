@@ -9,6 +9,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- `check` and `render` print a warning on stderr for each character in a
+  drawing's text that no font has, such as
+  `drawing.acre: warning: no font has a glyph for '☃' (U+2603)`.
 - `render` writes an animation as an MP4 file when `--out` ends in `.mp4` or
   `--format mp4` is given. It draws a frame every `1/fps` seconds from 0
   through the duration and pipes them to `ffmpeg`, which must be on the

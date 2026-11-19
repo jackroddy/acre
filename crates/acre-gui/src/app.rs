@@ -50,6 +50,8 @@ pub struct App {
     hover: Option<scene::Point>,
     /// The latest message that is not a source error.
     notice: Option<String>,
+    /// The characters in the scene's text that no font has.
+    missing: Vec<char>,
     title: String,
 }
 
@@ -76,6 +78,7 @@ impl App {
             cursor: None,
             hover: None,
             notice: None,
+            missing: Vec::new(),
             title: String::new(),
         };
         if app.link.is_none() {
@@ -118,6 +121,13 @@ impl App {
                 self.playback
                     .set_duration(Instant::now(), scene.canvas.duration);
                 self.error = None;
+                let missing = scene.missing_glyphs();
+                if missing != self.missing {
+                    for c in &missing {
+                        eprintln!("{}: {}", self.name(), missing_glyph(*c));
+                    }
+                    self.missing = missing;
+                }
                 self.scene = Some(scene);
                 self.version += 1;
             }
@@ -394,6 +404,15 @@ impl App {
                     Color32::from_rgb(0xf7, 0x76, 0x8e),
                     format!("{line}:{col}: {}", e.message),
                 );
+            } else if let Some(&c) = self.missing.first() {
+                let more = match self.missing.len() - 1 {
+                    0 => String::new(),
+                    n => format!(", and {n} more"),
+                };
+                ui.colored_label(
+                    Color32::from_rgb(0xe0, 0xaf, 0x68),
+                    format!("{}{more}", missing_glyph(c)),
+                );
             } else if let Some(notice) = &self.notice {
                 ui.label(notice);
             }
@@ -453,6 +472,13 @@ impl eframe::App for App {
 
 /// When the file at `path` last changed, or `None` when the disk cannot
 /// say.
+fn missing_glyph(c: char) -> String {
+    format!(
+        "warning: no font has a glyph for '{c}' (U+{:04X})",
+        c as u32
+    )
+}
+
 fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }

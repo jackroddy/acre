@@ -143,6 +143,8 @@ impl Layout {
 /// wider than `width` takes a line of its own. With `justify`, the
 /// wrapped lines are stretched to fill `width`, as [`wrap`] says. A line
 /// that starts with a bullet run is a list item, set as [`item`] says.
+/// A character its run's font lacks is set in the font
+/// [`Fonts::cover`] gives.
 pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justify: bool) -> Layout {
     let first_run = runs.iter().find(|r| !r.bullet);
     let first = match first_run.map_or(Font::Mono, |r| r.font) {
@@ -175,8 +177,6 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
         } else {
             run.font
         };
-        let face = fonts.face(font);
-        let scale = per_unit(face);
         let mut piece_start = run_start;
         for (k, piece) in run.text.split('\n').enumerate() {
             let start = piece_start;
@@ -185,41 +185,17 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
                 lines.push(Line::default());
                 bullets.push(0);
             }
-            if piece.is_empty() {
-                continue;
-            }
             let line = lines.last_mut().expect("there is always a line");
-            let mut buffer = UnicodeBuffer::new();
-            buffer.push_str(piece);
-            let shaped = rustybuzz::shape(face, &[], buffer);
-            let mut clusters: Vec<usize> = shaped
-                .glyph_infos()
-                .iter()
-                .map(|info| info.cluster as usize)
-                .collect();
-            clusters.sort_unstable();
-            clusters.dedup();
-            for (info, pos) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
-                let advance = pos.x_advance as f64 * scale;
-                let cluster = info.cluster as usize;
-                let end = clusters
-                    .iter()
-                    .find(|&&c| c > cluster)
-                    .map_or(piece.len(), |&c| c);
-                line.glyphs.push(Glyph {
-                    mark: Mark::Outline {
-                        font,
-                        id: info.glyph_id as u16,
-                        size,
-                    },
-                    text: start + cluster..start + end,
-                    x: line.width + pos.x_offset as f64 * scale,
-                    y: -pos.y_offset as f64 * scale,
-                    advance,
-                    space: piece[info.cluster as usize..].starts_with(' '),
-                    color: run.color,
-                });
-                line.width += advance;
+            for (range, font) in segments(fonts, font, piece) {
+                shape(
+                    fonts,
+                    font,
+                    &piece[range.clone()],
+                    start + range.start,
+                    size,
+                    run.color,
+                    line,
+                );
             }
         }
         if run.bullet {
@@ -258,6 +234,72 @@ pub fn layout(fonts: &Fonts, runs: &[Run], size: f64, width: Option<f64>, justif
         descent: (-(first.descender() as f64) * scale).max(descent),
         cap_height: first.capital_height().unwrap_or(first.ascender()) as f64 * scale,
         block: (justify && width.is_some()) || has_items,
+    }
+}
+
+/// `piece` cut where the font that sets it changes, each stretch with
+/// the font [`Fonts::cover`] gives for text in `font`. A character no
+/// font has stays in the stretch before it.
+fn segments(fonts: &Fonts, font: Font, piece: &str) -> Vec<(Range<usize>, Font)> {
+    let mut out: Vec<(Range<usize>, Font)> = Vec::new();
+    for (i, c) in piece.char_indices() {
+        let end = i + c.len_utf8();
+        let set = fonts
+            .cover(font, c)
+            .or(out.last().map(|s| s.1))
+            .unwrap_or(font);
+        match out.last_mut() {
+            Some((range, last)) if *last == set => range.end = end,
+            _ => out.push((i..end, set)),
+        }
+    }
+    out
+}
+
+/// Append `text` shaped in `font` at `size` to `line`. `start` is where
+/// `text` starts in [`Layout::text`].
+fn shape(
+    fonts: &Fonts,
+    font: Font,
+    text: &str,
+    start: usize,
+    size: f64,
+    color: Color,
+    line: &mut Line,
+) {
+    let face = fonts.face(font);
+    let scale = size / face.units_per_em() as f64;
+    let mut buffer = UnicodeBuffer::new();
+    buffer.push_str(text);
+    let shaped = rustybuzz::shape(face, &[], buffer);
+    let mut clusters: Vec<usize> = shaped
+        .glyph_infos()
+        .iter()
+        .map(|info| info.cluster as usize)
+        .collect();
+    clusters.sort_unstable();
+    clusters.dedup();
+    for (info, pos) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
+        let advance = pos.x_advance as f64 * scale;
+        let cluster = info.cluster as usize;
+        let end = clusters
+            .iter()
+            .find(|&&c| c > cluster)
+            .map_or(text.len(), |&c| c);
+        line.glyphs.push(Glyph {
+            mark: Mark::Outline {
+                font,
+                id: info.glyph_id as u16,
+                size,
+            },
+            text: start + cluster..start + end,
+            x: line.width + pos.x_offset as f64 * scale,
+            y: -pos.y_offset as f64 * scale,
+            advance,
+            space: text[cluster..].starts_with(' '),
+            color,
+        });
+        line.width += advance;
     }
 }
 
@@ -683,6 +725,50 @@ mod tests {
             width < unkerned("AV", Font::Sans, 100.0) - 1.0,
             "AV is {width} wide"
         );
+    }
+
+    /// The font each glyph of the first line of `l` is drawn from.
+    fn drawn_from(l: &Layout) -> Vec<Font> {
+        l.lines[0]
+            .glyphs
+            .iter()
+            .map(|g| match g.mark {
+                Mark::Outline { font, .. } => font,
+                Mark::Rule { .. } => panic!("no formula here"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_character_its_font_lacks_comes_from_the_next_font_that_has_it() {
+        // sans has no infinity sign, and mono has no superscript a
+        let fonts = Fonts::default();
+        assert_eq!(fonts.cover(Font::Sans, '\u{221e}'), Some(Font::Mono));
+        assert_eq!(fonts.cover(Font::Mono, '\u{1d43}'), Some(Font::Sans));
+        let l = layout(&[run("-\u{221e}x", Font::Sans)], 20.0, None);
+        assert_eq!(drawn_from(&l), [Font::Sans, Font::Mono, Font::Sans]);
+        let l = layout(&[run("e\u{1d43}", Font::MonoBold)], 20.0, None);
+        assert_eq!(drawn_from(&l), [Font::MonoBold, Font::Sans]);
+    }
+
+    #[test]
+    fn a_fallback_glyph_takes_its_own_fonts_advance() {
+        let l = layout(&[run("a\u{221e}b", Font::Sans)], 20.0, None);
+        let glyphs = &l.lines[0].glyphs;
+        let infinity = unkerned("\u{221e}", Font::Mono, 20.0);
+        assert!((glyphs[1].advance - infinity).abs() < 1e-9);
+        assert!((glyphs[2].x - glyphs[1].x - infinity).abs() < 1e-9);
+        assert_eq!(&l.text[glyphs[1].text.clone()], "\u{221e}");
+        let a_and_b = unkerned("ab", Font::Sans, 20.0);
+        assert!((l.width() - (a_and_b + infinity)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_character_no_font_has_stays_in_the_font_before_it() {
+        let fonts = Fonts::default();
+        assert_eq!(fonts.cover(Font::Sans, '\u{10fffd}'), None);
+        let l = layout(&[run("\u{221e}\u{10fffd}a", Font::Sans)], 20.0, None);
+        assert_eq!(drawn_from(&l), [Font::Mono, Font::Mono, Font::Sans]);
     }
 
     #[test]

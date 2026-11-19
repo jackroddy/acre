@@ -482,6 +482,30 @@ impl Scene {
         primitive::bounds(&self.fonts, &prims)
     }
 
+    /// Each character the scene's text holds that no font has a glyph
+    /// for, once, in the order the text first holds it. Formulas are
+    /// not searched.
+    pub fn missing_glyphs(&self) -> Vec<char> {
+        let mut prims = Vec::new();
+        for object in &self.objects {
+            object.kind.draw(0.0, &mut prims);
+        }
+        let mut out = Vec::new();
+        for prim in &prims {
+            let Primitive::Text { runs, .. } = prim else {
+                continue;
+            };
+            for run in runs.iter().filter(|r| r.font != Font::Math) {
+                for c in run.text.chars() {
+                    if c != '\n' && self.fonts.cover(run.font, c).is_none() && !out.contains(&c) {
+                        out.push(c);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The object whose box holds `point` at time `t`, the smallest when
     /// several do and the one painted last among equals.
     pub fn object_at(&self, point: Point, t: f64) -> Option<usize> {
@@ -552,6 +576,15 @@ mod tests {
             duration: 1.25,
             background: Color::WHITE,
         }
+    }
+
+    #[test]
+    fn missing_glyphs_names_each_character_no_font_has_once() {
+        let src = "canvas { size 100 100; font sans; \
+                   text { at 0 0; text \"\u{10fffd} \u{221e} `\u{1d43}`\"; } \
+                   box { at 0 20; size 50 20; text \"\u{10fffe} \u{10fffd}\"; } }";
+        let scene = build(&crate::lang::parse(src).unwrap(), &[]).unwrap();
+        assert_eq!(scene.missing_glyphs(), ['\u{10fffd}', '\u{10fffe}']);
     }
 
     #[test]

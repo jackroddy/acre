@@ -76,6 +76,10 @@ struct Set {
     math: MathFont,
 }
 
+/// The fonts that set a character the text's own font lacks, tried in
+/// this order.
+pub const FALLBACK: [Font; 3] = [Font::Sans, Font::Mono, Font::Math];
+
 /// How many text faces acre embeds.
 const EMBEDDED_TEXT: usize = 5;
 
@@ -111,6 +115,14 @@ impl Fonts {
             Font::Math => self.0.math.bytes(),
             font => self.0.text[index(font)].bytes(),
         }
+    }
+
+    /// The font that sets `c` in text in `font`: `font` when it has a
+    /// glyph for `c`, else the first of [`FALLBACK`] that has one.
+    pub fn cover(&self, font: Font, c: char) -> Option<Font> {
+        std::iter::once(font)
+            .chain(FALLBACK)
+            .find(|&f| self.face(f).glyph_index(c).is_some())
     }
 
     pub fn math(&self) -> &MathFont {

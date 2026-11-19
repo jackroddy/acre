@@ -202,6 +202,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `text`: `math { text """\sum_{i=1}^n i = \frac{n(n+1)}{2}"""; size 24; }`.
 - `font mono-bold` sets text in JetBrains Mono NL Bold, which acre embeds
   beside the regular face. `Font::MonoBold` names it.
+- When a run's font lacks a glyph for a character, `text::layout` sets that
+  character in the first of sans, mono and the math font that has it, and
+  lays it out with that font's advance. A font registered with `fonts` falls
+  back the same way. `fonts::FALLBACK` holds the order, and `Fonts::cover`
+  gives the font that sets a character.
+- `Scene::missing_glyphs` lists each character in the scene's text that no
+  font has.
 
 ### Changed
 
