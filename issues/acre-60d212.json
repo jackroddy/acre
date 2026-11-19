@@ -3,20 +3,20 @@
   "title": "Text draws a glyph its font lacks as an empty box",
   "body": "acre's `sans` and `mono` fonts each lack glyphs the other has. At `c846b14`, `sans` draws `∞` (U+221E) as an empty box and draws `ᵃ` (U+1D43). `mono` draws `∞` and draws `ᵃ` as an empty box. Both draw `×` and `−`. acre gives no warning for a missing glyph.\n\nThe cloud-search figure set `−∞` and `ln(eᵃ + eᵇ)` in sans text. The boxes showed up only when the PNG was read at full size. The figure now says \"minus infinity\" and `exp(a)`.\n\n## Proposal\n\n- When the text's font lacks a glyph, draw it from another bundled font that has it.\n- Print a warning on stderr for any glyph that no font has, naming the text and the character.\n\nThe warning alone would have caught this before the render was checked by eye.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-fb60bb",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T21:08:55.650301785Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.242896876Z",
-  "updated_at": "2026-11-19T20:56:45.360755592Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:56:45.3707202Z",
+  "closed_at": "2026-11-19T20:56:45.3707202Z",
+  "close_reason": "Landed on dev in d901eee. The note on this issue gives the fallback order and the warning API. Renders of the drawings in the checkout did not change, since none holds a character its font lacks.",
+  "resolution": "done",
   "notes": [
     {
       "id": "14df1102",
@@ -32,6 +32,9 @@
       "commit": "743a77a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "d901eee",
+      "branch": "dev"
+    }
   }
 }
