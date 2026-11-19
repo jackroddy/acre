@@ -9,6 +9,12 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- `render` writes an animation as an MP4 file when `--out` ends in `.mp4` or
+  `--format mp4` is given. It draws a frame every `1/fps` seconds from 0
+  through the duration and pipes them to `ffmpeg`, which must be on the
+  `PATH`. `--fps N` replaces the canvas's frame rate and `--jobs N` draws
+  frames on N threads. A drawing with no duration is an error. A failed
+  export removes the partial file and prints ffmpeg's message.
 - `render --time T` draws the drawing T seconds into its timeline. Without it,
   `render` draws the start, as before.
 - `render` writes SVG or PDF as well as PNG. It takes the format from the

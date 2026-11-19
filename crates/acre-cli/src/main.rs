@@ -13,6 +13,8 @@ use clap::{Args, Parser, Subcommand};
 use acre::scene::Scene;
 use acre::{lang, render, scene};
 
+mod mp4;
+
 #[derive(Parser)]
 #[command(name = "acre", about = "animation creation and rendering engine")]
 struct Cli {
@@ -24,7 +26,7 @@ struct Cli {
 enum Command {
     /// Parse a drawing and report its errors without rendering.
     Check(CheckArgs),
-    /// Render a drawing to a PNG, SVG or PDF file.
+    /// Render a drawing to a PNG, SVG, PDF or MP4 file.
     Render(RenderArgs),
     /// Rewrite drawings in acre's one layout.
     Fmt(FmtArgs),
@@ -76,6 +78,14 @@ struct RenderArgs {
     #[arg(long, value_name = "seconds", default_value_t = 0.0)]
     time: f64,
 
+    /// (mp4) frames per second [default: the canvas's fps]
+    #[arg(long, value_name = "n", value_parser = clap::value_parser!(u32).range(1..))]
+    fps: Option<u32>,
+
+    /// (mp4) threads that draw frames
+    #[arg(long, value_name = "n", default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+    jobs: u32,
+
     /// The drawing to render
     #[arg(value_name = "file")]
     file: PathBuf,
@@ -86,6 +96,7 @@ enum Format {
     Png,
     Svg,
     Pdf,
+    Mp4,
 }
 
 impl Format {
@@ -94,6 +105,7 @@ impl Format {
             Format::Png => "png",
             Format::Svg => "svg",
             Format::Pdf => "pdf",
+            Format::Mp4 => "mp4",
         }
     }
 }
@@ -183,9 +195,10 @@ fn main() -> anyhow::Result<()> {
                         "png" => Format::Png,
                         "svg" => Format::Svg,
                         "pdf" => Format::Pdf,
+                        "mp4" => Format::Mp4,
                         _ => {
                             return Err(anyhow!(
-                                "cannot tell a format from {}: name it .png, .svg or .pdf, or give --format",
+                                "cannot tell a format from {}: name it .png, .svg, .pdf or .mp4, or give --format",
                                 out.display()
                             ));
                         }
@@ -196,7 +209,13 @@ fn main() -> anyhow::Result<()> {
             let out = args
                 .out
                 .unwrap_or_else(|| args.file.with_extension(format.extension()));
+            if args.fps.is_some() && !matches!(format, Format::Mp4) {
+                return Err(anyhow!("--fps applies only to MP4"));
+            }
             let bytes = match format {
+                Format::Mp4 => {
+                    return mp4::export(&scene, &out, args.scale, args.fps, args.jobs as usize);
+                }
                 Format::Png => render::draw_frame(&scene, args.time, args.scale)
                     .encode_png()
                     .context("cannot encode the image")?,
