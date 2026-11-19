@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-13T19:15:01.347984274Z",
+  "updated_at": "2026-11-19T20:43:55.338057683Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -148,6 +148,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "Group and cell targets for the timeline, from acre-06cceb and acre-3893e8 (commit 456e6c9 on dev).\n\n- An action may name a `group`, `panel`, `stack` or `grid`. The four kinds already took a name, so the one new property is `anchor`, which names the point the group scales about, as on other nodes. The box it names is the box around everything inside the group at time 0.\n- The earlier animation note refused group targets because a connector inside a moved group would move twice. A connector, a brace or a row that follows something now takes that thing's motion in place of its own groups' motion, so it moves once.\n- `fill`, `stroke` and `text-color` on a group are an error that names it, since a group has no single color.\n- A cell is a target for every action, written `ROW N` as before: `move r 3 0 40`, `scale r 3 1.5`, `fade r 3 out`, `show r 3`, `hide r 3`. A row's name followed by one value more than the action takes names a cell. `move r 0 40` still moves the whole row, and `scale r 1.5` scales it. A cell scales about its center and has no `anchor` of its own.\n- A row placed with `at ROW N` or `at ROW N DX DY`, as veil rows are, follows that cell. A row placed at a whole row, `at ROW DX DY`, does not follow that row, because the request named only cells.\n- A cell that is moved or scaled at an instant is drawn after the last row in the canvas. It goes above every cell of every row that is not moved, and under anything after the last row, such as a later arrow or text.\n\nOpen: a connector or a brace that follows a node keeps its stroke width when a group around it scales. It takes the scaled positions of its ends, but only its own scale.",
       "commit": "456e6c9",
+      "branch": "dev"
+    },
+    {
+      "id": "9952946c",
+      "at": "2026-11-19T20:43:55.338056323Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "`brace` takes `over` with any number of things (acre-b7fff7, commit `ebade49`). Each is a shape, a row, a cell, a code line, or a run `ROW N M`, so `over cloud align` and `over r 1 2 align` both work. The brace spans the box around them all and follows the first as it moves. A word that names nothing is an error.",
+      "commit": "ebade49",
       "branch": "dev"
     }
   ],
