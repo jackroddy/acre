@@ -1,0 +1,28 @@
+{
+  "id": "acre-daa8f8",
+  "title": "acre render writes an animation as an MP4 file",
+  "body": "`acre render FILE --out PATH` writes a PNG, SVG or PDF of one instant. A drawing with a `canvas` `duration` is an animation, and `Canvas::frame_count` and `Canvas::time_of` in the `acre` library count its frames. Nothing writes the whole animation out.\n\n## Proposal\n\n`--out x.mp4`, or `--format mp4`, writes H.264 video.\n\n- One frame every `1/fps` seconds from 0 through `duration` inclusive. `--fps N` overrides the canvas fps, 30 by default.\n- `--scale` applies as for images and defaults to 1. An odd width or height is padded by one pixel of the background colour, since yuv420p needs even sizes.\n- `acre-cli` starts `ffmpeg` found on `PATH` and writes raw RGB frames to its stdin.\n- `--jobs N` draws frames on N threads, 1 by default, and feeds them to `ffmpeg` in frame order with at most two drawn frames waiting per thread.\n- A drawing with no duration, or a `PATH` with no `ffmpeg`, is an error before anything is drawn. A failed export removes the partial file and prints ffmpeg's stderr.\n\n## Out of scope\n\nPiping to an outside program is a stopgap. The choice of an in-process encoder is on acre-d44121.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-19T20:18:10.14043206Z",
+  "updated_at": "2026-11-19T20:18:10.14043206Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "456e6c9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
