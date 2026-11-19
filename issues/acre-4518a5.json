@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-19T20:43:55.338057683Z",
+  "updated_at": "2026-11-19T20:47:10.997858367Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -156,6 +156,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "`brace` takes `over` with any number of things (acre-b7fff7, commit `ebade49`). Each is a shape, a row, a cell, a code line, or a run `ROW N M`, so `over cloud align` and `over r 1 2 align` both work. The brace spans the box around them all and follows the first as it moves. A word that names nothing is an error.",
       "commit": "ebade49",
+      "branch": "dev"
+    },
+    {
+      "id": "d116c827",
+      "at": "2026-11-19T20:47:10.997856547Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "Connector ends take a corner after a name: `from a bottom-right; to b top-left;` (acre-f4537e, commit `6374cb1`). The four words are the ones `anchor` already used, so a corner is named the same way everywhere.",
+      "commit": "6374cb1",
       "branch": "dev"
     }
   ],
