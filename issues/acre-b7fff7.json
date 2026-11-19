@@ -3,26 +3,29 @@
   "title": "A brace over two names covers only the first",
   "body": "`brace` takes `over NAME` or `over ROW [N [M]]`. At `c846b14`, `brace { over a b; }` with two box names draws the brace under `a` alone, and acre gives no error.\n\nThe pipeline figure needed one brace under two neighbouring stage boxes, `cloud` and `align`, labelled with the function that runs both. `over cloud align` covered `cloud` only. The figure now gives the brace as `from 592 352; to 1108 352`, with each number worked out by hand from the boxes' widths and the stack's gap. Those numbers break when a box changes width.\n\n## Proposal\n\n- `over A B ...` spans the box around every named thing.\n- A word after `over` that names nothing is an error, not a silent no-op.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-fb60bb",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/ed2a7ee0",
-  "lease_expires": "2026-11-19T20:57:24.411891565Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.23351765Z",
-  "updated_at": "2026-11-19T20:42:24.411891565Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-19T20:43:55.347512938Z",
+  "closed_at": "2026-11-19T20:43:55.347512938Z",
+  "close_reason": "Landed in ebade49 on dev. `over` takes any number of things and the brace spans the box around them, following the first. A word that names nothing is an error. Test: `a_brace_over_several_names_spans_the_box_around_them`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "743a77a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "ebade49",
+      "branch": "dev"
+    }
   }
 }
