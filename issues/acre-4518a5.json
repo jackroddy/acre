@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-19T20:49:26.221850934Z",
+  "updated_at": "2026-11-19T20:53:55.63191584Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -172,6 +172,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "A line or arrow whose `from` and `to` name one thing, with no side, draws a loop out of one side and back in (acre-708297, commit `84eb63e`). The property that picks the side is `side`, with `top` the default, as in `arrow { from n; to n; side left; }`. No connector property was named `side` before. The word means the same here as on `brace` and `ruler`, and the same as the SIDE value in `from NAME SIDE`, so it needed no new name. `side` on a line that is not a loop is an error, and so is a line whose two ends meet, such as `from a top; to a top;`.",
       "commit": "84eb63e",
+      "branch": "dev"
+    },
+    {
+      "id": "7cb4344f",
+      "at": "2026-11-19T20:53:55.63191421Z",
+      "author": "Jack Roddy/ed2a7ee0",
+      "text": "`font` accepts `mono-bold`, the bold face of JetBrains Mono NL, beside `mono`, `sans`, `sans-bold` and `sans-italic`. `title-font` and `note-font` take it too. Like the other font names, `mono-bold` cannot be the name of a `let`, and `fonts` cannot register a font under it. Landed in ac3a49f for acre-95ce06.",
+      "commit": "ac3a49f",
       "branch": "dev"
     }
   ],
