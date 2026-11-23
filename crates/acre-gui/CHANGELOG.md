@@ -54,3 +54,13 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   under the pointer. Without an editor, the status line names the node's
   line. The render outlines what the node under the editor's cursor drew.
 
+### Fixed
+
+- The viewer no longer crashes in a very wide window. It draws a margin past
+  each edge of the pane, so its texture was 1.5 times the pane's size. egui
+  creates the GPU device with a limit of 8192 pixels on a side for a texture.
+  In a wide window on a Retina screen, the viewer's texture was larger than
+  that. The viewer now asks egui for the device's texture limit at run time,
+  whatever that limit is, and draws a smaller margin to stay within it. If the
+  pane alone is wider or taller than the device's limit, the viewer draws it
+  at a lower resolution.
