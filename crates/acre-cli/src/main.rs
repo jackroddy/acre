@@ -248,7 +248,17 @@ fn load(path: &Path) -> anyhow::Result<Scene> {
         })?;
         fonts.push(font);
     }
-    let scene = scene::build(&program, &fonts).map_err(located)?;
+    let mut data = Vec::new();
+    for file in scene::data_files(&program).map_err(located)? {
+        let bytes = fs::read(dir.join(&file.path)).map_err(|e| {
+            located(lang::Error::new(
+                file.span,
+                format!("cannot read data file {}: {e}", file.path),
+            ))
+        })?;
+        data.push(bytes);
+    }
+    let scene = scene::build(&program, &fonts, &data).map_err(located)?;
     for c in scene.missing_glyphs() {
         eprintln!(
             "{}: warning: no font has a glyph for '{c}' (U+{:04X})",

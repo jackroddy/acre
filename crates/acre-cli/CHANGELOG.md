@@ -9,6 +9,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- `check` and `render` read the data files a drawing names with `data`. A
+  path is relative to the drawing's file. A file that cannot be read is an
+  error that names the file and its line.
 - `check` and `render` print a warning on stderr for each character in a
   drawing's text that no font has, such as
   `drawing.acre: warning: no font has a glyph for '☃' (U+2603)`.

@@ -3,13 +3,15 @@ use std::f64::consts::FRAC_1_SQRT_2;
 
 use super::code::{self, Code};
 use super::connector::{self, End, Follow};
+use super::data::{self, Table};
 use super::expand::expand;
 use super::markup;
 use super::schema;
 use super::timeline;
 use super::{
-    Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Object, Point,
-    Route, Row, RowCell, Ruler, Run, Scene, Shape, Side, Stroke, Target, Text,
+    Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Matrix,
+    MatrixCell, Object, Point, Polygon, Polyline, Route, Row, RowCell, Ruler, Run, Scene, Shape,
+    Side, Stroke, Target, Text,
 };
 use crate::fonts::{Fonts, Typeface};
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
@@ -122,8 +124,13 @@ fn read_fonts(listed: &[FontFile], bytes: &[Vec<u8>], canvas: &Node) -> Result<F
 }
 
 /// The scene a program describes. `font_bytes` holds the contents of
-/// each file [`font_files`] lists, in that order.
-pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> {
+/// each file [`font_files`] lists, and `data_bytes` of each file
+/// [`data_files`](super::data_files) lists, in that order.
+pub fn build(
+    program: &Program,
+    font_bytes: &[Vec<u8>],
+    data_bytes: &[Vec<u8>],
+) -> Result<Scene, Error> {
     let canvas = match program.nodes.as_slice() {
         [] => return Err(Error::new(Span::default(), "the file has no `canvas`")),
         [node, ..] if node.kind.text != "canvas" => {
@@ -143,6 +150,7 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
     let (canvas, colors, badge) = expand(canvas)?;
     let canvas = &canvas;
     let fonts = read_fonts(&listed_fonts(canvas)?, font_bytes, canvas)?;
+    let tables = data::read(&data::listed(canvas)?, data_bytes, canvas)?;
     let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
     let [width, height] = canvas_size(size)?;
@@ -171,10 +179,13 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
         colors,
         badge: Badge::of_style(badge, canvas.span, &fonts)?,
         fonts: fonts.clone(),
+        tables: &tables,
         palettes: HashMap::new(),
         shapes: HashMap::new(),
         rows: HashMap::new(),
+        matrices: HashMap::new(),
         codes: HashMap::new(),
+        outlines: HashMap::new(),
         sources: HashMap::new(),
     };
 
@@ -233,6 +244,7 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
         }
         None => last,
     };
+    let sections = timeline::sections(canvas, duration)?;
 
     Ok(Scene {
         canvas: Canvas {
@@ -244,6 +256,7 @@ pub fn build(program: &Program, font_bytes: &[Vec<u8>]) -> Result<Scene, Error> 
         },
         objects,
         fonts,
+        sections,
     })
 }
 
@@ -283,7 +296,7 @@ fn canvas_size(size: &Property) -> Result<[Option<f64>; 2], Error> {
     Ok([side(w)?, side(h)?])
 }
 
-/// Build every named shape and row in `nodes` and the groups among them,
+/// Build every named shape, row and matrix in `nodes` and the groups among them,
 /// in source order, into `names`.
 fn name_things<'a>(
     nodes: &'a [Node],
@@ -314,7 +327,9 @@ fn name_things<'a>(
         let key = name.text.as_str();
         let used = names.shapes.contains_key(key)
             || names.rows.contains_key(key)
-            || names.codes.contains_key(key);
+            || names.matrices.contains_key(key)
+            || names.codes.contains_key(key)
+            || names.outlines.contains_key(key);
         let taken = match node.kind.text.as_str() {
             "box" | "ellipse" => {
                 let shape = shape(node, names, offset)?;
@@ -326,9 +341,24 @@ fn name_things<'a>(
                 names.rows.insert(key, row);
                 used
             }
+            "matrix" => {
+                let matrix = matrix(node, names, offset)?;
+                names.matrices.insert(key, matrix);
+                used
+            }
             "code" => {
                 let code = code(node, names, offset)?;
                 names.codes.insert(key, code);
+                used
+            }
+            "polygon" => {
+                let polygon = polygon(node, names, offset)?;
+                names.outlines.insert(key, extent(&polygon.points));
+                used
+            }
+            "polyline" => {
+                let polyline = polyline(node, names, offset)?;
+                names.outlines.insert(key, extent(&polyline.points));
                 used
             }
             _ => false,
@@ -336,7 +366,10 @@ fn name_things<'a>(
         if taken {
             return Err(twice("things", name));
         }
-        if matches!(node.kind.text.as_str(), "box" | "ellipse" | "row" | "code") {
+        if matches!(
+            node.kind.text.as_str(),
+            "box" | "ellipse" | "polygon" | "polyline" | "row" | "matrix" | "code"
+        ) {
             names.sources.insert(key, node.span);
         }
     }
@@ -356,7 +389,7 @@ fn add_objects(
     for node in nodes {
         let named = node.name.as_ref().map(|n| n.text.as_str());
         let kind = match node.kind.text.as_str() {
-            "palette" | "fonts" | "timeline" => continue,
+            "palette" | "fonts" | "data" | "timeline" => continue,
             "caption" => {
                 // a caption goes under everything before it
                 let below = bounds_of(&names.fonts, out).map_or(offset.y, |(_, max)| max.y);
@@ -406,9 +439,15 @@ fn add_objects(
                 Some(name) => Kind::Shape(names.shapes[name].clone()),
                 None => Kind::Shape(shape(node, names, offset)?),
             },
+            "polygon" => Kind::Polygon(polygon(node, names, offset)?),
+            "polyline" => Kind::Polyline(polyline(node, names, offset)?),
             "row" => match named {
                 Some(name) => Kind::Row(names.rows[name].clone()),
                 None => Kind::Row(row(node, names, offset)?),
+            },
+            "matrix" => match named {
+                Some(name) => Kind::Matrix(names.matrices[name].clone()),
+                None => Kind::Matrix(matrix(node, names, offset)?),
             },
             "code" => match named {
                 Some(name) => Kind::Code(names.codes[name].clone()),
@@ -443,8 +482,8 @@ fn add_objects(
                 return Err(Error::new(
                     node.kind.span,
                     format!(
-                        "unknown node `{other}`; a canvas holds box, ellipse, line, arrow, \
-                         text, math, marker, table, row, code, brace, ruler, group, panel, caption, stack, grid, \
+                        "unknown node `{other}`; a canvas holds box, ellipse, polygon, polyline, line, arrow, \
+                         text, math, marker, table, row, matrix, code, brace, ruler, group, panel, caption, stack, grid, \
                          palette and style"
                     ),
                 ));
@@ -805,7 +844,7 @@ fn group_at(node: &Node, names: &Names, offset: Point) -> Result<Point, Error> {
 }
 
 /// The point an `at` names: two numbers from the origin of the group it
-/// sits in, or a shape, row or row cell's top-left corner and two
+/// sits in, or a shape, row, row cell or matrix's top-left corner and two
 /// optional numbers from there.
 fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
     if let [first, ..] = p.values.as_slice()
@@ -821,7 +860,16 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
         4 => &p.values[..2],
         _ => &p.values[..],
     };
-    let (thing, _, _) = target(p, named, names, 0)?;
+    let (thing, cell, left) = target(p, named, names, 0)?;
+    if let (Some(_), [v, ..]) = (cell, left)
+        && let ValueKind::Word(name) = &p.values[0].kind
+        && names.matrices.contains_key(name.as_str())
+    {
+        return Err(Error::new(
+            v.span,
+            "`at` takes a matrix's name and two optional numbers",
+        ));
+    }
     match &p.values[named.len()..] {
         [] => Ok(thing.origin),
         [dx, dy] => match (&dx.kind, &dy.kind) {
@@ -835,7 +883,7 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
 }
 
 /// The property names node kind `kind` takes.
-fn keys(kind: &str) -> Vec<&'static str> {
+pub(super) fn keys(kind: &str) -> Vec<&'static str> {
     schema::node(kind)
         .expect("every kind the builder reads is in the schema")
         .keys()
@@ -851,16 +899,23 @@ struct Names<'a> {
     colors: HashMap<String, Color>,
     /// The look of the number on a `marker` and on numbered `text`.
     badge: Badge,
+    /// The table of each `data` node, by its name.
+    tables: &'a HashMap<String, Table>,
     palettes: HashMap<&'a str, Palette>,
     shapes: HashMap<&'a str, Shape>,
     rows: HashMap<&'a str, Row>,
+    matrices: HashMap<&'a str, Matrix>,
     codes: HashMap<&'a str, Code>,
-    /// The node of each named shape, row and code.
+    /// The box around each named polygon and polyline, as its top-left
+    /// corner and size.
+    outlines: HashMap<&'a str, (Point, Point)>,
+    /// The node of each named shape, polygon, polyline, row, matrix and
+    /// code.
     sources: HashMap<&'a str, Span>,
 }
 
 impl Names<'_> {
-    /// The node of the shape, row or code `name` names, which
+    /// The node of the thing `name` names, which
     /// [`target`] has found.
     fn source_of(&self, name: &Value) -> Span {
         match &name.kind {
@@ -880,7 +935,7 @@ struct Symbol {
     text_color: Option<Color>,
 }
 
-fn twice(what: &str, name: &crate::lang::Word) -> Error {
+pub(super) fn twice(what: &str, name: &crate::lang::Word) -> Error {
     Error::new(name.span, format!("two {what} are named `{}`", name.text))
 }
 
@@ -1003,6 +1058,95 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     })
 }
 
+fn polygon(node: &Node, names: &Names, offset: Point) -> Result<Polygon, Error> {
+    let props = Props::new(node, &keys("polygon"), false)?;
+    let p = props.require("points")?;
+    let points = points(p, names, offset)?;
+    if points.len() < 3 {
+        return Err(Error::new(
+            p.span,
+            "a `polygon` needs at least three points",
+        ));
+    }
+    let fill = match props.get("fill") {
+        Some(p) => p.color_or_none()?,
+        None => Some(Color::WHITE),
+    };
+    Ok(Polygon {
+        points,
+        fill,
+        stroke: props.stroke(Some(Color::BLACK))?,
+    })
+}
+
+fn polyline(node: &Node, names: &Names, offset: Point) -> Result<Polyline, Error> {
+    let props = Props::new(node, &keys("polyline"), false)?;
+    let p = props.require("points")?;
+    let mut points = points(p, names, offset)?;
+    if points.len() < 2 {
+        return Err(Error::new(p.span, "a `polyline` needs at least two points"));
+    }
+    points.dedup();
+    let stroke = props
+        .stroke(Some(Color::BLACK))?
+        .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
+    Ok(Polyline {
+        points,
+        stroke,
+        head: props.choice("head", Head::None, &HEADS)?,
+        tail: props.choice("tail", Head::None, &HEADS)?,
+    })
+}
+
+/// The points `points` lists as `X Y X Y ...`, or takes from a table
+/// as `DATA XCOL YCOL`, from `offset`.
+fn points(p: &Property, names: &Names, offset: Point) -> Result<Vec<Point>, Error> {
+    if let Some(Value {
+        kind: ValueKind::Word(name),
+        span,
+    }) = p.values.first()
+    {
+        return data_table(names, name, *span)?.points(p, offset);
+    }
+    let mut numbers = Vec::with_capacity(p.values.len());
+    for v in &p.values {
+        match v.kind {
+            ValueKind::Number(n) => numbers.push(n),
+            _ => return Err(Error::new(v.span, "`points` takes numbers")),
+        }
+    }
+    if numbers.len() % 2 == 1 {
+        return Err(Error::new(
+            p.span,
+            "`points` takes pairs of numbers, `X Y X Y ...`, and has one left over",
+        ));
+    }
+    let (pairs, _) = numbers.as_chunks::<2>();
+    Ok(pairs
+        .iter()
+        .map(|&[x, y]| offset + Point::new(x, y))
+        .collect())
+}
+
+/// The table of the `data` named `name`, which `span` names.
+fn data_table<'n>(names: &Names<'n>, name: &str, span: Span) -> Result<&'n Table, Error> {
+    names
+        .tables
+        .get(name)
+        .ok_or_else(|| Error::new(span, format!("no `data` is named `{name}`")))
+}
+
+/// The box around `points`, as its top-left corner and size.
+fn extent(points: &[Point]) -> (Point, Point) {
+    let mut min = Point::new(f64::INFINITY, f64::INFINITY);
+    let mut max = Point::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in points {
+        min = Point::new(min.x.min(p.x), min.y.min(p.y));
+        max = Point::new(max.x.max(p.x), max.y.max(p.y));
+    }
+    (min, max - min)
+}
+
 fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     let props = Props::new(node, &keys("row"), true)?;
     let origin = match props.get("at") {
@@ -1114,6 +1258,7 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
             }
         }
     }
+    let cell_keys: Vec<&str> = keys("cell").into_iter().filter(|k| *k != "at").collect();
     for child in &node.children {
         if child.kind.text != "cell" {
             return Err(Error::new(
@@ -1121,7 +1266,7 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
                 format!("a `row` holds `cell` nodes, not `{}`", child.kind.text),
             ));
         }
-        let cell = Props::new(child, &keys("cell"), false)?;
+        let cell = Props::new(child, &cell_keys, false)?;
         let text = match cell.get("text") {
             Some(p) => p.string()?,
             None => String::new(),
@@ -1154,6 +1299,156 @@ fn cell_named(p: &Property, names: &Names) -> Option<Target> {
         source: names.sources[word.as_str()],
         cell: Some(*n as usize),
     })
+}
+
+fn matrix(node: &Node, names: &Names, offset: Point) -> Result<Matrix, Error> {
+    let props = Props::new(node, &keys("matrix"), true)?;
+    let origin = match props.get("at") {
+        Some(p) => at(p, names, offset)?,
+        None => offset,
+    };
+    let follow = props.get("at").and_then(|p| cell_named(p, names));
+    let count = |key: &str| -> Result<usize, Error> {
+        let p = props.require(key)?;
+        match p.count()? {
+            0 => Err(p.expected("a whole number from 1")),
+            n => Ok(n),
+        }
+    };
+    let (rows, columns) = (count("rows")?, count("columns")?);
+    let [unit_w, unit_h] = props.require("unit")?.numbers::<2>()?;
+    let fill = match props.get("fill") {
+        Some(p) => p.color_or_none()?,
+        None => Some(Color::WHITE),
+    };
+    let stroke = props.stroke(Some(Color::BLACK))?;
+    let width = props.number_or("stroke-width", STROKE_WIDTH)?;
+    let dash = match props.get("dash") {
+        Some(p) => Some(p.numbers::<2>()?),
+        None => None,
+    };
+    let text = Label::plain(
+        &names.fonts,
+        "",
+        props.number_or("text-size", TEXT_SIZE)?,
+        props.font_or(names.font, &names.fonts)?,
+        props.color_or("text-color", Color::BLACK)?,
+    );
+    let numbers = |key: &str| match props.get(key) {
+        Some(p) => p.numbers::<2>().map(|[first, step]| Some((first, step))),
+        None => Ok(None),
+    };
+
+    let plain = MatrixCell {
+        fill,
+        stroke,
+        label: None,
+        outlined: false,
+    };
+    let mut cells = vec![plain; rows * columns];
+    if let Some(p) = props.get("cells") {
+        let Some(Value {
+            kind: ValueKind::Word(name),
+            span,
+        }) = p.values.first()
+        else {
+            return Err(p.expected("a data name and three column names"));
+        };
+        for (r, c, t) in data_table(names, name, *span)?.cells(p, rows, columns)? {
+            cells[r * columns + c].label = (!t.is_empty()).then(|| text.with_text(t));
+        }
+    }
+    let mut text_colors = vec![None; rows * columns];
+    let cell_keys: Vec<&str> = keys("cell")
+        .into_iter()
+        .filter(|k| !matches!(*k, "span" | "note"))
+        .collect();
+    for child in &node.children {
+        if child.kind.text != "cell" {
+            return Err(Error::new(
+                child.kind.span,
+                format!("a `matrix` holds `cell` nodes, not `{}`", child.kind.text),
+            ));
+        }
+        let cell = Props::new(child, &cell_keys, false)?;
+        let p = cell.require("at")?;
+        let [r, c] = p.numbers::<2>()?;
+        let i = matrix_index(rows, columns, r, c, p.span, "the matrix")?;
+        let out = &mut cells[i];
+        if let Some(p) = cell.get("fill") {
+            out.fill = p.color_or_none()?;
+        }
+        if ["stroke", "stroke-width", "dash"]
+            .iter()
+            .any(|k| cell.get(k).is_some())
+        {
+            let current = out.stroke;
+            let color = match cell.get("stroke") {
+                Some(p) => p.color_or_none()?,
+                None => current.map(|s| s.color),
+            };
+            let width = match cell.get("stroke-width") {
+                Some(p) => p.numbers::<1>()?[0],
+                None => current.map_or(width, |s| s.width),
+            };
+            let dash = match cell.get("dash") {
+                Some(p) => Some(p.numbers::<2>()?),
+                None => current.map_or(dash, |s| s.dash),
+            };
+            out.stroke = color.map(|color| Stroke { color, width, dash });
+            out.outlined = true;
+        }
+        if let Some(p) = cell.get("text") {
+            let t = p.string()?;
+            out.label = (!t.is_empty()).then(|| text.with_text(t));
+        }
+        if let Some(p) = cell.get("text-color") {
+            text_colors[i] = Some(p.color()?);
+        }
+    }
+    for (cell, color) in cells.iter_mut().zip(text_colors) {
+        if let (Some(label), Some(color)) = (&mut cell.label, color) {
+            label.set_color(color);
+        }
+    }
+    Ok(Matrix {
+        origin,
+        rows,
+        columns,
+        unit: Point::new(unit_w, unit_h),
+        cells,
+        fill,
+        stroke,
+        text,
+        row_numbers: numbers("row-numbers")?,
+        column_numbers: numbers("column-numbers")?,
+        follow,
+    })
+}
+
+/// The index of the cell at row `r` and column `c` of a matrix of
+/// `rows` by `columns`, or an error at `span`, where `what` names the
+/// matrix, when it has no such cell.
+fn matrix_index(
+    rows: usize,
+    columns: usize,
+    r: f64,
+    c: f64,
+    span: Span,
+    what: &str,
+) -> Result<usize, Error> {
+    let fits = |n: f64, count: usize| n.fract() == 0.0 && n >= 0.0 && n < count as f64;
+    if !fits(r, rows) || !fits(c, columns) {
+        return Err(Error::new(
+            span,
+            format!(
+                "{what} has rows 0 to {} and columns 0 to {}",
+                rows - 1,
+                columns - 1
+            ),
+        ));
+    }
+    Ok(r as usize * columns + c as usize)
 }
 
 fn connector(
@@ -1674,8 +1969,8 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
 }
 
 /// The end a connector's `from` or `to` names, and the thing it names.
-/// It is two numbers, a shape's name, or a row's name and a cell's
-/// index. A side or a corner after a name puts the end at the middle of
+/// It is two numbers, a shape's name, a row's name and a cell's index,
+/// or a matrix's name and a cell's row and column. A side or a corner after a name puts the end at the middle of
 /// that side or at that corner, facing out of it.
 fn end(
     p: &Property,
@@ -1771,7 +2066,8 @@ fn corner(thing: &Shape, sx: f64, sy: f64) -> (Point, Point) {
 
 /// The left, top, right and bottom of the box around everything `over`
 /// names, and the thing the brace follows. Each name is a shape, a
-/// whole row, a row's cell, or a row's cells from one index to another.
+/// whole row, a row's cell, a row's cells from one index to another, or
+/// a matrix or one of its cells.
 /// The brace follows the first name, which is one cell only when it
 /// names one.
 fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Target), Error> {
@@ -1823,9 +2119,10 @@ fn bounds(p: &Property, names: &Names) -> Result<([f64; 4], Target), Error> {
 }
 
 /// The box that the leading values of `values` name, as a shape, the
-/// cell it is when it is a row's, and the values after them. A name
-/// alone is a shape or a whole row. A row's name and a number is one of
-/// its cells.
+/// cell it is when it is a row's or a matrix's, and the values after
+/// them. A name alone is a shape, a whole row or a whole matrix. A
+/// row's name and a number is one of its cells, and a matrix's name and
+/// two numbers is the cell at that row and column.
 fn target<'v>(
     p: &Property,
     values: &'v [Value],
@@ -1852,6 +2149,9 @@ fn target<'v>(
     if let Some(shape) = names.shapes.get(word.as_str()) {
         return Ok((shape.clone(), None, rest));
     }
+    if let Some(&(origin, size)) = names.outlines.get(word.as_str()) {
+        return Ok((as_box(origin, size), None, rest));
+    }
     if let Some(code) = names.codes.get(word.as_str()) {
         return match rest.split_first() {
             Some((
@@ -1874,10 +2174,46 @@ fn target<'v>(
             _ => Ok((as_box(code.origin, code.extent()), None, rest)),
         };
     }
+    if let Some(matrix) = names.matrices.get(word.as_str()) {
+        return match rest {
+            [
+                Value {
+                    kind: ValueKind::Number(r),
+                    span: r_span,
+                },
+                Value {
+                    kind: ValueKind::Number(c),
+                    span: c_span,
+                },
+                rest @ ..,
+            ] => {
+                let span = Span {
+                    start: r_span.start,
+                    end: c_span.end,
+                };
+                let what = format!("matrix `{word}`");
+                let c = c + shift as f64;
+                let i = matrix_index(matrix.rows, matrix.columns, *r, c, span, &what)?;
+                let (origin, size) = matrix.cell_rect(i / matrix.columns, i % matrix.columns);
+                Ok((as_box(origin, size), Some(i), rest))
+            }
+            [
+                Value {
+                    kind: ValueKind::Number(_),
+                    span,
+                },
+                ..,
+            ] => Err(Error::new(
+                *span,
+                format!("a cell of matrix `{word}` is `{word} R C`, its row and column"),
+            )),
+            _ => Ok((as_box(matrix.origin, matrix.size()), None, rest)),
+        };
+    }
     let Some(row) = names.rows.get(word.as_str()) else {
         return Err(Error::new(
             name.span,
-            format!("no box, ellipse, row or code is named `{word}`"),
+            format!("no box, ellipse, polygon, polyline, row, matrix or code is named `{word}`"),
         ));
     };
     match rest.split_first() {
@@ -1953,12 +2289,12 @@ fn pixels(v: f64, p: &Property) -> Result<u32, Error> {
 }
 
 /// A node's properties, checked against the keys its kind takes.
-struct Props<'a> {
+pub(super) struct Props<'a> {
     node: &'a Node,
 }
 
 impl<'a> Props<'a> {
-    fn new(node: &'a Node, keys: &[&str], children: bool) -> Result<Self, Error> {
+    pub(super) fn new(node: &'a Node, keys: &[&str], children: bool) -> Result<Self, Error> {
         let kind = &node.kind.text;
         if let (false, Some(child)) = (children, node.children.first()) {
             return Err(Error::new(
@@ -1988,7 +2324,7 @@ impl<'a> Props<'a> {
         self.node.properties.iter().find(|p| p.key.text == key)
     }
 
-    fn require(&self, key: &str) -> Result<&'a Property, Error> {
+    pub(super) fn require(&self, key: &str) -> Result<&'a Property, Error> {
         self.get(key).ok_or_else(|| {
             Error::new(
                 self.node.kind.span,
@@ -2161,7 +2497,7 @@ impl Property {
         }
     }
 
-    fn expected(&self, what: &str) -> Error {
+    pub(super) fn expected(&self, what: &str) -> Error {
         Error::new(self.span, format!("`{}` takes {what}", self.key.text))
     }
 }
@@ -2170,11 +2506,12 @@ impl Property {
 mod tests {
     use super::*;
     use crate::lang::parse;
+    use crate::scene::data_files;
     use crate::scene::primitive::{Primitive, VAlign};
 
     fn scene(src: &str) -> Result<Scene, (usize, usize, String)> {
         let program = parse(src).unwrap();
-        build(&program, &[]).map_err(|e| {
+        build(&program, &[], &[]).map_err(|e| {
             let (line, col) = e.line_col(src);
             (line, col, e.message)
         })
@@ -2270,7 +2607,11 @@ mod tests {
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  arrow { from a; to 1 1; } }").unwrap_err(),
-            (2, 16, "no box, ellipse, row or code is named `a`".into())
+            (
+                2,
+                16,
+                "no box, ellipse, polygon, polyline, row, matrix or code is named `a`".into()
+            )
         );
         assert_eq!(
             scene("canvas { size 10 10;\n  box { at 1; size 2 2; } }").unwrap_err(),
@@ -2376,7 +2717,11 @@ mod tests {
         assert_eq!(
             scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n brace { over a nope; } }")
                 .unwrap_err(),
-            (3, 17, "no box, ellipse, row or code is named `nope`".into())
+            (
+                3,
+                17,
+                "no box, ellipse, polygon, polyline, row, matrix or code is named `nope`".into()
+            )
         );
         assert_eq!(
             scene("canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n brace { over a 3; } }")
@@ -2991,7 +3336,7 @@ mod tests {
     fn scene_with(src: &str, fonts: &[&[u8]]) -> Result<Scene, (usize, usize, String)> {
         let program = parse(src).unwrap();
         let bytes: Vec<Vec<u8>> = fonts.iter().map(|f| f.to_vec()).collect();
-        build(&program, &bytes).map_err(|e| {
+        build(&program, &bytes, &[]).map_err(|e| {
             let (line, col) = e.line_col(src);
             (line, col, e.message)
         })
@@ -3081,6 +3426,231 @@ mod tests {
     }
 
     #[test]
+    fn points_are_pairs_from_the_group_origin_and_may_be_lets_or_sums() {
+        let s = scene(
+            "canvas { size 200 200; let w 40; let start 0 0;
+                group { at 10 20; polygon { points start w 0 (w / 2) (w + 10); } }
+                polyline { points 0 0 5 5 5 5 9 0; } }",
+        )
+        .unwrap();
+        let Kind::Polygon(p) = &s.objects[0].kind else {
+            panic!("expected a polygon");
+        };
+        assert_eq!(
+            p.points,
+            [
+                Point::new(10.0, 20.0),
+                Point::new(50.0, 20.0),
+                Point::new(30.0, 70.0)
+            ]
+        );
+        assert_eq!(p.fill, Some(Color::WHITE));
+        assert_eq!(p.stroke, Some(Stroke::solid(Color::BLACK, STROKE_WIDTH)));
+        let Kind::Polyline(l) = &s.objects[1].kind else {
+            panic!("expected a polyline");
+        };
+        assert_eq!(l.points.len(), 3);
+        assert_eq!(
+            s.bounds(0, 0.0),
+            Some((p.points[0], Point::new(50.0, 70.0)))
+        );
+        assert_eq!(s.object_at(Point::new(30.0, 40.0), 0.0), Some(0));
+    }
+
+    #[test]
+    fn points_too_few_or_odd_point_at_the_points_line() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n  polygon { points 0 0 5 5; } }").unwrap_err(),
+            (2, 13, "a `polygon` needs at least three points".into())
+        );
+        assert_eq!(
+            scene("canvas { size 10 10;\n  polyline { points 0 0; } }").unwrap_err(),
+            (2, 14, "a `polyline` needs at least two points".into())
+        );
+        assert_eq!(
+            scene("canvas { size 10 10;\n  polyline { points 0 0 5; } }").unwrap_err(),
+            (
+                2,
+                14,
+                "`points` takes pairs of numbers, `X Y X Y ...`, and has one left over".into()
+            )
+        );
+    }
+
+    /// The scene `src` builds with `data` as the contents of the data
+    /// files it names.
+    fn scene_data(src: &str, data: &[&[u8]]) -> Result<Scene, (usize, usize, String)> {
+        let program = parse(src).unwrap();
+        let bytes: Vec<Vec<u8>> = data.iter().map(|d| d.to_vec()).collect();
+        build(&program, &[], &bytes).map_err(|e| {
+            let (line, col) = e.line_col(src);
+            (line, col, e.message)
+        })
+    }
+
+    #[test]
+    fn the_data_files_a_canvas_names_come_in_source_order_with_their_places() {
+        let src = "canvas {\n  size 9 9;\n  data a { file \"x/a.tsv\"; }\n  data b { file \"b.CSV\"; }\n}";
+        let files = data_files(&parse(src).unwrap()).unwrap();
+        let named: Vec<_> = files
+            .iter()
+            .map(|f| (f.name.as_str(), f.path.as_str()))
+            .collect();
+        assert_eq!(named, [("a", "x/a.tsv"), ("b", "b.CSV")]);
+        let at = files[0].span.start;
+        assert_eq!(&src[at..at + 9], "\"x/a.tsv\"");
+    }
+
+    #[test]
+    fn points_take_columns_of_a_data_file_one_per_row() {
+        let src = "canvas { size 200 200;
+            data d { file \"d.tsv\"; }
+            data c { file \"c.csv\"; }
+            group { at 10 20; polygon { points d x y; } }
+            polyline { points c b a; } }";
+        let tsv = b"y\tx\tname\n0\t0\tone\n0\t40\ttwo\n\n50\t20\tthree\n";
+        let csv = b"a,b\n1,2\n3,4\n";
+        let s = scene_data(src, &[tsv, csv]).unwrap();
+        let Kind::Polygon(p) = &s.objects[0].kind else {
+            panic!("expected a polygon");
+        };
+        assert_eq!(
+            p.points,
+            [
+                Point::new(10.0, 20.0),
+                Point::new(50.0, 20.0),
+                Point::new(30.0, 70.0)
+            ]
+        );
+        let Kind::Polyline(l) = &s.objects[1].kind else {
+            panic!("expected a polyline");
+        };
+        assert_eq!(l.points, [Point::new(2.0, 1.0), Point::new(4.0, 3.0)]);
+    }
+
+    #[test]
+    fn points_from_data_name_what_is_wrong_where_it_is() {
+        let xy: &[u8] = b"x\ty\n0\t0\n5\tfive\n9\t9\n";
+        let at = |points: &str| {
+            let src = format!(
+                "canvas {{ size 10 10;\n  data d {{ file \"d.tsv\"; }}\n  polygon {{ points {points}; }} }}"
+            );
+            scene_data(&src, &[xy]).unwrap_err()
+        };
+        assert_eq!(at("e x y"), (3, 20, "no `data` is named `e`".into()));
+        assert_eq!(
+            at("d x z"),
+            (
+                3,
+                24,
+                "`d.tsv` has no column `z`; its columns are x, y".into()
+            )
+        );
+        assert_eq!(
+            at("d x y"),
+            (
+                3,
+                24,
+                "`d.tsv` line 3 has `five` in column `y`, which is not a number".into()
+            )
+        );
+        assert_eq!(
+            at("d x"),
+            (
+                3,
+                13,
+                "`points DATA XCOL YCOL` takes two column names after the data name".into()
+            )
+        );
+        let src =
+            "canvas { size 10 10;\n  data d { file \"d.tsv\"; }\n  polyline { points d x y; } }";
+        assert_eq!(
+            scene_data(src, &[b"x\ty\n1\t1\n"]).unwrap_err(),
+            (3, 14, "a `polyline` needs at least two points".into())
+        );
+        assert_eq!(
+            scene_data(src, &[b"x\ty\n1\t1\n2\n"]).unwrap_err(),
+            (
+                2,
+                17,
+                "`d.tsv` line 3 has fewer cells than the 2 columns the first line names".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_data_node_needs_one_name_a_file_and_a_known_extension() {
+        let err = |src: &str| {
+            let e = data_files(&parse(src).unwrap()).unwrap_err();
+            let (line, col) = e.line_col(src);
+            (line, col, e.message)
+        };
+        assert_eq!(
+            err("canvas { size 9 9;\n data a { file \"a.tsv\"; }\n data a { file \"b.tsv\"; } }"),
+            (3, 7, "two `data` nodes are named `a`".into())
+        );
+        assert_eq!(
+            err("canvas { size 9 9;\n group { data a { file \"a.tsv\"; } } }"),
+            (2, 10, "a `data` goes in the canvas".into())
+        );
+        assert_eq!(
+            err("canvas { size 9 9;\n data a { } }"),
+            (2, 2, "`data` needs `file`".into())
+        );
+        assert_eq!(
+            err("canvas { size 9 9;\n data a { file \"a.txt\"; } }"),
+            (
+                2,
+                16,
+                "`a.txt` is not a .tsv or .csv file, which `data` reads".into()
+            )
+        );
+        assert_eq!(
+            err("canvas { size 9 9;\n data { file \"a.tsv\"; } }"),
+            (2, 2, "a `data` needs a name".into())
+        );
+    }
+
+    #[test]
+    fn an_arrow_attaches_to_the_box_around_a_polygon() {
+        let s = scene(
+            "canvas { size 300 200;
+                polygon p { points 0 0 100 0 50 80; }
+                arrow { from p; to 200 40; }
+                arrow { from 200 0; to p bottom; } }",
+        )
+        .unwrap();
+        let ends = |i: usize| match &s.objects[i].kind {
+            Kind::Connector(c) => (c.from, c.to),
+            other => panic!("expected a connector, got {other:?}"),
+        };
+        assert_eq!(ends(1).0, Point::new(100.0, 40.0));
+        assert_eq!(ends(2).1, Point::new(50.0, 80.0));
+    }
+
+    #[test]
+    fn a_polyline_draws_its_heads_at_its_ends() {
+        let s = scene(
+            "canvas { size 200 200;
+                polyline { points 0 0 100 0 100 100; head triangle; tail dot; } }",
+        )
+        .unwrap();
+        let prims = s.draw(0.0);
+        let Primitive::Polyline { points, .. } = &prims[0] else {
+            panic!("expected the shaft, got {:?}", prims[0]);
+        };
+        assert!(points.last().unwrap().y < 100.0);
+        let Primitive::Polygon { points, .. } = &prims[1] else {
+            panic!("expected the head, got {:?}", prims[1]);
+        };
+        assert_eq!(points[0], Point::new(100.0, 100.0));
+        assert!(matches!(prims[2], Primitive::Ellipse { .. }));
+        let fill = "canvas { size 200 200; polyline l { points 0 0 9 9; }
+            timeline { 1s { fill l #ff0000; } } }";
+        assert_eq!(scene(fill).unwrap_err().2, "`l` has no fill");
+    }
+
+    #[test]
     fn the_math_font_is_swapped_for_a_file_with_a_math_table() {
         let src = "canvas { size 200 50; fonts { math \"m.ttf\"; }
             math { at 0 0; text \"x^2\"; } }";
@@ -3092,5 +3662,283 @@ mod tests {
             other => panic!("expected text, got {other:?}"),
         };
         assert_eq!(width(&s), width(&plain));
+    }
+
+    fn matrix_of(s: &Scene, i: usize) -> &Matrix {
+        match &s.objects[i].kind {
+            Kind::Matrix(m) => m,
+            other => panic!("expected a matrix, got {other:?}"),
+        }
+    }
+
+    /// Each text object `i` draws, with where it sits and how.
+    fn texts(s: &Scene, i: usize) -> Vec<(String, Point, HAlign, VAlign)> {
+        let mut prims = Vec::new();
+        s.objects[i].kind.draw(0.0, &mut prims);
+        prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text {
+                    origin,
+                    runs,
+                    h_align,
+                    v_align,
+                    ..
+                } => Some((runs[0].text.clone(), *origin, *h_align, *v_align)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_matrix_lays_out_its_cells_by_row_and_column_with_numbers_outside() {
+        let s = scene(
+            "canvas { size 200 200;
+                matrix m { at 40 30; rows 2; columns 3; unit 20 10;
+                    row-numbers 1 2; column-numbers 0 5; } }",
+        )
+        .unwrap();
+        let m = matrix_of(&s, 0);
+        assert_eq!(m.cells.len(), 6);
+        assert_eq!(
+            m.cell_rect(1, 2),
+            (Point::new(80.0, 40.0), Point::new(20.0, 10.0))
+        );
+        assert_eq!(m.cells[0].fill, Some(Color::WHITE));
+        assert_eq!(m.cells[0].stroke.unwrap().color, Color::BLACK);
+        let row = |t: &str, y: f64| (t.into(), Point::new(34.0, y), HAlign::Right, VAlign::Middle);
+        let column = |t: &str, x: f64| {
+            (
+                t.into(),
+                Point::new(x, 24.0),
+                HAlign::Center,
+                VAlign::Baseline,
+            )
+        };
+        assert_eq!(
+            texts(&s, 0),
+            [
+                row("1", 35.0),
+                row("3", 45.0),
+                column("0", 50.0),
+                column("5", 70.0),
+                column("10", 90.0),
+            ]
+        );
+        let (min, max) = s.bounds(0, 0.0).unwrap();
+        assert!(min.x < 34.0 && min.y < 24.0);
+        assert_eq!(max.x, 100.0);
+    }
+
+    #[test]
+    fn a_matrix_cell_overrides_the_matrix_and_an_outlined_cell_draws_last() {
+        let s = scene(
+            "canvas { size 200 200;
+                matrix m { at 0 0; rows 2; columns 2; unit 10 10; stroke-width 0.5; text-color #0000ff;
+                    cell { at 0 0; fill #ff0000; text \"a\"; }
+                    cell { at 0 0; stroke #00ff00; dash 2 1; text-color #ffffff; }
+                    cell { at 1 0; fill none; stroke-width 3; } } }",
+        )
+        .unwrap();
+        let m = matrix_of(&s, 0);
+        let red = Color::rgb(1.0, 0.0, 0.0);
+        let green = Color::rgb(0.0, 1.0, 0.0);
+        assert_eq!(m.cells[0].fill, Some(red));
+        assert_eq!(
+            m.cells[0].stroke,
+            Some(Stroke {
+                color: green,
+                width: 0.5,
+                dash: Some([2.0, 1.0]),
+            })
+        );
+        assert_eq!(
+            m.cells[0].label.as_ref().unwrap().runs[0].color,
+            Color::WHITE
+        );
+        assert_eq!(m.cells[2].fill, None);
+        assert_eq!(
+            m.cells[2].stroke,
+            Some(Stroke {
+                color: Color::BLACK,
+                width: 3.0,
+                dash: None,
+            })
+        );
+        assert_eq!(m.cells[1].stroke.unwrap().width, 0.5);
+
+        let mut prims = Vec::new();
+        m.draw(&mut prims);
+        let origins: Vec<Point> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Rect { origin, .. } => Some(*origin),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            origins,
+            [
+                Point::new(10.0, 0.0),
+                Point::new(10.0, 10.0),
+                Point::new(0.0, 0.0),
+                Point::new(0.0, 10.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn matrix_cells_take_text_from_a_data_file_and_a_cell_text_wins() {
+        let src = "canvas { size 200 200;
+            data d { file \"d.tsv\"; }
+            matrix m { at 0 0; rows 2; columns 2; unit 10 10; font sans; cells d r c score;
+                cell { at 1 1; text \"x\"; } } }";
+        let tsv = b"c\tr\tscore\n0\t0\t7\n1\t1\t-3\n0\t1\t\n";
+        let s = scene_data(src, &[tsv]).unwrap();
+        let m = matrix_of(&s, 0);
+        let text: Vec<Option<String>> = m
+            .cells
+            .iter()
+            .map(|c| c.label.as_ref().map(Label::text))
+            .collect();
+        assert_eq!(text, [Some("7".into()), None, None, Some("x".into())]);
+        assert_eq!(m.cells[0].label.as_ref().unwrap().runs[0].font, Font::Sans);
+    }
+
+    #[test]
+    fn matrix_mistakes_name_what_is_wrong_where_it_is() {
+        let err = |body: &str| {
+            let src = format!(
+                "canvas {{ size 10 10;\n data d {{ file \"d.tsv\"; }}\n matrix m {{ at 0 0; rows 2; columns 3; unit 9 9; {body} }} }}"
+            );
+            let tsv: &[u8] = b"r\tc\tt\tx\n0\t0\ta\t1.5\n2\t0\tb\t1\n";
+            scene_data(&src, &[tsv]).unwrap_err().2
+        };
+        assert_eq!(
+            err("cell { at 2 0; }"),
+            "the matrix has rows 0 to 1 and columns 0 to 2"
+        );
+        assert_eq!(
+            err("cell { at 0 1.5; }"),
+            "the matrix has rows 0 to 1 and columns 0 to 2"
+        );
+        assert_eq!(err("cell { fill none; }"), "`cell` needs `at`");
+        assert_eq!(
+            err("cell { at 0 0; span 2; }"),
+            "`cell` has no property `span`; it takes at, text, fill, stroke, stroke-width, dash, \
+             text-color, style"
+        );
+        assert_eq!(err("box { }"), "a `matrix` holds `cell` nodes, not `box`");
+        assert_eq!(err("cells e r c t;"), "no `data` is named `e`");
+        assert_eq!(
+            err("cells d r col t;"),
+            "`d.tsv` has no column `col`; its columns are r, c, t, x"
+        );
+        assert_eq!(
+            err("cells d r c;"),
+            "`cells DATA RCOL CCOL TEXTCOL` takes three column names after the data name"
+        );
+        assert_eq!(
+            err("cells d x c t;"),
+            "`d.tsv` line 2 has `1.5` in column `x`, which is not a whole number from 0 to 1"
+        );
+        assert_eq!(
+            err("cells d r c t;"),
+            "`d.tsv` line 3 has `2` in column `r`, which is not a whole number from 0 to 1"
+        );
+        assert_eq!(
+            scene("canvas { size 10 10; matrix { rows 0; columns 1; unit 1 1; } }")
+                .unwrap_err()
+                .2,
+            "`rows` takes a whole number from 1"
+        );
+        assert_eq!(
+            scene("canvas { size 10 10; row { unit 1 1; cell { at 0 0; } } }")
+                .unwrap_err()
+                .2,
+            "`cell` has no property `at`; it takes text, note, span, fill, stroke, stroke-width, \
+             dash, text-color, style"
+        );
+    }
+
+    #[test]
+    fn an_arrow_and_a_brace_take_a_matrix_cell_by_row_and_column() {
+        let s = scene(
+            "canvas { size 300 300;
+                matrix m { at 100 100; rows 3; columns 4; unit 20 10; }
+                arrow { from 0 105; to m 1 2 left; }
+                brace { over m 0 1 m 0 2; gap 0; }
+                line { from m 2 0 bottom; to 0 0; repeat 2; }
+                arrow { from m right; to 300 115; } }",
+        )
+        .unwrap();
+        let Kind::Connector(arrow) = &s.objects[1].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(arrow.to, Point::new(140.0, 115.0));
+        let Kind::Brace(brace) = &s.objects[2].kind else {
+            panic!("expected a brace");
+        };
+        assert_eq!(
+            (brace.from, brace.to),
+            (Point::new(120.0, 100.0), Point::new(160.0, 100.0))
+        );
+        let froms: Vec<Point> = s.objects[3..5]
+            .iter()
+            .map(|o| match &o.kind {
+                Kind::Connector(c) => c.from,
+                other => panic!("expected a line, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(froms, [Point::new(110.0, 130.0), Point::new(130.0, 130.0)]);
+        let Kind::Connector(whole) = &s.objects[5].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(whole.from, Point::new(180.0, 115.0));
+    }
+
+    #[test]
+    fn a_matrix_cell_past_the_edge_or_without_a_column_is_an_error() {
+        let src = |end: &str| {
+            format!(
+                "canvas {{ size 10 10;\n matrix m {{ at 0 0; rows 2; columns 3; unit 1 1; }}\n arrow {{ from {end}; to 9 9; }} }}"
+            )
+        };
+        assert_eq!(
+            scene(&src("m 1 3")).unwrap_err(),
+            (
+                3,
+                17,
+                "matrix `m` has rows 0 to 1 and columns 0 to 2".into()
+            )
+        );
+        assert_eq!(
+            scene(&src("m 1")).unwrap_err(),
+            (
+                3,
+                17,
+                "a cell of matrix `m` is `m R C`, its row and column".into()
+            )
+        );
+        assert_eq!(
+            scene(
+                "canvas { size 10 10;\n matrix m { at 0 0; rows 2; columns 3; unit 1 1; }\n text { at m 1 1 5 5; text \"a\"; } }"
+            )
+            .unwrap_err()
+            .2,
+            "`at` takes a matrix's name and two optional numbers"
+        );
+    }
+
+    #[test]
+    fn a_point_on_a_matrix_finds_it() {
+        let s = scene(
+            "canvas { size 300 300;
+                matrix m { at 100 100; rows 3; columns 4; unit 20 10; column-numbers 0 1; } }",
+        )
+        .unwrap();
+        assert_eq!(s.object_at(Point::new(150.0, 120.0), 0.0), Some(0));
+        assert_eq!(s.object_at(Point::new(110.0, 96.0), 0.0), Some(0));
+        assert_eq!(s.object_at(Point::new(150.0, 150.0), 0.0), None);
     }
 }

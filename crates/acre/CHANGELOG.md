@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `matrix NAME { rows N; columns N; unit W H; }` draws a grid of equal cells.
+  It takes `at` as a `row` does. `fill`, `stroke`, `stroke-width`, `dash`,
+  `text-size`, `text-color` and `font` set every cell.
+  `row-numbers FIRST STEP` writes a number left of each row, and
+  `column-numbers FIRST STEP` writes one above each column. A child
+  `cell { at R C; }` sets `text`, `fill`, `stroke`, `stroke-width`, `dash` or
+  `text-color` for the cell at row R and column C, both counted from 0. A
+  later `cell` at the same place overrides what an earlier one sets. A cell
+  that sets its own outline draws after the others, so no neighbour covers
+  its edge. `cells DATA RCOL CCOL TEXTCOL` sets the text of one cell per row
+  of a data file. A `cell` child's `text` replaces it. A row or column
+  outside the matrix is an error, and for `cells` the message gives the
+  file's line. `from`, `to` and `over` name one cell as `NAME R C` and the
+  whole matrix as `NAME`. A timeline moves, scales, fades, shows and hides
+  the matrix as one and changes its colors, and an action on one cell is an
+  error. `Kind::Matrix` holds it.
+- A `data NAME { file "PATH"; }` node in the canvas names a data file. PATH
+  is relative to the drawing's file. A `.tsv` file has tabs between cells,
+  and a `.csv` file has commas. Quoted CSV cells are not supported. The first
+  line names the columns. Every other line that is not blank is a row.
+  `points DATA XCOL YCOL` on a `polygon` or a `polyline` takes one point per
+  row. X comes from column XCOL and Y from column YCOL. A data name or a
+  column that does not exist is an error. A row with fewer cells than the
+  first line is an error. A cell that is not a number is an error, and its
+  message gives the file's line and the column. A `data` draws nothing.
+  `scene::data_files` lists the files a program reads. Each is a `DataFile`
+  with a `name`, a `path` and a `span`.
+- `polygon NAME { points X Y X Y ...; }` draws a closed shape through its
+  points, and takes `fill`, `stroke`, `stroke-width` and `dash` as a `box`
+  does. `polyline NAME { points X Y X Y ...; }` draws an open path through its
+  points, and takes `head` and `tail` as a `line` does. A point is two numbers
+  from the origin of the group the node sits in, and each number may be a
+  `let` name or a `( ... )` expression. A polygon with fewer than three
+  points, a polyline with fewer than two, or an odd count of numbers is an
+  error. A timeline moves, scales, fades, shows and hides both kinds and
+  changes their colors. `from`, `to`, `at` and `over` can name either kind,
+  and take the box around its points. `Kind::Polygon` and `Kind::Polyline`
+  hold them.
+- A `section` line in a `timeline`, such as `section 4s "The types";`, names
+  the part of the animation that starts at its time. A part runs until the
+  next one starts. Two sections at one time, or a section at or past the end,
+  is an error. `Scene::sections` lists them in order of start, each a
+  `Section` with a `start` and a `title`. A `subsection` line, such as
+  `subsection 7.5s "Masked";`, names a part of the latest section before it,
+  and runs until the next subsection or section starts. A subsection before
+  the first section, two at one time, or one at or past the end is an error.
+  `Section::subsections` lists them, each a `Subsection` with a `start` and a
+  `title`.
 - A `timeline` node in the canvas animates named nodes. An entry is an
   instant, `2s { ... }`, or a span, `0s to 1s { ... }`. A span eases in and
   out unless it names `ease linear`, `ease in`, `ease out` or `ease in-out`.
@@ -212,6 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scene::build` takes a third argument, the bytes of each file
+  `scene::data_files` lists, in that order.
 - At the time of its first keyframe, a `Track` takes the last keyframe at that
   time, as it already did at any later time. An instant at the start of a
   track takes effect at that instant.

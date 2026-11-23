@@ -74,9 +74,9 @@ impl Lang {
                 "while", "with", "yield",
             ],
             Lang::Acre => &[
-                "canvas", "box", "ellipse", "row", "cell", "line", "arrow", "text", "marker",
-                "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid", "palette",
-                "style", "code", "let",
+                "canvas", "box", "ellipse", "polygon", "polyline", "row", "matrix", "cell", "line",
+                "arrow", "text", "marker", "table", "brace", "ruler", "group", "panel", "caption",
+                "stack", "grid", "palette", "style", "code", "let",
             ],
             Lang::Text => &[],
         }

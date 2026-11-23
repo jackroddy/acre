@@ -46,6 +46,11 @@ a program crate, never in `acre`.
 The library has no GUI dependencies. A program that depends on `acre` to draw
 scenes gets no editor and no window.
 
+## The viewer's keys
+
+acre-gui has two key bindings. Space plays and pauses, and Left and Right
+step one frame. Do not add another key binding unless I ask for that key.
+
 ## Running acre
 
 `scripts/launch` builds acre if its source changed, then runs it.

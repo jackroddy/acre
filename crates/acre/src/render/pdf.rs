@@ -314,7 +314,7 @@ mod tests {
     use crate::{lang, scene};
 
     fn pdf(src: &str) -> lopdf::Document {
-        let scene = scene::build(&lang::parse(src).unwrap(), &[]).unwrap();
+        let scene = scene::build(&lang::parse(src).unwrap(), &[], &[]).unwrap();
         let bytes = draw_pdf(&scene, 0.0, 1.0).unwrap();
         lopdf::Document::load_mem(&bytes).unwrap()
     }

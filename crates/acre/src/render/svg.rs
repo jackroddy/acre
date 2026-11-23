@@ -357,7 +357,7 @@ mod tests {
     use crate::{lang, scene};
 
     fn svg(src: &str) -> String {
-        let scene = scene::build(&lang::parse(src).unwrap(), &[]).unwrap();
+        let scene = scene::build(&lang::parse(src).unwrap(), &[], &[]).unwrap();
         draw_svg(&scene, 0.0, 2.0)
     }
 

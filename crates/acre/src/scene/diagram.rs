@@ -1,4 +1,5 @@
 use super::Target;
+use super::connector::{self, Head};
 use super::primitive::{Color, Font, HAlign, Point, Primitive, Run, Stroke, VAlign};
 use crate::fonts::Fonts;
 
@@ -98,6 +99,41 @@ pub struct Ruler {
     pub side: Side,
     pub stroke: Stroke,
     pub label: Label,
+}
+
+/// A closed outline through `points`, filled inside.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Polygon {
+    pub points: Vec<Point>,
+    pub fill: Option<Color>,
+    pub stroke: Option<Stroke>,
+}
+
+/// An open path through `points`, with a head at either end.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Polyline {
+    pub points: Vec<Point>,
+    pub stroke: Stroke,
+    /// The head at the last point.
+    pub head: Head,
+    /// The head at the first point.
+    pub tail: Head,
+}
+
+impl Polygon {
+    pub fn draw(&self, out: &mut Vec<Primitive>) {
+        out.push(Primitive::Polygon {
+            points: self.points.clone(),
+            fill: self.fill,
+            stroke: self.stroke,
+        });
+    }
+}
+
+impl Polyline {
+    pub fn draw(&self, out: &mut Vec<Primitive>) {
+        connector::draw_shaft(&self.points, self.stroke, self.head, self.tail, out);
+    }
 }
 
 impl Shape {

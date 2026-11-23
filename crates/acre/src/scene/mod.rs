@@ -8,10 +8,12 @@
 mod build;
 pub mod code;
 mod connector;
+mod data;
 pub mod diagram;
 mod expand;
 pub mod grid;
 mod markup;
+pub mod matrix;
 pub mod plot;
 pub mod primitive;
 pub mod row;
@@ -22,8 +24,10 @@ pub mod track;
 pub use build::{FontFile, build, font_files};
 pub use code::Code;
 pub use connector::{Connector, End, Follow, Head, LabelSide, Route};
-pub use diagram::{Brace, Label, Ruler, Shape, Side, Text};
+pub use data::{DataFile, data_files};
+pub use diagram::{Brace, Label, Polygon, Polyline, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
+pub use matrix::{Matrix, MatrixCell};
 pub use plot::{Axis, Plot, Range, Series, SeriesKind, Tick};
 pub use primitive::{Color, Font, HAlign, Motion, Point, Primitive, Run, Stroke, VAlign};
 pub use row::{Row, RowCell};
@@ -65,6 +69,27 @@ pub struct Scene {
     pub objects: Vec<Object>,
     /// The fonts every text in the scene is set in.
     pub fonts: Fonts,
+    /// The labelled parts of the animation, in order of start.
+    pub sections: Vec<Section>,
+}
+
+/// A labelled part of an animation, which runs until the next one starts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section {
+    /// When the part starts, in seconds.
+    pub start: f64,
+    pub title: String,
+    /// The labelled parts of this one, in order of start.
+    pub subsections: Vec<Subsection>,
+}
+
+/// A labelled part of a section, which runs until the next subsection or
+/// section starts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Subsection {
+    /// When the part starts, in seconds.
+    pub start: f64,
+    pub title: String,
 }
 
 /// One thing on the canvas, with the properties every kind shares.
@@ -138,9 +163,12 @@ pub enum Kind {
     Grid(Grid),
     Plot(Plot),
     Shape(Shape),
+    Polygon(Polygon),
+    Polyline(Polyline),
     Connector(Connector),
     Text(Text),
     Row(Row),
+    Matrix(Matrix),
     Brace(Brace),
     Ruler(Ruler),
     Code(Code),
@@ -237,9 +265,12 @@ impl Kind {
             Kind::Grid(grid) => grid.draw(t, out),
             Kind::Plot(plot) => plot.draw(t, out),
             Kind::Shape(shape) => shape.draw(out),
+            Kind::Polygon(polygon) => polygon.draw(out),
+            Kind::Polyline(polyline) => polyline.draw(out),
             Kind::Connector(connector) => connector.draw(out),
             Kind::Text(text) => text.draw(out),
             Kind::Row(row) => row.draw(out),
+            Kind::Matrix(matrix) => matrix.draw(out),
             Kind::Brace(brace) => brace.draw(out),
             Kind::Ruler(ruler) => ruler.draw(out),
             Kind::Code(code) => code.draw(out),
@@ -265,6 +296,9 @@ impl Kind {
             (Kind::Shape(s), Part::Fill) => Ok(s.fill),
             (Kind::Shape(s), Part::Stroke) => stroke(&s.stroke),
             (Kind::Shape(s), Part::Text) => text(&s.label),
+            (Kind::Polygon(p), Part::Fill) => Ok(p.fill),
+            (Kind::Polygon(p), Part::Stroke) => stroke(&p.stroke),
+            (Kind::Polyline(p), Part::Stroke) => Ok(Some(p.stroke.color)),
             (Kind::Text(t), Part::Text) => Ok(t.label.runs.first().map(|r| r.color)),
             (Kind::Connector(c), Part::Stroke) => Ok(Some(c.stroke.color)),
             (Kind::Connector(c), Part::Text) => text(&c.label),
@@ -281,6 +315,9 @@ impl Kind {
                     Part::Text => text(&cell.label),
                 }
             }
+            (Kind::Matrix(m), Part::Fill) => Ok(m.fill),
+            (Kind::Matrix(m), Part::Stroke) => stroke(&m.stroke),
+            (Kind::Matrix(m), Part::Text) => Ok(m.text.runs.first().map(|r| r.color)),
             (Kind::Brace(b), Part::Stroke) => Ok(Some(b.stroke.color)),
             (Kind::Brace(b), Part::Text) => text(&b.label),
             (Kind::Ruler(r), Part::Stroke) => Ok(Some(r.stroke.color)),
@@ -310,6 +347,9 @@ impl Kind {
             (Kind::Shape(s), Part::Fill) => s.fill = Some(color),
             (Kind::Shape(s), Part::Stroke) => stroke(&mut s.stroke),
             (Kind::Shape(s), Part::Text) => s.label.iter_mut().for_each(text),
+            (Kind::Polygon(p), Part::Fill) => p.fill = Some(color),
+            (Kind::Polygon(p), Part::Stroke) => stroke(&mut p.stroke),
+            (Kind::Polyline(p), Part::Stroke) => p.stroke.color = color,
             (Kind::Text(t), Part::Text) => text(&mut t.label),
             (Kind::Connector(c), Part::Stroke) => c.stroke.color = color,
             (Kind::Connector(c), Part::Text) => c.label.iter_mut().for_each(text),
@@ -323,6 +363,9 @@ impl Kind {
                     Part::Text => cell.label.iter_mut().for_each(text),
                 }
             }
+            (Kind::Matrix(m), Part::Fill) => m.repaint_fill(color),
+            (Kind::Matrix(m), Part::Stroke) => m.repaint_stroke(color),
+            (Kind::Matrix(m), Part::Text) => m.repaint_text(color),
             (Kind::Brace(b), Part::Stroke) => b.stroke.color = color,
             (Kind::Brace(b), Part::Text) => b.label.iter_mut().for_each(text),
             (Kind::Ruler(r), Part::Stroke) => r.stroke.color = color,
@@ -441,6 +484,14 @@ impl Scene {
                     Some(f) => object.own_motion(t).then(self.motion_of(f, t)),
                     None => object.motion(t),
                 }
+            }
+            Kind::Matrix(
+                m @ Matrix {
+                    follow: Some(f), ..
+                },
+            ) => {
+                m.draw(out);
+                object.own_motion(t).then(self.motion_of(*f, t))
             }
             kind => {
                 kind.draw(t, out);
@@ -583,7 +634,7 @@ mod tests {
         let src = "canvas { size 100 100; font sans; \
                    text { at 0 0; text \"\u{10fffd} \u{221e} `\u{1d43}`\"; } \
                    box { at 0 20; size 50 20; text \"\u{10fffe} \u{10fffd}\"; } }";
-        let scene = build(&crate::lang::parse(src).unwrap(), &[]).unwrap();
+        let scene = build(&crate::lang::parse(src).unwrap(), &[], &[]).unwrap();
         assert_eq!(scene.missing_glyphs(), ['\u{10fffd}', '\u{10fffe}']);
     }
 
@@ -615,6 +666,7 @@ mod tests {
             canvas: canvas(),
             objects: vec![object],
             fonts: Fonts::default(),
+            sections: Vec::new(),
         };
         assert!(scene.draw(0.5).is_empty());
         assert_eq!(scene.draw(1.0).len(), 2);
@@ -667,6 +719,7 @@ mod tests {
             canvas: canvas(),
             objects: vec![target, Object::new(Kind::Connector(line))],
             fonts: Fonts::default(),
+            sections: Vec::new(),
         };
         let ends = |t: f64| match scene.draw(t)[1] {
             Primitive::Line { from, to, .. } => (from, to),
@@ -705,6 +758,7 @@ mod tests {
             canvas: canvas(),
             objects: vec![object],
             fonts: Fonts::default(),
+            sections: Vec::new(),
         };
         assert!(scene.draw(0.0).is_empty());
         let prims = scene.draw(0.5);

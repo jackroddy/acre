@@ -9,16 +9,28 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- The viewer reads the data files a drawing names with `data`. A path is
+  relative to the drawing's file. The viewer builds the drawing again when
+  one of them changes.
+- The time bar shows a drawing's sections. A line marks where each one starts,
+  and its title sits in its stretch of the bar, cut short when it does not
+  fit. A press or a drag on the bar goes to that time. A Sections toggle
+  beside Loop opens a left-hand panel that lists each section with its start,
+  marks the one playing, and goes to a section's start on a click. The panel
+  starts open. A short tick on the bar marks where each subsection starts, and
+  hovering the bar names the section and subsection under the pointer. In the
+  panel, a section with subsections has a fold arrow and starts folded.
+  Opened, it lists its subsections, marks the one playing, and goes to one's
+  start on a click.
 - The viewer prints a warning on stderr for each character in a drawing's
   text that no font has, whenever the set of those characters changes. The
   status bar shows the first of them.
 - A drawing with a `timeline` plays in the viewer. A bar under the render
   holds a Play and Pause button, a slider over the drawing's length, the time
   as `1.25 s / 5.00 s`, and a Loop toggle that starts on. Space plays and
-  pauses, Left and Right step one frame, and Home goes to 0, unless a text
-  field has focus. A file opens paused at 0. A reload keeps the time and
-  whether it plays, and cuts the time to the new length. A still drawing shows
-  no bar.
+  pauses, and Left and Right step one frame, unless a text field has focus. A
+  file opens paused at 0. A reload keeps the time and whether it plays, and
+  cuts the time to the new length. A still drawing shows no bar.
 - The viewer reads the font files a drawing lists in `fonts`, relative to the
   drawing's file, and builds the drawing again when one of them changes.
 - The `acre-gui` viewer. It renders a drawing and draws it again when the

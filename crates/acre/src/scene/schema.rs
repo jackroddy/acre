@@ -67,12 +67,12 @@ const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup")
 const SIDE: Property = prop("side", "top | bottom | left | right", "which way it faces");
 const FROM: Property = prop(
     "from",
-    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER]",
+    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER] | MATRIX R C [SIDE | CORNER]",
     "where it starts: a point, or the edge of a named thing; a SIDE is top, bottom, left or right and puts it at that side's middle, and a CORNER is top-left, top-right, bottom-left or bottom-right",
 );
 const TO: Property = prop(
     "to",
-    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER]",
+    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER] | MATRIX R C [SIDE | CORNER]",
     "where it ends",
 );
 const STYLE: Property = prop("style", "NAME...", "the styles whose properties it takes");
@@ -80,6 +80,12 @@ const ANCHOR: Property = prop(
     "anchor",
     "center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right",
     "the point of its box that stays put when a timeline scales it; the default is center",
+);
+
+const POINTS: Property = prop(
+    "points",
+    "X Y X Y ... | DATA XCOL YCOL",
+    "the points in turn, in the group's coordinates; or one per row of the `data` named DATA, X from column XCOL and Y from column YCOL",
 );
 
 const SHAPE: &[Property] = &[
@@ -163,8 +169,8 @@ const CONNECTOR: &[Property] = &[
 ];
 
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace", "ruler",
-    "group", "panel", "caption", "stack", "grid", "code",
+    "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "text", "math",
+    "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid", "code",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -196,9 +202,9 @@ pub const NODES: &[NodeKind] = &[
             ),
         ],
         children: &[
-            "box", "ellipse", "row", "line", "arrow", "text", "math", "marker", "table", "brace",
-            "ruler", "group", "panel", "caption", "stack", "grid", "code", "palette", "style",
-            "fonts", "timeline",
+            "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "text",
+            "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack",
+            "grid", "code", "palette", "style", "fonts", "data", "timeline",
         ],
     },
     NodeKind {
@@ -254,17 +260,90 @@ pub const NODES: &[NodeKind] = &[
         children: &["cell"],
     },
     NodeKind {
-        name: "cell",
-        about: "one more cell at the end of a row",
+        name: "matrix",
+        about: "a grid of equal cells, addressed by row and column from 0 as `NAME R C`",
         properties: &[
+            AT,
+            prop("rows", "N", "how many rows"),
+            prop("columns", "N", "how many columns"),
+            prop("unit", "W H", "the width and height of one cell"),
+            prop(
+                "row-numbers",
+                "FIRST STEP",
+                "a number left of each row, FIRST beside row 0 and growing by STEP",
+            ),
+            prop(
+                "column-numbers",
+                "FIRST STEP",
+                "a number above each column, FIRST over column 0 and growing by STEP",
+            ),
+            prop(
+                "cells",
+                "DATA RCOL CCOL TEXTCOL",
+                "text for cells from the `data` named DATA, one cell per row: row from column RCOL, column from column CCOL, and the text from column TEXTCOL",
+            ),
+            FILL,
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            TEXT_SIZE,
+            TEXT_COLOR,
+            FONT,
+            ANCHOR,
+            STYLE,
+        ],
+        children: &["cell"],
+    },
+    NodeKind {
+        name: "cell",
+        about: "one more cell at the end of a row, or the look of one cell of a matrix",
+        properties: &[
+            prop(
+                "at",
+                "R C",
+                "the row and column, from 0, of a matrix's cell; a later cell at one place overrides what an earlier one sets",
+            ),
             prop("text", "\"TEXT\"", "the cell's text"),
-            prop("note", "\"TEXT\"", "small text under the cell's text"),
-            prop("span", "N", "how many units it covers"),
+            prop(
+                "note",
+                "\"TEXT\"",
+                "small text under the cell's text, in a row",
+            ),
+            prop("span", "N", "how many units it covers, in a row"),
             FILL,
             STROKE,
             STROKE_WIDTH,
             DASH,
             TEXT_COLOR,
+            STYLE,
+        ],
+        children: &[],
+    },
+    NodeKind {
+        name: "polygon",
+        about: "a closed shape through its points, filled inside",
+        properties: &[POINTS, FILL, STROKE, STROKE_WIDTH, DASH, ANCHOR, STYLE],
+        children: &[],
+    },
+    NodeKind {
+        name: "polyline",
+        about: "an open path through its points",
+        properties: &[
+            POINTS,
+            STROKE,
+            STROKE_WIDTH,
+            DASH,
+            prop(
+                "head",
+                "none | triangle | open | dot",
+                "what it draws at the last point",
+            ),
+            prop(
+                "tail",
+                "none | triangle | open | dot",
+                "what it draws at the first point",
+            ),
+            ANCHOR,
             STYLE,
         ],
         children: &[],
@@ -384,8 +463,8 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "over",
-                "NAME... | ROW [N [M]]...",
-                "the things, rows or runs of cells it brackets; with more than one, it spans the box around them all and follows the first",
+                "NAME... | ROW [N [M]]... | MATRIX R C...",
+                "the things, rows, runs of cells or matrix cells it brackets; with more than one, it spans the box around them all and follows the first",
             ),
             prop("from", "X Y", "where it starts, without `over`"),
             prop("to", "X Y", "where it ends, without `over`"),
@@ -605,6 +684,16 @@ pub const NODES: &[NodeKind] = &[
         children: &[],
     },
     NodeKind {
+        name: "data",
+        about: "a table of numbers from a file, which `points` takes columns of; it draws nothing",
+        properties: &[prop(
+            "file",
+            "\"PATH\"",
+            "the file, relative to the drawing's file: `.tsv` for tabs between cells, `.csv` for commas; its first line names the columns",
+        )],
+        children: &[],
+    },
+    NodeKind {
         name: "timeline",
         about: "what happens to named nodes, and when; it holds entries, each an instant `Ts { ACTION...; }` \
                 or a span `Ts to Ts [ease linear | in | out | in-out] { ACTION...; }`; a span eases in-out \
@@ -612,8 +701,19 @@ pub const NODES: &[NodeKind] = &[
                 thing from where it stands to its value, and two actions may not change one thing at once; \
                 a NAME may be a group, panel, stack or grid, which moves, scales and fades as one with \
                 everything inside it, and `ROW N` is one cell of a row, which moves, scales and fades on its \
-                own and draws above the cells that do not move",
+                own and draws above the cells that do not move; a matrix changes as one, never by cell; `section` and `subsection` lines sit in the timeline itself, \
+                between its entries",
         properties: &[
+            prop(
+                "section",
+                "Ts \"TITLE\"",
+                "start a part of the animation named TITLE at time T, which runs until the next section starts; the viewer labels each part on its time bar",
+            ),
+            prop(
+                "subsection",
+                "Ts \"TITLE\"",
+                "start a part of the latest section before T, named TITLE, which runs until the next subsection or section starts",
+            ),
             prop(
                 "scale",
                 "NAME F | ROW N F",

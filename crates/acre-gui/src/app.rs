@@ -3,11 +3,15 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use acre::lang;
-use acre::scene::{self, Scene};
-use eframe::egui::{self, Color32, Key, Modifiers, Vec2, ViewportCommand};
+use acre::scene::{self, Scene, Section};
+use eframe::egui::collapsing_header::CollapsingState;
+use eframe::egui::text::{LayoutJob, TextWrapping};
+use eframe::egui::{
+    self, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2, ViewportCommand,
+};
 
 use crate::link::{Incoming, Link, Outgoing};
-use crate::playback::Playback;
+use crate::playback::{self, Playback};
 use crate::recent::Recent;
 use crate::view::View;
 
@@ -24,9 +28,9 @@ pub struct App {
     /// When the watched file last changed, as the disk reports it.
     modified: Option<SystemTime>,
     last_check: Instant,
-    /// The font files the last source listed, with when each last
-    /// changed on disk. A change reloads the source.
-    fonts: Vec<(PathBuf, Option<SystemTime>)>,
+    /// The font and data files the last source listed, with when each
+    /// last changed on disk. A change reloads the source.
+    files: Vec<(PathBuf, Option<SystemTime>)>,
     /// The editor that sends the source, when acre-gui runs with
     /// `--stdio`. acre-gui then watches no file.
     link: Option<Link>,
@@ -40,6 +44,8 @@ pub struct App {
     reported: bool,
     view: View,
     playback: Playback,
+    /// Whether the panel that lists the scene's sections is open.
+    sections_open: bool,
     /// The time drawn this frame.
     time: f64,
     /// The render pane's size at the last frame.
@@ -65,7 +71,7 @@ impl App {
             text: String::new(),
             modified: None,
             last_check: Instant::now(),
-            fonts: Vec::new(),
+            files: Vec::new(),
             link,
             error: None,
             scene: None,
@@ -73,6 +79,7 @@ impl App {
             reported: false,
             view: View::new(),
             playback: Playback::new(),
+            sections_open: true,
             time: 0.0,
             pane: Vec2::ZERO,
             cursor: None,
@@ -136,32 +143,40 @@ impl App {
         self.reported = false;
     }
 
-    /// The scene `program` describes, with the font files it lists read
-    /// from the folder of the source's file.
+    /// The scene `program` describes, with the font and data files it
+    /// lists read from the folder of the source's file.
     fn build(&mut self, program: &lang::Program) -> Result<Scene, lang::Error> {
-        let files = scene::font_files(program)?;
-        let dir = self.path.as_deref().and_then(Path::parent);
-        self.fonts = files
+        let fonts = scene::font_files(program)?;
+        let data = scene::data_files(program)?;
+        let listed: Vec<(&str, &str, lang::Span)> = fonts
             .iter()
-            .map(|f| {
-                let path = dir.map_or(PathBuf::from(&f.path), |d| d.join(&f.path));
+            .map(|f| ("font", f.path.as_str(), f.span))
+            .chain(data.iter().map(|d| ("data file", d.path.as_str(), d.span)))
+            .collect();
+        let dir = self.path.as_deref().and_then(Path::parent);
+        self.files = listed
+            .iter()
+            .map(|(_, path, _)| {
+                let path = dir.map_or(PathBuf::from(path), |d| d.join(path));
                 let changed = modified(&path);
                 (path, changed)
             })
             .collect();
         let mut bytes = Vec::new();
-        for (file, (path, _)) in files.iter().zip(&self.fonts) {
+        for ((what, written, span), (path, _)) in listed.iter().zip(&self.files) {
             let read = fs::read(path).map_err(|e| {
-                lang::Error::new(file.span, format!("cannot read font {}: {e}", file.path))
+                lang::Error::new(*span, format!("cannot read {what} {written}: {e}"))
             })?;
             bytes.push(read);
         }
-        scene::build(program, &bytes)
+        let data_bytes = bytes.split_off(fonts.len());
+        scene::build(program, &bytes, &data_bytes)
     }
 
-    /// Build the source again if a font file it lists changed on disk.
-    fn check_fonts(&mut self) {
-        if self.fonts.iter().any(|(path, at)| modified(path) != *at) {
+    /// Build the source again if a font or data file it lists changed on
+    /// disk.
+    fn check_files(&mut self) {
+        if self.files.iter().any(|(path, at)| modified(path) != *at) {
             self.show(self.text.clone());
         }
     }
@@ -321,22 +336,21 @@ impl App {
         });
     }
 
-    /// Space plays and pauses, Left and Right step a frame, and Home
-    /// goes to the start, unless a text field has the keys.
+    /// Space plays and pauses, and Left and Right step a frame, unless a
+    /// text field has the keys.
     fn keys(&mut self, ctx: &egui::Context) {
         let Some(scene) = &self.scene else { return };
         if self.playback.duration() <= 0.0 || ctx.text_edit_focused() {
             return;
         }
 
-        // consumed before the bar is laid out, so a focused button or
-        // slider does not take the same press
-        let (space, left, right, home) = ctx.input_mut(|i| {
+        // consumed before the bar is laid out, so a focused button does
+        // not take the same press
+        let (space, left, right) = ctx.input_mut(|i| {
             (
                 i.count_and_consume_key(Modifiers::NONE, Key::Space),
                 i.count_and_consume_key(Modifiers::NONE, Key::ArrowLeft),
                 i.count_and_consume_key(Modifiers::NONE, Key::ArrowRight),
-                i.count_and_consume_key(Modifiers::NONE, Key::Home),
             )
         });
         let now = Instant::now();
@@ -346,9 +360,6 @@ impl App {
         let frames = right as i64 - left as i64;
         if frames != 0 {
             self.playback.step(now, frames, scene.canvas.fps);
-        }
-        if home > 0 {
-            self.playback.seek(now, 0.0);
         }
     }
 
@@ -366,22 +377,67 @@ impl App {
                 self.playback.toggle(now);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let sections = self.scene.as_ref().map_or(&[][..], |s| &s.sections);
+                if !sections.is_empty() {
+                    ui.toggle_value(&mut self.sections_open, "Sections");
+                }
                 let mut looping = self.playback.looping();
                 if ui.toggle_value(&mut looping, "Loop").changed() {
                     self.playback.set_looping(now, looping);
                 }
                 ui.label(format!("{:.2} s / {duration:.2} s", self.time));
-
-                // the slider fills what the other controls leave
-                ui.spacing_mut().slider_width = ui.available_width();
-                let mut t = self.time;
-                let slider = egui::Slider::new(&mut t, 0.0..=duration).show_value(false);
-                if ui.add(slider).changed() {
+                if let Some(t) = time_bar(ui, sections, duration, self.time) {
                     self.playback.seek(now, t);
                 }
             });
         });
         self.time = self.playback.time(now);
+    }
+
+    /// The scene's sections, each with its start, the current one
+    /// marked. Clicking one goes to its start.
+    fn sections(&mut self, ui: &mut egui::Ui) {
+        let Some(scene) = &self.scene else { return };
+        let current = playback::current(&scene.sections, self.time);
+        let mut chosen = None;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for (i, section) in scene.sections.iter().enumerate() {
+                let here = current == Some(i);
+                let text = format!("{:.2} s  {}", section.start, section.title);
+                if section.subsections.is_empty() {
+                    ui.horizontal(|ui| {
+                        // the width of a fold arrow, so titles line up
+                        ui.add_space(ui.spacing().indent);
+                        if ui.selectable_label(here, text).clicked() {
+                            chosen = Some(section.start);
+                        }
+                    });
+                    continue;
+                }
+
+                // keyed by title, so a section stays open or folded
+                // when an edit moves its start
+                let id = ui.make_persistent_id(("section", &section.title));
+                let sub = playback::current_subsection(section, self.time).filter(|_| here);
+                CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                    .show_header(ui, |ui| {
+                        if ui.selectable_label(here, text).clicked() {
+                            chosen = Some(section.start);
+                        }
+                    })
+                    .body(|ui| {
+                        for (j, s) in section.subsections.iter().enumerate() {
+                            let text = format!("{:.2} s  {}", s.start, s.title);
+                            if ui.selectable_label(sub == Some(j), text).clicked() {
+                                chosen = Some(s.start);
+                            }
+                        }
+                    });
+            }
+        });
+        if let Some(t) = chosen {
+            self.playback.seek(Instant::now(), t);
+        }
     }
 
     fn status(&self, ui: &mut egui::Ui) {
@@ -427,7 +483,7 @@ impl eframe::App for App {
         }
         if self.last_check.elapsed() >= DISK_CHECK {
             self.last_check = Instant::now();
-            self.check_fonts();
+            self.check_files();
             if self.link.is_none() {
                 self.check_disk();
             }
@@ -451,6 +507,10 @@ impl eframe::App for App {
         if self.playback.duration() > 0.0 {
             egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));
         }
+        let has_sections = self.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
+        if self.sections_open && has_sections {
+            egui::Panel::left("sections").show(ui, |ui| self.sections(ui));
+        }
         if self.playback.playing() {
             ui.ctx().request_repaint();
         }
@@ -468,6 +528,81 @@ impl eframe::App for App {
                 }
             });
     }
+}
+
+/// Draw the bar that scrubs over `0..=duration`, divided into
+/// `sections`, with the playhead at `time`. Returns the time the pointer
+/// presses or drags to.
+fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -> Option<f64> {
+    let size = Vec2::new(ui.available_width(), ui.spacing().interact_size.y * 1.4);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
+    let x = |t: f64| rect.left() + (t / duration) as f32 * rect.width();
+    let painter = ui.painter_at(rect);
+    let visuals = ui.visuals();
+    painter.rect_filled(rect, 3.0, visuals.extreme_bg_color);
+    let played = Rect::from_min_max(rect.min, Pos2::new(x(time), rect.max.y));
+    painter.rect_filled(played, 3.0, visuals.selection.bg_fill.gamma_multiply(0.5));
+
+    let font = TextStyle::Small.resolve(ui.style());
+    let current = playback::current(sections, time);
+    for (i, section) in sections.iter().enumerate() {
+        let left = x(section.start);
+        let right = sections.get(i + 1).map_or(rect.right(), |s| x(s.start));
+        if section.start > 0.0 {
+            painter.vline(
+                left,
+                rect.y_range(),
+                visuals.widgets.noninteractive.bg_stroke,
+            );
+        }
+        let color = if current == Some(i) {
+            visuals.strong_text_color()
+        } else {
+            visuals.weak_text_color()
+        };
+        let tick = (rect.bottom() - rect.height() * 0.3)..=rect.bottom();
+        for s in section
+            .subsections
+            .iter()
+            .filter(|s| s.start > section.start)
+        {
+            painter.vline(
+                x(s.start),
+                tick.clone(),
+                visuals.widgets.noninteractive.bg_stroke,
+            );
+        }
+        let mut job = LayoutJob::simple_singleline(section.title.clone(), font.clone(), color);
+        job.wrap = TextWrapping::truncate_at_width(right - left - 8.0);
+        let galley = painter.layout_job(job);
+        let at = Pos2::new(
+            (left + right - galley.size().x) / 2.0,
+            rect.center().y - galley.size().y / 2.0,
+        );
+        painter.galley(at, galley, color);
+    }
+    painter.vline(
+        x(time),
+        rect.y_range(),
+        Stroke::new(2.0, visuals.strong_text_color()),
+    );
+
+    let time_at = |p: Pos2| ((p.x - rect.left()) / rect.width()) as f64 * duration;
+    if rect.width() <= 0.0 {
+        return None;
+    }
+    let pressed = response.interact_pointer_pos().map(time_at);
+    if let Some(t) = response.hover_pos().map(time_at)
+        && let Some(i) = playback::current(sections, t)
+    {
+        let section = &sections[i];
+        let place = match playback::current_subsection(section, t) {
+            Some(j) => format!("{} › {}", section.title, section.subsections[j].title),
+            None => section.title.clone(),
+        };
+        response.on_hover_text_at_pointer(place);
+    }
+    pressed
 }
 
 /// When the file at `path` last changed, or `None` when the disk cannot

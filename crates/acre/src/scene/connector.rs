@@ -194,38 +194,7 @@ impl Connector {
         if path.len() < 2 {
             return;
         }
-        let len: f64 = path.windows(2).map(|w| length(w[1] - w[0])).sum();
-        let heads = [self.head, self.tail]
-            .iter()
-            .filter(|h| **h != Head::None)
-            .count();
-        let avail = len / heads.max(1) as f64;
-
-        let [first, second] = [path[0], path[1]];
-        let [prev, last] = [path[path.len() - 2], path[path.len() - 1]];
-        let end_dir = (last - prev) * (1.0 / length(last - prev));
-        let start_dir = (first - second) * (1.0 / length(first - second));
-
-        let mut shaft = path.clone();
-        shorten_end(&mut shaft, cut(self.head, self.stroke, avail));
-        shaft.reverse();
-        shorten_end(&mut shaft, cut(self.tail, self.stroke, avail));
-        shaft.reverse();
-        if let [from, to] = shaft[..] {
-            out.push(Primitive::Line {
-                from,
-                to,
-                stroke: self.stroke,
-            });
-        } else {
-            out.push(Primitive::Polyline {
-                points: shaft,
-                stroke: self.stroke,
-            });
-        }
-        draw_head(self.head, last, end_dir, self.stroke, avail, out);
-        draw_head(self.tail, first, start_dir, self.stroke, avail, out);
-
+        draw_shaft(&path, self.stroke, self.head, self.tail, out);
         if let Some(label) = &self.label {
             let (at, along) = point_at(&path, self.label_at);
             out.push(self.place_label(label, at, along));
@@ -378,6 +347,44 @@ fn bend_halfway(a: Point, b: Point, horizontal: bool) -> Vec<Point> {
         a.y + (b.y - a.y) / 2.0
     };
     bend(a, b, horizontal, turn)
+}
+
+/// Draw `path`, with no point repeated in a row, with `head` at its last
+/// point and `tail` at its first, or nothing for fewer than two points.
+pub(super) fn draw_shaft(
+    path: &[Point],
+    stroke: Stroke,
+    head: Head,
+    tail: Head,
+    out: &mut Vec<Primitive>,
+) {
+    if path.len() < 2 {
+        return;
+    }
+    let len: f64 = path.windows(2).map(|w| length(w[1] - w[0])).sum();
+    let heads = [head, tail].iter().filter(|h| **h != Head::None).count();
+    let avail = len / heads.max(1) as f64;
+
+    let [first, second] = [path[0], path[1]];
+    let [prev, last] = [path[path.len() - 2], path[path.len() - 1]];
+    let end_dir = (last - prev) * (1.0 / length(last - prev));
+    let start_dir = (first - second) * (1.0 / length(first - second));
+
+    let mut shaft = path.to_vec();
+    shorten_end(&mut shaft, cut(head, stroke, avail));
+    shaft.reverse();
+    shorten_end(&mut shaft, cut(tail, stroke, avail));
+    shaft.reverse();
+    if let [from, to] = shaft[..] {
+        out.push(Primitive::Line { from, to, stroke });
+    } else {
+        out.push(Primitive::Polyline {
+            points: shaft,
+            stroke,
+        });
+    }
+    draw_head(head, last, end_dir, stroke, avail, out);
+    draw_head(tail, first, start_dir, stroke, avail, out);
 }
 
 /// The distance a head takes off the end of the shaft.

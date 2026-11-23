@@ -501,6 +501,7 @@ mod tests {
             },
             objects: Vec::new(),
             fonts: Fonts::default(),
+            sections: Vec::new(),
         };
         let pixmap = draw_view(&scene, 0.0, 40, 40, 2.0, Point::new(5.0, 5.0));
         let red = |x, y| pixmap.pixel(x, y).unwrap().red() == 255;
@@ -558,6 +559,7 @@ mod tests {
             },
             objects: Vec::new(),
             fonts: Fonts::default(),
+            sections: Vec::new(),
         };
         let pixmap = draw_frame(&scene, 0.0, 1.0);
         assert_eq!((pixmap.width(), pixmap.height()), (12, 7));

@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use acre::scene::Section;
+
 /// The time in a scene that the viewer shows, and whether it is playing.
 pub struct Playback {
     /// The scene's length in seconds.
@@ -125,9 +127,23 @@ impl Playback {
     }
 }
 
+/// The index of the section that holds time `t`, or `None` before the
+/// first one starts.
+pub fn current(sections: &[Section], t: f64) -> Option<usize> {
+    sections.iter().rposition(|s| s.start <= t)
+}
+
+/// The index of the subsection of `section` that holds time `t`, or
+/// `None` before its first one starts.
+pub fn current_subsection(section: &Section, t: f64) -> Option<usize> {
+    section.subsections.iter().rposition(|s| s.start <= t)
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
+    use acre::scene::Subsection;
 
     use super::*;
 
@@ -258,5 +274,42 @@ mod tests {
         assert_eq!(p.time(now + secs(2.0)), 0.0);
         p.play(now);
         assert!(!p.playing());
+    }
+
+    fn sections(starts: &[f64]) -> Vec<Section> {
+        starts
+            .iter()
+            .map(|&start| Section {
+                start,
+                title: String::new(),
+                subsections: Vec::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_current_section_is_the_last_to_start() {
+        let s = sections(&[1.0, 3.0]);
+        assert_eq!(current(&s, 0.5), None);
+        assert_eq!(current(&s, 1.0), Some(0));
+        assert_eq!(current(&s, 2.9), Some(0));
+        assert_eq!(current(&s, 4.0), Some(1));
+    }
+
+    #[test]
+    fn the_current_subsection_is_the_last_to_start() {
+        let section = Section {
+            start: 1.0,
+            title: String::new(),
+            subsections: [1.5, 2.0]
+                .map(|start| Subsection {
+                    start,
+                    title: String::new(),
+                })
+                .to_vec(),
+        };
+        assert_eq!(current_subsection(&section, 1.2), None);
+        assert_eq!(current_subsection(&section, 1.5), Some(0));
+        assert_eq!(current_subsection(&section, 9.0), Some(1));
     }
 }

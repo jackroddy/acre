@@ -247,7 +247,7 @@ mod tests {
         let src = "canvas { size 64 48; duration 1s; box a { at 4 4; size 20 20; } \
                    timeline { 0s to 1s { move a 30 0; } } }";
         let program = acre::lang::parse(src).unwrap();
-        let scene = acre::scene::build(&program, &[]).unwrap();
+        let scene = acre::scene::build(&program, &[], &[]).unwrap();
         let count = frame_count(scene.canvas.duration, 8);
         assert_eq!(count, 9);
         let run = |jobs| {

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use super::primitive::{self, Color, Point};
 use super::track::{Easing, Keyframe, Lerp, Track};
-use super::{Animation, Kind, Object, Paint, Part};
+use super::{Animation, Kind, Object, Paint, Part, Section, Subsection};
 use crate::fonts::Fonts;
 use crate::lang::{Error, Node, Property, Span, Value, ValueKind};
 
@@ -94,10 +94,14 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
     if let Some(name) = &timeline.name {
         return Err(Error::new(name.span, "`timeline` takes no name"));
     }
-    if let Some(p) = timeline.properties.first() {
+    if let Some(p) = timeline
+        .properties
+        .iter()
+        .find(|p| !matches!(p.key.text.as_str(), "section" | "subsection"))
+    {
         return Err(Error::new(
             p.key.span,
-            "a `timeline` holds entries such as `1s to 2s { ... }`, not properties",
+            "a `timeline` holds entries such as `1s to 2s { ... }` and `section` and `subsection` lines, not other properties",
         ));
     }
 
@@ -167,6 +171,90 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
         }
     }
     Ok(last)
+}
+
+/// The sections of the canvas's `timeline`, in order of start, each with
+/// its subsections, in an animation `duration` seconds long.
+pub(super) fn sections(canvas: &Node, duration: f64) -> Result<Vec<Section>, Error> {
+    let Some(timeline) = canvas.children.iter().find(|n| n.kind.text == "timeline") else {
+        return Ok(Vec::new());
+    };
+    let mut sections = Vec::new();
+    let mut subsections = Vec::new();
+    for p in &timeline.properties {
+        let mark = mark(p, duration)?;
+        if p.key.text == "section" {
+            sections.push(mark);
+        } else {
+            subsections.push(mark);
+        }
+    }
+    let mut out: Vec<Section> = in_order(sections, "section")?
+        .into_iter()
+        .map(|(start, title, _)| Section {
+            start,
+            title,
+            subsections: Vec::new(),
+        })
+        .collect();
+    for (start, title, span) in in_order(subsections, "subsection")? {
+        let Some(section) = out.iter_mut().rfind(|s| s.start <= start) else {
+            return Err(Error::new(
+                span,
+                format!("this subsection starts at {start}s, before the first section"),
+            ));
+        };
+        section.subsections.push(Subsection { start, title });
+    }
+    Ok(out)
+}
+
+/// A `section` or `subsection` line: its start, its title, and where it
+/// is in the source.
+type Mark = (f64, String, Span);
+
+fn mark(p: &Property, duration: f64) -> Result<Mark, Error> {
+    let key = &p.key.text;
+    let (start, title) = match p.values.as_slice() {
+        [
+            Value {
+                kind: ValueKind::Time(t),
+                ..
+            },
+            Value {
+                kind: ValueKind::Str(s),
+                ..
+            },
+        ] if *t >= 0.0 => (*t, s.clone()),
+        _ => {
+            return Err(Error::new(
+                p.span,
+                format!("`{key}` takes a start and a title, such as `{key} 4s \"The types\"`"),
+            ));
+        }
+    };
+    if start >= duration {
+        return Err(Error::new(
+            p.span,
+            format!("this {key} starts at {start}s, and the animation ends at {duration}s"),
+        ));
+    }
+    Ok((start, title, p.span))
+}
+
+/// `marks` in order of start, or an error when two of them start at one
+/// time.
+fn in_order(mut marks: Vec<Mark>, key: &str) -> Result<Vec<Mark>, Error> {
+    // stable, so of two marks at one time the later in the source is
+    // the one the error names
+    marks.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if let Some(pair) = marks.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(Error::new(
+            pair[1].2,
+            format!("two {key}s start at {}s", pair[1].0),
+        ));
+    }
+    Ok(marks)
 }
 
 /// A group, panel, stack or grid that a timeline changes.
@@ -397,7 +485,7 @@ fn named<'a>(
                     "a `timeline` goes in the canvas",
                 ));
             }
-            "palette" | "style" | "fonts" | "timeline" => continue,
+            "palette" | "style" | "fonts" | "data" | "timeline" => continue,
             _ => {}
         }
         if let Some(name) = &node.name {
@@ -490,6 +578,18 @@ fn target<'p>(
         }
         None => return Err(Error::new(first.span, format!("no node is named `{name}`"))),
     };
+    if node.kind.text == "matrix"
+        && let Some(Value {
+            kind: ValueKind::Number(_),
+            span,
+        }) = rest.first()
+        && arity(p).is_some_and(|a| rest.len() > a)
+    {
+        return Err(Error::new(
+            *span,
+            format!("a timeline changes matrix `{name}` as one, not one of its cells"),
+        ));
+    }
     // a row's name with one value more than the action takes names a
     // cell, so `move r 3 0 40` moves cell 3 and `move r 0 40` the row
     match rest.split_first() {
@@ -680,7 +780,7 @@ mod tests {
             let (l, c) = e.line_col(&src);
             (l, c, e.message)
         })?;
-        build(&program, &[]).map_err(|e| {
+        build(&program, &[], &[]).map_err(|e| {
             let (l, c) = e.line_col(&src);
             (l, c, e.message)
         })
@@ -688,7 +788,7 @@ mod tests {
 
     fn canvas(body: &str) -> Scene {
         let src = format!("canvas {{ size 600 400; {body} }}");
-        build(&parse(&src).unwrap(), &[]).unwrap()
+        build(&parse(&src).unwrap(), &[], &[]).unwrap()
     }
 
     fn origins(s: &Scene, i: usize, t: f64) -> Vec<Point> {
@@ -973,6 +1073,37 @@ mod tests {
     }
 
     #[test]
+    fn a_polygon_moves_scales_about_its_anchor_and_changes_fill() {
+        let s = canvas(
+            "polygon p { points 0 0 100 0 100 40; anchor top-left; stroke none; }
+             arrow { from 300 20; to p right; }
+             timeline { 0s to 1s ease linear { scale p 2; fill p #000000; }
+                        1s to 2s { move p 0 100; } }",
+        );
+        let points = |t: f64| {
+            let mut prims = Vec::new();
+            s.draw_object(&s.objects[0], t, &mut prims);
+            match prims.remove(0) {
+                Primitive::Polygon { points, fill, .. } => (points, fill),
+                other => panic!("expected a polygon, got {other:?}"),
+            }
+        };
+        let (at_one, fill) = points(1.0);
+        assert_eq!(at_one[2], Point::new(200.0, 80.0));
+        assert_eq!(fill, Some(Color::BLACK));
+        assert_eq!(points(0.5).1, Some(Color::rgb(0.5, 0.5, 0.5)));
+        assert_eq!(points(2.0).0[0], Point::new(0.0, 100.0));
+        // the arrow ends on the right side of the box around p, which
+        // doubles from its top-left and then drops 100
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[1], 2.0, &mut prims);
+        let Primitive::Polygon { points, .. } = &prims[1] else {
+            panic!("expected the head")
+        };
+        assert_eq!(points[0], Point::new(200.0, 140.0));
+    }
+
+    #[test]
     fn a_move_inside_a_moving_group_adds_to_it() {
         let s = canvas(
             "panel p { at 0 0; box a { at 0 0; size 40 20; } }
@@ -1127,6 +1258,129 @@ mod tests {
         assert_eq!(
             err("timeline { 0s to 1s { move r 1 0 10; } 0.5s to 2s { move r 1 0 0; } }"),
             "this changes `r 1` while another action from 0s to 1s does"
+        );
+    }
+
+    #[test]
+    fn a_matrix_moves_fades_and_changes_color_as_one() {
+        let s = canvas(
+            "matrix m { at 0 0; rows 2; columns 2; unit 10 10; text-color #000000;
+                cell { at 1 1; text \"x\"; stroke #0000ff; } }
+             timeline { 0s to 1s ease linear { move m 20 0; fade m 0.5; }
+                1s { fill m #ff0000; stroke m #00ff00; text-color m #ffffff; } }",
+        );
+        assert_eq!(origins(&s, 0, 0.0)[0], Point::new(0.0, 0.0));
+        assert_eq!(origins(&s, 0, 0.5)[0], Point::new(10.0, 0.0));
+        assert_eq!(object(&s, 0).opacity.at(1.0), 0.5);
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[0], 1.0, &mut prims);
+        let red = Color::rgba(1.0, 0.0, 0.0, 0.5);
+        let green = Color::rgba(0.0, 1.0, 0.0, 0.5);
+        for prim in &prims {
+            match prim {
+                Primitive::Rect { fill, stroke, .. } => {
+                    assert_eq!(*fill, Some(red));
+                    assert_eq!(stroke.unwrap().color, green);
+                }
+                Primitive::Text { runs, .. } => {
+                    assert_eq!(runs[0].color, Color::rgba(1.0, 1.0, 1.0, 0.5));
+                }
+                other => panic!("expected a rect or a text, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_timeline_action_on_one_cell_of_a_matrix_is_an_error() {
+        let src = "matrix m { at 0 0; rows 2; columns 2; unit 10 10; }";
+        let err = |timeline: &str| scene(&format!("{src} {timeline}")).unwrap_err().2;
+        let one = "a timeline changes matrix `m` as one, not one of its cells";
+        assert_eq!(err("timeline { 0s { fill m 1 1 #ff0000; } }"), one);
+        assert_eq!(err("timeline { 0s to 1s { move m 1 1 0 10; } }"), one);
+        assert_eq!(err("timeline { 0s { show m 0 0; } }"), one);
+    }
+
+    #[test]
+    fn sections_come_in_order_of_start() {
+        let s = scene(
+            "timeline { section 2s \"later\"; section 0s \"first\"; 0s to 4s { scale a 2; } }",
+        )
+        .unwrap();
+        let sections: Vec<(f64, &str)> = s
+            .sections
+            .iter()
+            .map(|x| (x.start, x.title.as_str()))
+            .collect();
+        assert_eq!(sections, [(0.0, "first"), (2.0, "later")]);
+        assert!(
+            scene("timeline { 0s to 1s { scale a 2; } }")
+                .unwrap()
+                .sections
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_section_starts_once_and_before_the_end() {
+        assert_eq!(
+            err("timeline { section 1s \"a\"; section 1s \"b\"; 0s to 2s { scale a 2; } }"),
+            "two sections start at 1s"
+        );
+        assert_eq!(
+            err("timeline { section 2s \"a\"; 0s to 2s { scale a 2; } }"),
+            "this section starts at 2s, and the animation ends at 2s"
+        );
+        assert_eq!(
+            err("timeline { section \"a\" 1s; 0s to 2s { scale a 2; } }"),
+            "`section` takes a start and a title, such as `section 4s \"The types\"`"
+        );
+        assert_eq!(
+            err("timeline { scale a 2; }"),
+            "a `timeline` holds entries such as `1s to 2s { ... }` and `section` and `subsection` lines, not other properties"
+        );
+    }
+
+    #[test]
+    fn a_subsection_belongs_to_the_latest_section_before_it() {
+        let s = scene(
+            "timeline {
+                section 0s \"one\";
+                subsection 2s \"one b\";
+                subsection 0s \"one a\";
+                section 3s \"two\";
+                subsection 3.5s \"two a\";
+                0s to 4s { scale a 2; }
+            }",
+        )
+        .unwrap();
+        let titles: Vec<Vec<&str>> = s
+            .sections
+            .iter()
+            .map(|x| x.subsections.iter().map(|y| y.title.as_str()).collect())
+            .collect();
+        assert_eq!(titles, [vec!["one a", "one b"], vec!["two a"]]);
+        assert_eq!(s.sections[0].subsections[1].start, 2.0);
+    }
+
+    #[test]
+    fn a_subsection_comes_after_a_section_once_and_before_the_end() {
+        assert_eq!(
+            err("timeline { section 1s \"a\"; subsection 0.5s \"b\"; 0s to 2s { scale a 2; } }"),
+            "this subsection starts at 0.5s, before the first section"
+        );
+        assert_eq!(
+            err(
+                "timeline { section 0s \"a\"; subsection 1s \"b\"; subsection 1s \"c\"; 0s to 2s { scale a 2; } }"
+            ),
+            "two subsections start at 1s"
+        );
+        assert_eq!(
+            err("timeline { section 0s \"a\"; subsection 3s \"b\"; 0s to 2s { scale a 2; } }"),
+            "this subsection starts at 3s, and the animation ends at 2s"
+        );
+        assert_eq!(
+            err("timeline { section 0s \"a\"; subsection 1s; 0s to 2s { scale a 2; } }"),
+            "`subsection` takes a start and a title, such as `subsection 4s \"The types\"`"
         );
     }
 }
