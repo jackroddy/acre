@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-23T18:53:39.342412196Z",
+  "updated_at": "2026-11-23T18:59:32.043822048Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -203,6 +203,14 @@
       "at": "2026-11-23T18:53:39.342404156Z",
       "author": "Jack Roddy/0c799e42",
       "text": "acre-d7d2bf adds two node kinds, not yet committed. `polygon NAME { points X Y X Y ...; }` draws a closed shape through its points, and takes `fill`, `stroke`, `stroke-width` and `dash` as `box` does. `polyline NAME { points X Y X Y ...; }` draws an open path through its points, and takes `head` and `tail` as `line` does. `points` is a flat list of numbers read in pairs, in pixels from the origin of the group the node sits in. Any number in it may be a `let` name or a `( ... )` expression. Neither kind takes `at`. A polygon needs at least three points and a polyline two. Whether `points` takes cell coordinates and a scale is still open, and goes with the data-file issue acre-4d72e1.",
+      "commit": "b009f84",
+      "branch": "dev"
+    },
+    {
+      "id": "c9f4ff90",
+      "at": "2026-11-23T18:59:32.043819928Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "A canvas child `data NAME { file \"PATH\"; }` names a data file for acre-4d72e1. PATH is relative to the drawing's file. A `.tsv` extension means tabs between cells and `.csv` means commas. The first line names the columns. `points DATA XCOL YCOL;` on a `polygon` or a `polyline` takes one point per row, with X from column XCOL and Y from column YCOL. When the first value of `points` is a word, acre reads it as a data name. Column names follow as words rather than `DATA.COL`, because a dot ends a word in the lexer. A `data` node draws nothing.",
       "commit": "b009f84",
       "branch": "dev"
     }
