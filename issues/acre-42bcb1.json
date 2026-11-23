@@ -1,0 +1,28 @@
+{
+  "id": "acre-42bcb1",
+  "title": "A child hidden by a timeline gives up its space in a stack",
+  "body": "A `stack` lays out every child, including one a timeline hides until later. In section 11 of `figures/sufr-build.acre` a code block sits below bullets that have not appeared yet, with a gap above it. Layout happens once and a timeline changes only drawing, so the proposal needs a decision: either a stack reflows over time, or a node opts out of layout until it shows.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-23T19:55:32.935565709Z",
+  "updated_at": "2026-11-23T19:55:32.935565709Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "023610e",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
