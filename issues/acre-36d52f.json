@@ -1,0 +1,28 @@
+{
+  "id": "acre-36d52f",
+  "title": "A timeline changes the text of a node",
+  "body": "A timeline changes a node's position, size, opacity and colors, but not its text. `figures/sufr-build.acre` shows every value that changes, such as an LCP placeholder 0 that becomes 4, as a second node faded in over the first. The proposal is an action such as `text NAME \"4\"` at an instant, and `text ROW N \"4\"` for one cell of a row.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-23T19:55:32.907294934Z",
+  "updated_at": "2026-11-23T19:55:32.907294934Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "023610e",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
