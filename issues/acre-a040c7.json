@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-23T18:19:01.662471645Z",
   "defer_until": null,
   "created_at": "2026-11-23T18:03:59.11071592Z",
-  "updated_at": "2026-11-23T18:22:59.778329462Z",
+  "updated_at": "2026-11-23T18:24:19.963467888Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -22,9 +22,10 @@
       "id": "11273d90",
       "at": "2026-11-23T18:22:59.778328922Z",
       "author": "Jack Roddy/0c799e42",
-      "text": "Jack wants no key bindings in the viewer. The `[`, `]` and `S` keys this issue first proposed are gone, and so are the older Space, Left, Right and Home bindings from acre-a96693. `App::keys` and `Playback::step` went with them. The sections panel sits on the left, as Jack asked.",
+      "text": "The viewer keeps two sets of key bindings, Space to play and pause and Left and Right to step a frame, and takes no others. Jack ruled out the `[`, `]` and `S` keys this issue first proposed, and the older Home binding from acre-a96693 is gone too. The sections panel sits on the left, as Jack asked.",
       "commit": "b009f84",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-11-23T18:24:19.963467598Z"
     }
   ],
   "stamps": {
