@@ -3,26 +3,29 @@
   "title": "A timeline divides a section into labelled subsections",
   "body": "Since acre-a040c7 a `timeline` takes `section 4s \"The types\";` lines, and `Scene::sections` lists each `Section` with a `start` and a `title`. `acre-gui` marks each section start on its time bar, writes the title in the section's stretch of the bar, and lists the sections in a left-hand panel where a click goes to a start. A long section, such as one slide of `figures/key-schemes-animated.acre`, has steps of its own that the viewer cannot name.\n\n## Proposal\n\nA `subsection` line in a `timeline` belongs to the latest `section` before it in time:\n\n```text\ntimeline {\n    section 4s \"The types\";\n    subsection 4s \"The call\";\n    subsection 7.5s \"Masked and unmasked\";\n    section 17.4s \"A code for each byte\";\n}\n```\n\n- A subsection runs until the next subsection or section starts. It may start at the same time as its section.\n- A subsection before the first section, two subsections at one time, or a subsection at or past the end is an error at that line.\n\n`Section` gets `subsections: Vec<Subsection>`, in order of start, each `Subsection` with a `start` and a `title`.\n\nIn `acre-gui`:\n\n- The time bar marks each subsection start with a short tick from its bottom edge. The section titles stay as they are. Hovering the bar shows the section and subsection at the time under the pointer, as `The types › The call`.\n- In the panel, a section with subsections has a fold arrow and starts folded. The arrow opens and folds it, and the title still goes to the section's start. An open section lists its subsections indented, each going to its start on a click, with the current one highlighted. Fold state lasts across reloads.\n- No new key bindings.\n\n## Rejected\n\nNesting, as in `section 4s \"x\" { subsection ... }`, which would make `section` a node and change what `lang` reads. A flat line keeps `lang` as it is.\n\n## Cost\n\n`Section` gains a public field, under the same unreleased minor bump as `Scene::sections`.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-23T18:58:46.861471979Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-23T18:43:46.852388327Z",
-  "updated_at": "2026-11-23T18:43:46.861471979Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-23T19:29:45.785158911Z",
+  "closed_at": "2026-11-23T19:29:45.785158911Z",
+  "close_reason": "Landed on dev in 023610e. `subsection` lines, `Section::subsections`, ticks and a hover label on the time bar, and fold arrows in the sections panel. No key bindings.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "b009f84",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "023610e",
+      "branch": "dev"
+    }
   }
 }
