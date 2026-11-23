@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-19T20:53:55.63191584Z",
+  "updated_at": "2026-11-23T18:13:20.161434581Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -180,6 +180,14 @@
       "author": "Jack Roddy/ed2a7ee0",
       "text": "`font` accepts `mono-bold`, the bold face of JetBrains Mono NL, beside `mono`, `sans`, `sans-bold` and `sans-italic`. `title-font` and `note-font` take it too. Like the other font names, `mono-bold` cannot be the name of a `let`, and `fonts` cannot register a font under it. Landed in ac3a49f for acre-95ce06.",
       "commit": "ac3a49f",
+      "branch": "dev"
+    },
+    {
+      "id": "d2a52a0d",
+      "at": "2026-11-23T18:13:20.161432641Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "`section` joins the `timeline` vocabulary (acre-a040c7). A line `section 4s \"The types\";` sits in the timeline between entries and names the part of the animation that starts at that time. The part runs until the next section starts. Jack chose the word `section` over `chapter`, `step` and `mark`.\n\nIt is a property of `timeline`, so `lang` reads it already, and only `scene` gives it meaning. Two sections at one time are an error, and so is a section at or past the end. The viewer labels each part on its time bar.",
+      "commit": "b009f84",
       "branch": "dev"
     }
   ],
