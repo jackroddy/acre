@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-23T19:51:34.67574076Z",
   "defer_until": null,
   "created_at": "2026-11-23T19:36:34.666779502Z",
-  "updated_at": "2026-11-23T19:36:38.303740371Z",
+  "updated_at": "2026-11-23T19:55:37.844013744Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "bf45fdee",
+      "at": "2026-11-23T19:55:37.844013084Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "First full draft at `figures/sufr-build.acre`: 1920 by 1080, 280 s, eleven sections with subsections, all checked with `acre check` after `acre fmt`. `tmp-claude/2026-11-23-sufr-animation/values.md` names the probe run behind every value on screen. The ties example is a second, 75-character text of three records that share a 23-character run, and its equal-key run is 0, 25 and 50. The seed-mask section uses a third text, `ACCTN%ACGTA$`, because mask `1101` on the main text changes only LCPs. The draft worked around four acre gaps, filed as acre-36d52f, acre-b197ef, acre-f3d5fd and acre-42bcb1. Not yet done: review by Jack, and an MP4 export.",
+      "commit": "023610e",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "023610e",
