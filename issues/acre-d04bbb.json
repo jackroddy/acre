@@ -1,0 +1,28 @@
+{
+  "id": "acre-d04bbb",
+  "title": "acre reference panics when its output pipe closes early",
+  "body": "`acre reference` writes with `println!`, which panics when stdout closes before the output ends. Piping it into `head`, as in `acre reference row | head`, prints the first lines and then:\n\n```text\nthread 'main' panicked at library/std/src/io/stdio.rs:1166:9:\nfailed printing to stdout: Broken pipe (os error 32)\n```\n\nThe listing itself is complete up to where `head` stops, so nothing is lost but the panic message and a non-zero exit.\n\n## Proposal\n\nWrite the listing through a locked `stdout` with `writeln!`, and end quietly when a write fails with `ErrorKind::BrokenPipe`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-23T19:00:43.041034171Z",
+  "updated_at": "2026-11-23T19:00:43.041034171Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "b009f84",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
