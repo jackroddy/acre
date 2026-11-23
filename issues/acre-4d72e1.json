@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-23T19:09:50.612625189Z",
   "defer_until": null,
   "created_at": "2026-11-13T19:10:18.204930862Z",
-  "updated_at": "2026-11-23T18:54:50.612625189Z",
+  "updated_at": "2026-11-23T18:54:50.622603811Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "349d6fef",
+      "at": "2026-11-23T18:54:50.622603241Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Decisions made when the work started. A dot ends a word in the lexer, so `fwd.prf` would need a lexer change. Columns come in as words after the data name instead: `data fwd { file \"fwd-cloud.tsv\"; }` declares the file, and `points fwd prf seq;` takes X from column `prf` and Y from column `seq`, one point per row. The first line of the file names the columns, and the extension `.tsv` or `.csv` picks the separator. The `acre` library reads no files, so `scene::data_files` lists them and each program reads the bytes, the way `scene::font_files` works for fonts. Values are pixels. A scale, and filling a `table`, a `text` or a `row` from data, stay open.",
+      "commit": "b009f84",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "743a77a",
