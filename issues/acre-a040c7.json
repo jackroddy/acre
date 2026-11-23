@@ -1,0 +1,28 @@
+{
+  "id": "acre-a040c7",
+  "title": "A timeline divides an animation into labelled sections the viewer shows",
+  "body": "A canvas `timeline` lists entries such as `1s to 2s { move a 0 80; }`, and `scene::timeline::apply` turns them into tracks. It rejects any property inside `timeline`. `acre-gui` plays the result with a transport bar along the bottom (`App::transport` in `crates/acre-gui/src/app.rs`): play and pause, an egui `Slider` over `0..=duration`, the time, and a loop toggle. `Playback` in `crates/acre-gui/src/playback.rs` holds the time logic. A long animation such as `figures/key-schemes-animated.acre` marks its parts only with comments like `// 1. the types`, and the viewer shows nothing of them.\n\n## Proposal\n\nA `section` line inside `timeline` names the part of the animation that starts at its time:\n\n```text\ntimeline {\n    section 0s \"Title\";\n    0s to 0.6s { fade intro in; }\n\n    section 4s \"The types\";\n    4s to 4.4s { fade p1 in; }\n}\n```\n\n- A section runs from its time until the next section starts, or until the end.\n- When the first section starts after 0s, the stretch before it has no label.\n- Two sections at one time, or a section past the duration, is an error at that line.\n- A timeline without sections plays as before.\n\nThe parser already reads `section 4s \"The types\";` as a property, so `lang` does not change. `scene` accepts this one key in a `timeline`.\n\n`Scene` gets `sections: Vec<Section>`, each with a `start` in seconds and a `title`, sorted by start.\n\nIn `acre-gui`:\n\n- A painted bar replaces the `Slider`. It draws a divider at each section start and the title centred in each section, cut short with an ellipsis when it does not fit. Clicking or dragging seeks.\n- A `Sections` toggle next to `Loop` shows a right-hand panel listing each section with its start time. The panel highlights the current section, and clicking a section seeks to its start. The panel starts open, keeps its state across reloads, and the `S` key toggles it.\n- `[` and `]` go to the previous and next section start. `Playback` does this, with unit tests.\n\n## Out of scope\n\nChapter metadata in the MP4 that `acre render` writes.\n\n## Cost\n\n`Scene` gains a public field, a minor bump for `acre`, with entries in both changed crates' changelogs.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-23T18:03:59.11071592Z",
+  "updated_at": "2026-11-23T18:03:59.11071592Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "b009f84",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
