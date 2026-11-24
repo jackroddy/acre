@@ -3,26 +3,29 @@
   "title": "Moving a node together with a node it follows by name moves it twice or refuses",
   "body": "acre-gui moves several selected nodes at once with `selection::move_edits` in `crates/acre-gui/src/selection.rs`. That function calls `scene::edit::move_edits` once for each node and merges the edit lists. Each call sees one node and does not know which other nodes move with it. Two cases then go wrong when one selected node follows another selected node by name.\n\n- Take `b` placed with `at a 10 0`, moved together with `a`. The edit for `b` adds the drag's offset to its `10 0`. When the scene is built, `b` also moves with `a`. It lands twice as far as the drag preview showed.\n- Take an arrow with `from a to b`, moved together with `a` and `b`. `move_edits` refuses the arrow: \"`from` names `a` and follows it; move `a`\". The whole move is then refused, so a box drawn around a diagram with connectors cannot be dragged.\n\n`scene::edit::paste_edits` already handles the paste version of this. It gives `Mover` the names of the pasted nodes, and an `at`, an end or a marker that names one of them takes no edit.\n\n## Proposal\n\nAdd a library function that moves several nodes as one, `move_all_edits(source: &str, nodes: &[Span], dx: f64, dy: f64)`. It passes the names given in the moved nodes to `Mover`. An `at`, `from`, `to` or marker `at` that names one of those takes no edit. A name outside the moved set keeps today's handling. acre-gui calls this function in place of its loop.\n\n## Open\n\nThe paste case lets an end that names a thing outside the paste follow it. A move should refuse that end. `Mover::follows` would need a second mode, or a separate flag.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:37:19.472126032Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:21:37.953138477Z",
-  "updated_at": "2026-11-24T20:22:19.472126032Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:26:47.602680056Z",
+  "closed_at": "2026-11-24T20:26:47.602680056Z",
+  "close_reason": "Landed in e8348e1: `scene::edit::move_edits` takes a slice of node spans and moves them as one, and acre-gui calls it in place of `selection::move_edits`. An end, a marker or a brace on a thing that stays put is refused, since the move would stretch the connector away from the drag preview.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "7565686",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "e8348e1",
+      "branch": "dev"
+    }
   }
 }
