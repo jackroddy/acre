@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T06:58:10.757005911Z",
+  "updated_at": "2026-11-24T07:03:26.512340781Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -270,6 +270,14 @@
       "commit": "89a8bc0",
       "branch": "dev",
       "edited_at": "2026-11-24T06:58:10.757005611Z"
+    },
+    {
+      "id": "df03c2e5",
+      "at": "2026-11-24T07:03:26.512338641Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "`repeat INDEX FIRST LAST { NODE... }` landed for acre-1417ed, and stays provisional until the syntax rework. Any node may now keep values before `{`. `lang::parse` puts them in `Node::head` unless they are one bare word, and gives them no meaning. FIRST and LAST are both included, so `repeat i 0 3` makes the four copies the issue's four thread quarters need. A last number below the first makes no copies. In each copy the index stands for its number wherever a `let` name can. An index with the name of a `let` or of an outer repeat's index is an error, as a `let` set twice is; it does not shadow. `(NAME N)` picks value N, from 0, of a `let` with several values. A node named inside a repeat gets the index added to its name, and so does each word inside the repeat that names it. A nested repeat adds the outer index first, so `b` becomes `b01` for i 0 and j 1. Past 9 such names can collide, for example `b110`.",
+      "commit": "89a8bc0",
+      "branch": "dev"
     }
   ],
   "stamps": {
