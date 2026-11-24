@@ -1,0 +1,28 @@
+{
+  "id": "acre-a64d4d",
+  "title": "Moving a node together with a node it follows by name moves it twice or refuses",
+  "body": "acre-gui moves several selected nodes at once with `selection::move_edits` in `crates/acre-gui/src/selection.rs`. That function calls `scene::edit::move_edits` once for each node and merges the edit lists. Each call sees one node and does not know which other nodes move with it. Two cases then go wrong when one selected node follows another selected node by name.\n\n- A node placed with `at a 10 0`, moved together with `a`, gets 10 added to its offset by its own edit. It also moves with `a` when the scene is built. It lands twice as far as the drag preview showed.\n- A line or arrow with `from a to b`, moved together with `a` and `b`, makes `move_edits` refuse: \"`from` names `a` and follows it; move `a`\". The whole move is then refused, so a box drawn around a diagram with connectors cannot be dragged.\n\n`scene::edit::paste_edits` already handles the paste version of this. It gives `Mover` the names of the pasted nodes, and an `at`, an end or a marker that names one of them takes no edit.\n\n## Proposal\n\nAdd a library function that moves several nodes as one, `move_all_edits(source: &str, nodes: &[Span], dx: f64, dy: f64)`. It passes the names given in the moved nodes to `Mover`. An `at`, `from`, `to` or marker `at` that names one of those takes no edit. A name outside the moved set keeps today's handling. acre-gui calls this function in place of its loop.\n\n## Open\n\nThe paste case lets an end that names a thing outside the paste follow it. A move should refuse that end. `Mover::follows` would need a second mode, or a separate flag.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T20:21:37.953138477Z",
+  "updated_at": "2026-11-24T20:21:37.953138477Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "7565686",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
