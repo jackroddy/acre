@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T06:49:47.820044254Z",
+  "updated_at": "2026-11-24T06:53:44.241885082Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -252,6 +252,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "`text NAME \"TEXT\"` and `text ROW N \"TEXT\"` are timeline actions that set the text of a box, an ellipse, a text or one cell of a row at an instant (commit 7eade9c). They take the form `fill` and `text-color` already use: a name, a cell index for a row, then the value. A span is an error, since text steps. The form is provisional, like the rest of the syntax until the rework.",
       "commit": "7eade9c",
+      "branch": "dev"
+    },
+    {
+      "id": "42f026bb",
+      "at": "2026-11-24T06:53:44.241876692Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "A row-wide color action in a timeline, such as `fill r #ffcc00` with no cell index, now changes every cell of the row, each from its own color (commit 1579407). `stroke r` and `text-color r` skip cells with no outline or no text. Before, the form was an error. The syntax is provisional, as all syntax is until the rework.",
+      "commit": "1579407",
       "branch": "dev"
     }
   ],
