@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:14:26.324035141Z",
+  "updated_at": "2026-11-24T07:19:43.225887092Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -292,6 +292,14 @@
       "at": "2026-11-24T07:14:26.324032591Z",
       "author": "Jack Roddy/0c799e42",
       "text": "`label-side on` sets a connector's label centered on its line at `label-at`, and the line breaks around the label's box with the same gap a label beside a line keeps (`LABEL_GAP`), with no property for the gap. `sweep` takes `label`, `label-side`, `label-at`, `text-size`, `text-color` and `font` as `arrow` does. Example: `arrow { from ranks bottom; to key top; label \"prefix encoder\"; label-side on; }`. The syntax is provisional. It landed in 859da28 for acre-64fcb3.",
+      "commit": "859da28",
+      "branch": "dev"
+    },
+    {
+      "id": "993a999e",
+      "at": "2026-11-24T07:19:43.225884762Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Provisional syntax for `merge` (acre-54a6a7): `merge { from A; from B; ...; to T; at X Y; }`. Each `from` takes the forms an `arrow` takes and starts one line, and `from` on `merge` is the one property a node may set more than once; `Props::new` allows that pair through by the `REPEATED` constant in `scene/build.rs`. Each line sweeps into a junction, and an arrow runs from the junction to `to`. `at` takes only `X Y`. Without it, the junction sits out of `to`'s side, or above `to` when `to` names no side, halfway to the nearest `from` along that way, and 24 pixels out when no `from` lies ahead of `to`. A `from` with no side sets off the way the arrow runs, and every line arrives along it. `head`, `head-size`, `label`, `label-side` and `label-at` belong to the arrow, `tail` draws at each `from`, and `stroke`, `stroke-width` and `dash` set every line. A colour per line was left out. All of this is provisional until Jack draws with it.",
       "commit": "859da28",
       "branch": "dev"
     }
