@@ -261,6 +261,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   triangle or open head and the diameter of a dot, in pixels, at both ends.
   Without it a triangle stays `8 + 3 × stroke-width` long and a dot
   `5 + 3 × stroke-width` across. The shaft's length still caps both.
+- `sweep { from ...; to ...; }` draws an arrow along one cubic. `leave DIR`
+  and `enter DIR`, each `up`, `down`, `left` or `right`, set the way it
+  travels at an end that is a point or a thing with no side. An end on a
+  side travels out of that side or into it. An end with neither, or with
+  both, is an error. Each handle reaches half the distance between the ends
+  along its own way, so between `leave down` and `enter down` the curve only
+  moves down. A handle whose other end lies behind or level with its way
+  reaches half the whole length. `stroke`, `stroke-width`, `dash`, `head`,
+  `tail` and `head-size` work as on `arrow`, and the head is a triangle
+  unless set. `Route::Sweep` holds the ways.
 
 ### Changed
 

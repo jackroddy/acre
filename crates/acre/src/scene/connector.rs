@@ -14,6 +14,34 @@ pub enum Route {
     /// A cubic whose handles run out of each end's side, or along the
     /// longer distance between the ends when it has none.
     Curve,
+    /// A cubic whose handles run along each end's way of travel, for
+    /// half the distance between the ends along it. A `sweep` draws it.
+    Sweep {
+        /// The way it sets off from an end with no side.
+        leave: Option<Dir>,
+        /// The way it arrives at an end with no side.
+        enter: Option<Dir>,
+    },
+}
+
+/// A way of travel along an axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl Dir {
+    fn vector(self) -> Point {
+        match self {
+            Dir::Up => Point::new(0.0, -1.0),
+            Dir::Down => Point::new(0.0, 1.0),
+            Dir::Left => Point::new(-1.0, 0.0),
+            Dir::Right => Point::new(1.0, 0.0),
+        }
+    }
 }
 
 /// What a connector draws at one end.
@@ -218,7 +246,7 @@ impl Connector {
         let mut points = match self.route {
             Route::Straight if !self.looped => vec![a, b],
             Route::Elbow => self.elbow(),
-            Route::Straight | Route::Curve => {
+            Route::Straight | Route::Curve | Route::Sweep { .. } => {
                 let (c1, c2) = self.handles();
                 (0..=CURVE_STEPS)
                     .map(|i| {
@@ -277,6 +305,9 @@ impl Connector {
     fn handles(&self) -> (Point, Point) {
         let (a, b) = (self.from, self.to);
         let d = b - a;
+        if let Route::Sweep { leave, enter } = self.route {
+            return sweep_handles(a, b, self.from_dir, self.to_dir, leave, enter);
+        }
         if self.looped
             && let Some(out) = self.from_dir
         {
@@ -348,6 +379,41 @@ fn bend(a: Point, b: Point, horizontal: bool, turn: f64) -> Vec<Point> {
     } else {
         vec![a, Point::new(a.x, turn), Point::new(b.x, turn), b]
     }
+}
+
+/// The two inner control points of a sweep from `a` to `b`. A side
+/// sets an end's way of travel, and `leave` or `enter` sets it at an
+/// end with none.
+fn sweep_handles(
+    a: Point,
+    b: Point,
+    from_dir: Option<Point>,
+    to_dir: Option<Point>,
+    leave: Option<Dir>,
+    enter: Option<Dir>,
+) -> (Point, Point) {
+    let d = b - a;
+    let unit = |v: Point| v * (1.0 / length(v));
+    // to_dir points out of the box at `b`, against the way of travel;
+    // an end with no way at all, which a build never makes, heads
+    // straight for the other end
+    let out = from_dir.or(leave.map(Dir::vector)).map_or(unit(d), unit);
+    let arrive = to_dir
+        .map(|dir| dir * -1.0)
+        .or(enter.map(Dir::vector))
+        .map_or(unit(d), unit);
+    // half the distance along the way of travel keeps the curve moving
+    // that way from end to end; an end behind or level with the way
+    // has no such distance and takes half the whole length instead
+    let reach = |dir: Point| {
+        let along = d.x * dir.x + d.y * dir.y;
+        if along > 0.0 {
+            along / 2.0
+        } else {
+            length(d) / 2.0
+        }
+    };
+    (a + out * reach(out), b - arrive * reach(arrive))
 }
 
 fn bend_halfway(a: Point, b: Point, horizontal: bool) -> Vec<Point> {
@@ -601,6 +667,45 @@ mod tests {
             }
             other => panic!("expected a line, a head and a dot, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_sweep_between_two_downs_only_moves_down() {
+        let mut c = connector((0.0, 0.0), (1200.0, 190.0));
+        c.route = Route::Sweep {
+            leave: Some(Dir::Down),
+            enter: Some(Dir::Down),
+        };
+        assert_eq!(
+            c.handles(),
+            (Point::new(0.0, 95.0), Point::new(1200.0, 95.0))
+        );
+        let path = c.path();
+        assert!(path.windows(2).all(|w| w[1].y >= w[0].y), "{path:?}");
+    }
+
+    #[test]
+    fn a_sweep_toward_an_end_behind_it_reaches_half_the_length() {
+        let mut c = connector((0.0, 100.0), (0.0, 0.0));
+        c.route = Route::Sweep {
+            leave: Some(Dir::Down),
+            enter: Some(Dir::Up),
+        };
+        assert_eq!(c.handles(), (Point::new(0.0, 150.0), Point::new(0.0, 50.0)));
+    }
+
+    #[test]
+    fn a_sweep_takes_its_way_from_a_side() {
+        let mut c = connector((0.0, 0.0), (300.0, 100.0));
+        c.route = Route::Sweep {
+            leave: Some(Dir::Down),
+            enter: None,
+        };
+        c.to_dir = Some(Point::new(-1.0, 0.0));
+        assert_eq!(
+            c.handles(),
+            (Point::new(0.0, 50.0), Point::new(150.0, 100.0))
+        );
     }
 
     #[test]

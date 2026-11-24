@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::f64::consts::FRAC_1_SQRT_2;
 
 use super::code::{self, Code};
-use super::connector::{self, End, Follow};
+use super::connector::{self, Dir, End, Follow};
 use super::data::{self, Table};
 use super::expand::expand;
 use super::markup;
@@ -432,6 +432,16 @@ fn add_objects(
                         Err(e) => return Err(e),
                     };
                     out.push(Object::new(Kind::Connector(c)).from_source(node.span));
+                }
+                continue;
+            }
+            "sweep" => {
+                match sweep(node, names, offset) {
+                    Ok(c) => out.push(Object::new(Kind::Connector(c)).from_source(node.span)),
+                    // a measure leaves out what names a thing not
+                    // placed yet
+                    Err(_) if pass.measuring => {}
+                    Err(e) => return Err(e),
                 }
                 continue;
             }
@@ -1527,6 +1537,68 @@ fn connector(
         label_at: props.number_or("label-at", 0.5)?,
     })
 }
+
+fn sweep(node: &Node, names: &Names, offset: Point) -> Result<Connector, Error> {
+    let props = Props::new(node, &keys("sweep"), false)?;
+    let from_prop = props.require("from")?;
+    let (from, from_target) = end(from_prop, names, offset, 0)?;
+    let to_prop = props.require("to")?;
+    let (to, to_target) = end(to_prop, names, offset, 0)?;
+    let ([from_at, to_at], [from_dir, to_dir]) = connector::place(&from, &to);
+    if from_at == to_at {
+        return Err(Error::new(
+            to_prop.span,
+            "this end meets the other, so the sweep draws nothing",
+        ));
+    }
+    let leave = way(&props, "leave", from_prop, from_dir.is_some())?;
+    let enter = way(&props, "enter", to_prop, to_dir.is_some())?;
+    let follow =
+        |end: End, target: Option<Target>| target.map(|target| Box::new(Follow { target, end }));
+    let stroke = props
+        .stroke(Some(Color::BLACK))?
+        .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
+    Ok(Connector {
+        from: from_at,
+        to: to_at,
+        from_dir,
+        to_dir,
+        follow: [follow(from, from_target), follow(to, to_target)],
+        looped: false,
+        stroke,
+        route: Route::Sweep { leave, enter },
+        head: props.choice("head", Head::Triangle, &HEADS)?,
+        tail: props.choice("tail", Head::None, &HEADS)?,
+        head_size: props.number("head-size")?,
+        label: None,
+        label_side: LabelSide::Above,
+        label_at: 0.5,
+    })
+}
+
+/// The way `key` gives a sweep's end, which `end` gives as a point or
+/// a thing with no side when `side` is false.
+fn way(props: &Props, key: &str, end: &Property, side: bool) -> Result<Option<Dir>, Error> {
+    match (props.get(key), side) {
+        (Some(p), true) => Err(Error::new(
+            p.span,
+            format!("this end's side gives its way, so it takes no `{key}`"),
+        )),
+        (Some(_), false) => Ok(Some(props.choice(key, Dir::Down, &DIRS)?)),
+        (None, true) => Ok(None),
+        (None, false) => Err(Error::new(
+            end.span,
+            format!("this end has no side, so the sweep needs `{key}`"),
+        )),
+    }
+}
+
+const DIRS: [(&str, Dir); 4] = [
+    ("up", Dir::Up),
+    ("down", Dir::Down),
+    ("left", Dir::Left),
+    ("right", Dir::Right),
+];
 
 const HEADS: [(&str, Head); 4] = [
     ("none", Head::None),
@@ -2870,6 +2942,52 @@ mod tests {
                 3,
                 25,
                 "`side` places a loop, whose `from` and `to` name one thing with no side".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_sweep_reads_its_ways_and_heads() {
+        let s = scene(
+            "canvas { size 100 100;
+                box a { at 60 60; size 10 10; }
+                sweep { from 0 0; to a top; leave down; head-size 4; } }",
+        )
+        .unwrap();
+        match &s.objects[1].kind {
+            Kind::Connector(c) => {
+                assert_eq!(
+                    c.route,
+                    Route::Sweep {
+                        leave: Some(Dir::Down),
+                        enter: None
+                    }
+                );
+                assert_eq!((c.head, c.head_size), (Head::Triangle, Some(4.0)));
+            }
+            other => panic!("expected a connector, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_sweep_end_with_no_way_or_two_ways_is_an_error() {
+        assert_eq!(
+            scene("canvas { size 10 10;\n sweep { from 0 0; to 9 9; leave down; } }").unwrap_err(),
+            (
+                2,
+                20,
+                "this end has no side, so the sweep needs `enter`".into()
+            )
+        );
+        assert_eq!(
+            scene(
+                "canvas { size 10 10;\n box a { at 0 0; size 5 5; }\n sweep { from a bottom; to 9 9; leave down; enter down; } }"
+            )
+            .unwrap_err(),
+            (
+                3,
+                33,
+                "this end's side gives its way, so it takes no `leave`".into()
             )
         );
     }

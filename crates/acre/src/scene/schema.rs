@@ -119,6 +119,43 @@ const SHAPE: &[Property] = &[
     STYLE,
 ];
 
+const HEAD_SIZE: Property = prop(
+    "head-size",
+    "N",
+    "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
+);
+
+const SWEEP: &[Property] = &[
+    FROM,
+    TO,
+    prop(
+        "leave",
+        "up | down | left | right",
+        "the way it sets off from `from`, when `from` is a point or a thing with no side; a side sets off out of that side",
+    ),
+    prop(
+        "enter",
+        "up | down | left | right",
+        "the way it arrives at `to`, when `to` is a point or a thing with no side; a side is entered from outside",
+    ),
+    STROKE,
+    STROKE_WIDTH,
+    DASH,
+    prop(
+        "head",
+        "none | triangle | open | dot",
+        "what it draws at `to`; a triangle unless set",
+    ),
+    prop(
+        "tail",
+        "none | triangle | open | dot",
+        "what it draws at `from`",
+    ),
+    HEAD_SIZE,
+    ANCHOR,
+    STYLE,
+];
+
 const CONNECTOR: &[Property] = &[
     FROM,
     TO,
@@ -145,11 +182,7 @@ const CONNECTOR: &[Property] = &[
         "none | triangle | open | dot",
         "what it draws at `from`",
     ),
-    prop(
-        "head-size",
-        "N",
-        "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
-    ),
+    HEAD_SIZE,
     LABEL,
     prop(
         "label-side",
@@ -174,8 +207,9 @@ const CONNECTOR: &[Property] = &[
 ];
 
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "text", "math",
-    "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid", "code",
+    "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep", "text",
+    "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid",
+    "code",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -207,9 +241,9 @@ pub const NODES: &[NodeKind] = &[
             ),
         ],
         children: &[
-            "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "text",
-            "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack",
-            "grid", "code", "palette", "style", "fonts", "data", "timeline",
+            "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep",
+            "text", "math", "marker", "table", "brace", "ruler", "group", "panel", "caption",
+            "stack", "grid", "code", "palette", "style", "fonts", "data", "timeline",
         ],
     },
     NodeKind {
@@ -348,11 +382,7 @@ pub const NODES: &[NodeKind] = &[
                 "none | triangle | open | dot",
                 "what it draws at the first point",
             ),
-            prop(
-                "head-size",
-                "N",
-                "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
-            ),
+            HEAD_SIZE,
             ANCHOR,
             STYLE,
         ],
@@ -368,6 +398,12 @@ pub const NODES: &[NodeKind] = &[
         name: "arrow",
         about: "a line with a head at `to`",
         properties: CONNECTOR,
+        children: &[],
+    },
+    NodeKind {
+        name: "sweep",
+        about: "an arrow along one curve that sets off and arrives in set ways, and moves each way for half the distance between its ends along that way",
+        properties: SWEEP,
         children: &[],
     },
     NodeKind {
