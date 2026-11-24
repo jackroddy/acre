@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.58779635Z",
-  "updated_at": "2026-11-24T06:36:24.457907654Z",
+  "updated_at": "2026-11-24T06:36:40.894682917Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "2028d564",
+      "at": "2026-11-24T06:36:40.894682397Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack accepted on 2026-11-23, provisionally: `merge` takes a repeated `from`, as an exception for this node only. `split` comes later as its own node.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "58993b6",
