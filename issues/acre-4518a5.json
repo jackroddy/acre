@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:25:44.499585265Z",
+  "updated_at": "2026-11-24T07:32:43.608289243Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -309,6 +309,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Tags landed provisionally in commit 93032ac. Every drawn node but `caption` takes `tag \"TEXT\"` or `tag auto`, with `tag-size`, `tag-color` and `tag-font` for the look. `tag auto` letters through the whole canvas in source order, and a tag set by hand does not count. The tag sits 8 pixels left of the box around what the node draws, centered on it vertically, as the issue body proposed. There is no `tag-side`. The look is a property on the node, as `title-size` is on a panel, so a style carries it; there is no `style tag` like `style marker`.",
       "commit": "93032ac",
+      "branch": "dev"
+    },
+    {
+      "id": "1762a235",
+      "at": "2026-11-24T07:32:43.608286643Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Provisional syntax from acre-42bcb1: a child of a `stack` takes `space always | shown`, with `always` the default. `space shown` lays the child out in its slot as usual, but until the timeline first shows it with `show` or `fade NAME in`, the children after it draw back by its size and the stack's gap. As that action starts, they jump to their slots. The property lives on the child because Jack chose to have a node opt out of layout until it shows, over a stack that reflows over time. The word `space` and the value `shown` are the plainest form found and are open to change.",
+      "commit": "03ebbdd",
       "branch": "dev"
     }
   ],
