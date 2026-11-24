@@ -1,0 +1,28 @@
+{
+  "id": "acre-54a6a7",
+  "title": "A merge node joins several lines into one arrow",
+  "body": "Today each connector has one `from` and one `to`. The sufr pipeline figure in `sufr-figures` shows the four threads' results joining into one table. It draws four `sweep` nodes with no head that meet at one point, then a fifth arrow from that point into the table. The meeting point is worked out by hand.\n\n## Proposal\n\nA node `merge` takes several `from` ends and one `to`. Each `from` draws a line, in its own stroke if one is given, into a junction. The junction sits at `at`, or a fixed distance above `to` by default. One arrow runs from the junction to `to`, with the head and label properties of an `arrow`.\n\n```text\nmerge { from strip1 bottom k1; from strip2 bottom k2; from strip3 bottom k3;\n    from strip4 bottom k4; to ranks top; label \"merge occupancy\"; }\n```\n\n## Open\n\n- Whether a property may repeat, as `from` does here, or the ends go in one property.\n- How each branch gets its own colour.\n- Whether `split`, one end fanning out to several, is the same node reversed.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:21:35.58779635Z",
+  "updated_at": "2026-11-24T06:21:35.58779635Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "58993b6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
