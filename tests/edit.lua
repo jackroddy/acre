@@ -141,6 +141,32 @@ check(
   vim.inspect(sent[#sent])
 )
 
+-- :AcreView in another buffer moves the running viewer to it. A new
+-- stand-in would truncate the file, so the count only grows if the
+-- same viewer gets the second buffer.
+vim.wait(100)
+before = #texts()
+vim.cmd("enew")
+local second = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_name(second, "second.acre")
+vim.api.nvim_buf_set_lines(second, 0, -1, false, { "canvas { size 10 10 }" })
+acre.toggle()
+sent = wait_for_texts(before + 1)
+check(
+  "toggle in another buffer sends that buffer to the same viewer",
+  #sent > before
+    and sent[#sent].text == "canvas { size 10 10 }\n"
+    and sent[#sent].path:match("second%.acre$") ~= nil,
+  vim.inspect(sent[#sent])
+)
+local function hooks(b)
+  return #vim.api.nvim_get_autocmds({ group = "acre_view", buffer = b })
+end
+check("the first buffer's autocmds are gone", hooks(buf) == 0, tostring(hooks(buf)))
+check("the second buffer has them", hooks(second) > 0, tostring(hooks(second)))
+acre.toggle()
+check("toggle in the shown buffer closes the viewer", hooks(second) == 0)
+
 acre.stop()
 vim.fn.delete(sent_file)
 print(failures == 0 and "all passed" or (failures .. " failed"))

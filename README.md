@@ -9,8 +9,9 @@ Add this directory to neovim's runtime path, for example with lazy.nvim:
 { dir = "/path/to/acre/editors/nvim", config = function() require("acre").setup({}) end }
 ```
 
-`:AcreView` starts `acre-gui --stdio` for the current buffer, and runs again to
-close it. The viewer draws the buffer as you type. A click on the render moves
+`:AcreView` starts `acre-gui --stdio` for the current buffer. Run in another
+buffer, it moves the open viewer to that buffer, and run in the buffer the
+viewer shows, it closes it. The viewer draws the buffer as you type. A click on the render moves
 the cursor to the node that drew it, and an error in the source shows as a
 diagnostic. `gggqG` formats the buffer with `acre fmt -`, which reads a whole
 file, so `gq` on part of one fails. `acre` and `acre-gui` have to be on
