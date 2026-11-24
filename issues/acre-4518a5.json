@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:36:40.660032508Z",
+  "updated_at": "2026-11-24T07:58:47.013366009Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -325,6 +325,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Italic markup, provisional: text between single asterisks, `*x*`, is set in italic sans (acre-b819ac, commit 6e5ed79). An opening `*` must start a word and a closing `*` must end one, and an opening `*` with no closing one after it is the character. So `2 * 3`, `a*b`, `2*3*4` and `x*` stay as written. A `*` in a code span is the character. acre has no italic mono or bold italic face, so code inside italic stays upright and italic inside bold stays bold. `\\*` writes an asterisk. `**` still toggles bold, so `***x***` is bold. `lang::italic_mark` holds the rule for both the markup and the editor highlighting.",
       "commit": "6e5ed79",
+      "branch": "dev"
+    },
+    {
+      "id": "fdb3b789",
+      "at": "2026-11-24T07:58:47.01336252Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Data fills rows and tables, and data points take units (acre-c4254f, commit 4c45d30). A row takes `cells DATA COL`, one cell per row of the column. A table takes `row DATA COL...`, one table row per row of the file with the named columns in turn, and it may mix these with quoted `row` lines in line order. A `polygon` or `polyline` with `points DATA XCOL YCOL` takes `units SX SY` and `origin X Y`. A data point (X, Y) lands at ((X - OX) * SX, (Y - OY) * SY) in the group's coordinates, and a negative unit turns that axis around. `units` and `origin` are an error with numbers in `points`. The names avoid `scale`, which the timeline uses for an action. A `text` from data was left out, because a text holds one string and nothing plain picks one row of a column. All of this is provisional.",
+      "commit": "4c45d30",
       "branch": "dev"
     }
   ],
