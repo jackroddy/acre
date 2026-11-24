@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T06:31:10.400090683Z",
-  "updated_at": "2026-11-24T06:36:24.502659341Z",
+  "updated_at": "2026-11-24T07:49:08.007875538Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "e68a7976",
+      "at": "2026-11-24T07:49:08.007874898Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "On a220913 a run with the real viewer passed, though only part of this issue could be automated. `editors/nvim/tests/viewer.lua` runs `nvim --headless` with the plugin's own `start()`, which starts `target/release/acre-gui --stdio`. The test checks three things:\n\n- A broken buffer gets an error diagnostic at the right line and column.\n- Fixing the buffer clears the diagnostic.\n- Breaking it again brings the diagnostic back.\n\n`editors/nvim/tests/edit.lua` checks how the plugin handles an `edit` message, against a stand-in viewer.\n\nThese still need a person in decade:\n\n- where the viewer's window goes\n- rendering as you type: headless neovim never fires `TextChanged`, so the test sent the text through `BufWritePost`\n- a click on the render moving neovim's cursor\n\nThe test's window opened on the desktop, not in a decade pane. Nobody looked at the render or clicked it.",
+      "commit": "a220913",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "6866c55",
