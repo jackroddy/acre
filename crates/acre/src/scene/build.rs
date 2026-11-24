@@ -1164,7 +1164,7 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
 
 /// The leading values of an `at` that name a thing: those before a side,
 /// or without one, those before the last two numbers.
-fn at_named(values: &[Value]) -> &[Value] {
+pub(super) fn at_named(values: &[Value]) -> &[Value] {
     if let Some(k) = values
         .iter()
         .skip(1)

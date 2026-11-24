@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::move_edits` works out the edits to a file's text that move
+  a drawn node by an offset in pixels. `scene::edit::apply` makes them. The
+  offset goes onto the node's `at X Y`, onto the DX DY of an `at` from a
+  named thing, and onto every number of `from`, `to` and `points`. A node
+  with no `at` gets one before its first property, on that property's line
+  or on a line of its own as the body is written. A number keeps the
+  decimals it was written with, and a new number is whole. For a node in a
+  `repeat`, a child of a stack or grid, a node the timeline moves or scales
+  or that sits in one, a value from a `let`, a `( ... )` or a style, and an
+  end or a marker placed on a named thing, `move_edits` returns an error
+  that says why.
 - Text between single asterisks, `*like this*`, is set in italic sans. An
   opening `*` starts a word and a closing `*` ends one. Any other `*` is the
   character, so `2 * 3` and `a*b` stay as written, and so does a `*` in a

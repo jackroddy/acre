@@ -10,6 +10,7 @@ pub mod code;
 mod connector;
 mod data;
 pub mod diagram;
+pub mod edit;
 mod expand;
 pub mod grid;
 mod markup;
