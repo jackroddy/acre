@@ -1,0 +1,28 @@
+{
+  "id": "acre-fe28de",
+  "title": "Dragging an object in acre-gui moves it in the source",
+  "body": "The render pane in `crates/acre-gui/src/view.rs` pans on any primary drag, and a click sends `goto` for the node under the pointer (`App::go_to_object_at`, `Scene::object_at`).\n\n## Proposal\n\n- A primary drag that starts on an object moves it; a drag that starts on empty canvas pans as now.\n- While dragging, the object is outlined and drawn at its offset without rebuilding the scene.\n- On release, acre-gui asks the library for the source edits and sends them as an `edit` over the link, or, with no link, writes the edited source to the file, which the file watcher then reloads.\n- A refused drag snaps back and the status line shows the reason.\n- No new key bindings.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T07:37:09.351884811Z",
+  "updated_at": "2026-11-24T07:37:09.351884811Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6e5ed79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
