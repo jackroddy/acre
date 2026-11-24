@@ -72,6 +72,7 @@ pub(super) struct TextAction {
 /// The node kinds a timeline changes as one, with everything inside.
 const GROUPS: [&str; 4] = ["group", "panel", "stack", "grid"];
 
+#[derive(Clone)]
 struct Action {
     start: f64,
     end: f64,
@@ -115,6 +116,8 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
     }
 
     let (runs, last) = runs(timeline, &nodes)?;
+    let mut runs = by_cell(runs, &nodes, objects)?;
+    in_time_order(&mut runs)?;
     let mut groups: Vec<Group> = Vec::new();
     for ((name, cell, channel), actions) in runs {
         let node = nodes[name].expect("`target` lets through only names one node has");
@@ -449,8 +452,7 @@ fn sources(node: &Node, out: &mut Vec<Span>) {
 }
 
 /// The actions of `timeline` on each thing of each node, in the order
-/// the things first appear, each run in time order, and the time of
-/// the last change.
+/// the things first appear, and the time of the last change.
 fn runs<'a>(
     timeline: &'a Node,
     nodes: &HashMap<&str, Option<&Node>>,
@@ -503,7 +505,62 @@ fn runs<'a>(
             }
         }
     }
-    for ((name, cell, _), actions) in &mut runs {
+    Ok((runs, last))
+}
+
+/// `runs` with each run that colors a whole row split into one run per
+/// cell that has that color, joined to the cell's own run, so that each
+/// cell changes from its own color.
+fn by_cell<'a>(
+    runs: Vec<Run<'a>>,
+    nodes: &HashMap<&str, Option<&Node>>,
+    objects: &[Object],
+) -> Result<Vec<Run<'a>>, Error> {
+    let mut out: Vec<Run> = Vec::with_capacity(runs.len());
+    let mut join = |key, actions: Vec<Action>| match out.iter_mut().find(|(k, _)| *k == key) {
+        Some((_, run)) => run.extend(actions),
+        None => out.push((key, actions)),
+    };
+    for ((name, cell, channel), actions) in runs {
+        let node = nodes[name].expect("`target` lets through only names one node has");
+        let row = objects.iter().find_map(|o| match &o.kind {
+            Kind::Row(r) if o.source == node.span => Some((o, r)),
+            _ => None,
+        });
+        let (Some((row, r)), None, Channel::Color(part)) = (row, cell, channel) else {
+            join((name, cell, channel), actions);
+            continue;
+        };
+        // a cell with no text until the timeline gives it some takes
+        // the color too, as it would by its own index
+        let cells: Vec<usize> = (0..r.cells.len())
+            .filter(|&c| {
+                row.kind.color(part, Some(c)).is_ok()
+                    || part == Part::Text && row.texts.iter().any(|t| t.cell == Some(c))
+            })
+            .collect();
+        if cells.is_empty() {
+            let what = match part {
+                Part::Fill => "a fill",
+                Part::Stroke => "an outline",
+                Part::Text => "text",
+            };
+            return Err(Error::new(
+                actions[0].span,
+                format!("no cell of row `{name}` has {what}"),
+            ));
+        }
+        for c in cells {
+            join((name, Some(c), channel), actions.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// Sort each of `runs` by time, or say where two of its actions
+/// overlap.
+fn in_time_order(runs: &mut [Run]) -> Result<(), Error> {
+    for ((name, cell, _), actions) in runs {
         actions.sort_by(|a, b| a.start.total_cmp(&b.start).then(a.end.total_cmp(&b.end)));
         for pair in actions.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
@@ -522,7 +579,7 @@ fn runs<'a>(
             }
         }
     }
-    Ok((runs, last))
+    Ok(())
 }
 
 /// The paint that `actions` make of color `part` of `object`, the object
@@ -1333,10 +1390,6 @@ mod tests {
             "an easing is linear, in, out or in-out"
         );
         assert_eq!(
-            err("timeline { 0s { fill r #ff0000; } }"),
-            "`r` is a row, whose colors change by cell: `NAME N`"
-        );
-        assert_eq!(
             err("timeline { 0s { fill r 3 #ff0000; } }"),
             "row `r` has cells 0 to 2"
         );
@@ -1364,6 +1417,60 @@ mod tests {
             err("timeline { 0s to 1s { move r 1 0 10; } 0.5s to 2s { move r 1 0 0; } }"),
             "this changes `r 1` while another action from 0s to 1s does"
         );
+    }
+
+    #[test]
+    fn a_row_wide_color_changes_every_cell_from_its_own_color() {
+        let s = canvas(
+            "palette p { symbol \"A\" #0000ff; }
+             row r { at 0 0; unit 10 10; palette p; cells \"A\" \"x\";
+                cell { text \"y\"; fill #00ff00; stroke none; } cell { } }
+             timeline { 0s to 1s ease linear { fill r #ff0000; }
+                2s { stroke r #ff0000; text-color r #ffffff; fill r 3 #000000; } }",
+        );
+        let fills = |t: f64| -> Vec<Option<Color>> {
+            let mut prims = Vec::new();
+            s.draw_object(&s.objects[0], t, &mut prims);
+            prims
+                .iter()
+                .filter_map(|p| match p {
+                    Primitive::Rect { fill, .. } => Some(*fill),
+                    _ => None,
+                })
+                .collect()
+        };
+        let half = |c: Color| Some(Color::rgb(0.5 + c.r / 2.0, c.g / 2.0, c.b / 2.0));
+        assert_eq!(
+            fills(0.5),
+            [
+                half(Color::rgb(0.0, 0.0, 1.0)),
+                half(Color::WHITE),
+                half(Color::rgb(0.0, 1.0, 0.0)),
+                half(Color::WHITE),
+            ]
+        );
+        let red = Color::rgb(1.0, 0.0, 0.0);
+        assert_eq!(fills(1.5), [Some(red); 4]);
+        assert_eq!(fills(2.0)[3], Some(Color::BLACK));
+        let paints = &object(&s, 0).paints;
+        let cells = |part| -> Vec<Option<usize>> {
+            paints
+                .iter()
+                .filter(|p| p.part == part)
+                .map(|p| p.cell)
+                .collect()
+        };
+        assert_eq!(cells(Part::Fill), [Some(0), Some(1), Some(2), Some(3)]);
+        assert_eq!(cells(Part::Stroke), [Some(0), Some(1), Some(3)]);
+        assert_eq!(cells(Part::Text), [Some(0), Some(1), Some(2)]);
+        assert_eq!(
+            err("timeline { 0s to 2s { fill r #ff0000; } 1s { fill r 1 #000000; } }"),
+            "this changes `r 1` while another action from 0s to 2s does"
+        );
+        let empty = "canvas { size 100 100; row e { at 0 0; unit 10 10; cells \"\" \"\"; }
+            timeline { 1s { text-color e #ff0000; } } }";
+        let error = build(&parse(empty).unwrap(), &[], &[]).unwrap_err();
+        assert_eq!(error.message, "no cell of row `e` has text");
     }
 
     #[test]

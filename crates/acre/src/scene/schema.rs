@@ -793,17 +793,17 @@ pub const NODES: &[NodeKind] = &[
             prop(
                 "fill",
                 "NAME COLOR | ROW N COLOR",
-                "change the fill of a box, an ellipse, a marker, a code block or a row's cell N; not of a group, panel, stack or grid",
+                "change the fill of a box, an ellipse, a marker, a code block or a row's cell N; a row's name changes every cell, each from its own fill; not of a group, panel, stack or grid",
             ),
             prop(
                 "stroke",
                 "NAME COLOR | ROW N COLOR",
-                "change the outline of a node that has one, a line's or an arrow's color, or a row's cell N's outline",
+                "change the outline of a node that has one, a line's or an arrow's color, or a row's cell N's outline; a row's name changes every cell that has an outline",
             ),
             prop(
                 "text-color",
                 "NAME COLOR | ROW N COLOR",
-                "change the color of every run of a node's text, or of a row's cell N",
+                "change the color of every run of a node's text, or of a row's cell N; a row's name changes every cell that has text",
             ),
             prop(
                 "text",

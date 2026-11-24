@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A row-wide `fill`, `stroke` or `text-color` action in a timeline, such as
+  `fill r #ffcc00`, changes every cell of the row. Each cell changes from
+  its own color, so a cell with its own fill or a palette's fill blends
+  from that fill. `stroke` skips cells with no outline, and `text-color`
+  skips cells with no text. Before this, the action was an error.
 - A timeline changes a node's text with `text NAME "TEXT"`, and the text of
   one cell of a row with `text ROW N "TEXT"`. The action works on a box, an
   ellipse, a text and a row's cell. It takes effect at an instant. A span is
