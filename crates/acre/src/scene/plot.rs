@@ -230,6 +230,7 @@ impl Plot {
             justify: false,
             h_align,
             v_align,
+            rotate: 0.0,
         }
     }
 

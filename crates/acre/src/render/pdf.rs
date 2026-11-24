@@ -122,11 +122,23 @@ impl Pdf<'_> {
                 justify,
                 h_align,
                 v_align,
+                rotate,
             } => {
                 let layout = text::layout(self.fonts, runs, *size, *width, *justify);
                 let starts = layout.place(*origin, *h_align, *v_align);
+                if *rotate != 0.0 {
+                    // krilla turns clockwise on its y-down page
+                    surface.push_transform(&Transform::from_rotate_at(
+                        -*rotate as f32,
+                        origin.x as f32,
+                        origin.y as f32,
+                    ));
+                }
                 for (line, start) in layout.lines.iter().zip(starts) {
                     self.line(surface, &line.glyphs, &layout.text, start);
+                }
+                if *rotate != 0.0 {
+                    surface.pop();
                 }
             }
         }

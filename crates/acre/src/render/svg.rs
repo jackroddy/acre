@@ -125,9 +125,23 @@ impl Svg<'_> {
                 justify,
                 h_align,
                 v_align,
+                rotate,
             } => {
                 let layout = text::layout(self.fonts, runs, *size, *width, *justify);
+                if *rotate != 0.0 {
+                    // SVG's rotate turns clockwise on its y-down canvas
+                    let _ = writeln!(
+                        self.body,
+                        "<g transform=\"rotate({} {} {})\">",
+                        Num(-*rotate),
+                        Num(origin.x),
+                        Num(origin.y),
+                    );
+                }
                 self.text(&layout, *origin, *h_align, *v_align);
+                if *rotate != 0.0 {
+                    self.body.push_str("</g>\n");
+                }
             }
         }
     }

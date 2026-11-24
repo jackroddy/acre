@@ -285,6 +285,7 @@ impl Code {
                     justify: false,
                     h_align: HAlign::Left,
                     v_align: VAlign::Baseline,
+                    rotate: 0.0,
                 });
             }
         }

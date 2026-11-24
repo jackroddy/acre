@@ -605,6 +605,7 @@ fn add_panel(
             origin: place.at,
             label: heading,
             align: HAlign::Left,
+            rotate: 0.0,
         };
         out.push(Object::new(Kind::Text(text)).from_source(node.span));
     }
@@ -669,6 +670,7 @@ fn caption(node: &Node, names: &Names, above: Point) -> Result<Text, Error> {
         origin: above + Point::new(0.0, props.number_or("gap", 10.0)?),
         label,
         align: HAlign::Left,
+        rotate: 0.0,
     })
 }
 
@@ -1557,6 +1559,7 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
             }
         }
     }
+    let rotate = props.number_or("rotate", 0.0)?;
     let mut origin = origin;
     let mut badge = None;
     if let Some(p) = props.get("number") {
@@ -1579,6 +1582,7 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
             origin,
             label,
             align,
+            rotate,
         },
     ))
 }
@@ -1711,6 +1715,7 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
             fonts: names.fonts.clone(),
         },
         align: props.align()?,
+        rotate: 0.0,
     })
 }
 
@@ -1785,6 +1790,7 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
                     fonts: names.fonts.clone(),
                 },
                 align: aligns[column],
+                rotate: 0.0,
             });
         }
     }

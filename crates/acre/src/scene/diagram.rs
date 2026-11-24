@@ -42,6 +42,9 @@ pub struct Text {
     pub origin: Point,
     pub label: Label,
     pub align: HAlign,
+    /// The angle the text turns about `origin`, in degrees,
+    /// counterclockwise.
+    pub rotate: f64,
 }
 
 /// Which way from the thing it marks a brace or a ruler's labels face.
@@ -317,7 +320,11 @@ impl Ruler {
 
 impl Text {
     pub fn draw(&self, out: &mut Vec<Primitive>) {
-        out.push(self.label.at(self.origin, self.align, VAlign::Top));
+        let mut text = self.label.at(self.origin, self.align, VAlign::Top);
+        if let Primitive::Text { rotate, .. } = &mut text {
+            *rotate = self.rotate;
+        }
+        out.push(text);
     }
 }
 
@@ -382,6 +389,7 @@ impl Label {
             justify: self.justify,
             h_align,
             v_align,
+            rotate: 0.0,
         }
     }
 }

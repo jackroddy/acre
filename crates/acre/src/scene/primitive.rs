@@ -219,7 +219,21 @@ pub enum Primitive {
         justify: bool,
         h_align: HAlign,
         v_align: VAlign,
+        /// The angle the text turns about `origin`, in degrees,
+        /// counterclockwise.
+        rotate: f64,
     },
+}
+
+/// `p` turned about `center` by `degrees`, counterclockwise on the
+/// canvas, whose y axis points down.
+pub fn turn(p: Point, center: Point, degrees: f64) -> Point {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let d = p - center;
+    Point::new(
+        center.x + d.x * cos + d.y * sin,
+        center.y - d.x * sin + d.y * cos,
+    )
 }
 
 /// The box around `prims`, as its top-left and bottom-right corners, or
@@ -264,11 +278,14 @@ pub fn bounds(fonts: &Fonts, prims: &[Primitive]) -> Option<(Point, Point)> {
                 justify,
                 h_align,
                 v_align,
+                rotate,
             } => {
                 let (min, max) = crate::text::layout(fonts, runs, *size, *width, *justify)
                     .extent(*origin, *h_align, *v_align);
-                add(min, 0.0);
-                add(max, 0.0);
+                let corners = [min, Point::new(max.x, min.y), max, Point::new(min.x, max.y)];
+                for corner in corners {
+                    add(turn(corner, *origin, *rotate), 0.0);
+                }
             }
         }
     }

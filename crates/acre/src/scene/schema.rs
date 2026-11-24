@@ -380,6 +380,11 @@ pub const NODES: &[NodeKind] = &[
                 "stretch or shrink the spaces so each wrapped line fills `width`, all but the last line of a paragraph",
             ),
             prop(
+                "rotate",
+                "DEGREES",
+                "the angle the text turns about `at`, counterclockwise",
+            ),
+            prop(
                 "number",
                 "N",
                 "a badge with this number to the left of the text, drawn as `style marker` sets; the text is aligned left",

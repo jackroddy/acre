@@ -138,10 +138,25 @@ fn draw_primitives(
                 justify,
                 h_align,
                 v_align,
+                rotate,
             } => {
                 let layout = text::layout(fonts, runs, *size, *width, *justify);
+                // tiny-skia turns clockwise on a y-down canvas, so the
+                // angle is negated to turn counterclockwise
+                let turn = sk::Transform::from_rotate_at(
+                    -*rotate as f32,
+                    origin.x as f32,
+                    origin.y as f32,
+                );
                 for (path, color) in text_paths(fonts, &layout, *origin, *h_align, *v_align) {
-                    paint_path(pixmap, &path, Some(color), None);
+                    let path = if *rotate == 0.0 {
+                        Some(path)
+                    } else {
+                        path.transform(turn)
+                    };
+                    if let Some(path) = path {
+                        paint_path(pixmap, &path, Some(color), None);
+                    }
                 }
             }
         }
@@ -437,6 +452,7 @@ mod tests {
             justify: false,
             h_align: HAlign::Center,
             v_align: VAlign::Middle,
+            rotate: 0.0,
         };
         draw_primitives(
             &mut pixmap,
@@ -451,6 +467,40 @@ mod tests {
         let mid_y = (top + bottom) as f64 / 2.0;
         assert!((mid_x - 40.0).abs() <= 1.0, "ink spans x {left}..{right}");
         assert!((mid_y - 40.0).abs() <= 1.0, "ink spans y {top}..{bottom}");
+    }
+
+    #[test]
+    fn text_turned_a_quarter_reads_upward_from_its_origin() {
+        let mut pixmap = blank(80, 200);
+        let text = Primitive::Text {
+            origin: Point::new(50.0, 190.0),
+            runs: vec![Run {
+                text: "upward".into(),
+                font: Font::Sans,
+                color: Color::BLACK,
+                bullet: false,
+            }],
+            size: 20.0,
+            width: None,
+            justify: false,
+            h_align: HAlign::Left,
+            v_align: VAlign::Baseline,
+            rotate: 90.0,
+        };
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[text],
+            sk::Transform::identity(),
+            None,
+        );
+        let [left, top, right, bottom] = ink(&pixmap);
+        let spans = format!("ink spans x {left}..{right}, y {top}..{bottom}");
+        assert!(bottom - top > 2 * (right - left), "{spans}");
+
+        // the baseline runs up from the origin, so the ink sits
+        // above it and mostly left of it, where the ascenders go
+        assert!(bottom <= 191 && right <= 56 && left < 50, "{spans}");
     }
 
     #[test]
@@ -469,6 +519,7 @@ mod tests {
             justify: false,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
+            rotate: 0.0,
         };
         draw_primitives(
             &mut pixmap,
@@ -528,6 +579,7 @@ mod tests {
             justify: false,
             h_align: HAlign::Left,
             v_align: VAlign::Baseline,
+            rotate: 0.0,
         };
         draw_primitives(
             &mut pixmap,

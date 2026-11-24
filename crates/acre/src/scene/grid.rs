@@ -101,6 +101,7 @@ impl Grid {
                 justify: false,
                 h_align: HAlign::Center,
                 v_align: VAlign::Middle,
+                rotate: 0.0,
             });
         }
     }

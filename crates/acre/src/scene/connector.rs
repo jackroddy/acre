@@ -523,6 +523,7 @@ mod tests {
             justify,
             h_align,
             v_align,
+            ..
         }) = out.last()
         else {
             panic!("expected the label last, got {out:?}");
