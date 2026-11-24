@@ -3,7 +3,7 @@
   "title": "A sweep draws as a smooth curve with its head along the curve's end",
   "body": "Today `Connector::path` in `crates/acre/src/scene/connector.rs` turns every curve, `sweep` included, into `CURVE_STEPS` (24) straight segments. `draw_shaft` draws them as one `Primitive::Polyline` and aims the head along the last segment. On a long sweep each segment is about 50 px, so the corners show. The last segment cuts across the bend, so a head that should point along the curve's end leans off it, by up to about 25° on a sweep 1200 px wide and 190 px tall.\n\n## Proposal\n\n- A primitive `Primitive::Cubic { from, c1, c2, to, stroke }`. The PNG, SVG and PDF renderers draw it as a Bézier curve, with tiny-skia's `cubic_to`, an SVG `C` path and krilla's path builder.\n- `sweep` draws its shaft as one `Cubic`, cut where the head begins by splitting the curve. Its head points along the curve's tangent at the end, which for a sweep is its `enter` way or the reverse of its side's outward direction.\n- `Connector::path` still gives the points that bounds and following use.\n\n## Out of scope\n\n- `arrow { route curve; }` keeps its 24 segments. Drawing it through `Cubic` would keep its shape but change its pixels in every figure that uses it, so that waits for Jack.",
   "type": "feature",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T04:04:30.269343982Z",
-  "updated_at": "2026-11-24T04:04:30.269343982Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T04:07:40.577755507Z",
+  "closed_at": "2026-11-24T04:07:40.577755507Z",
+  "close_reason": "Landed in ac5c69e on dev, as proposed.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "fc6a5fe",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "ac5c69e",
+      "branch": "dev"
+    }
   }
 }
