@@ -1,0 +1,28 @@
+{
+  "id": "acre-ef7221",
+  "title": "Editing in the viewer",
+  "body": "Dragging an object in acre-gui rewrites the number in the source that placed it. Every value keeps its span, so an edit replaces the text under one span and needs no new parser. The first version covers static figures: literal `at X Y`, the offsets of `at NAME DX DY`, `points` pairs and literal `from`/`to` ends, with an `at` inserted where a node has none. It refuses a value from a `let`, a `( ... )` expression or a `style`, a child a stack or grid places, a repeat copy, and an object a timeline moves, with the reason in the status line. With the neovim link the viewer sends an edit message that the plugin applies when the buffer has not changed since; without it the viewer writes the file. A drag on an object moves it and a drag on empty canvas pans. No new key bindings.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:36:24.36691482Z",
+  "updated_at": "2026-11-24T06:36:24.36691482Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6faae32",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
