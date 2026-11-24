@@ -747,8 +747,27 @@ mod tests {
         assert_eq!(fonts.cover(Font::Mono, '\u{1d43}'), Some(Font::Sans));
         let l = layout(&[run("-\u{221e}x", Font::Sans)], 20.0, None);
         assert_eq!(drawn_from(&l), [Font::Sans, Font::Mono, Font::Sans]);
-        let l = layout(&[run("e\u{1d43}", Font::MonoBold)], 20.0, None);
-        assert_eq!(drawn_from(&l), [Font::MonoBold, Font::Sans]);
+    }
+
+    #[test]
+    fn a_bold_character_its_font_lacks_comes_from_a_bold_face() {
+        // sans has no arrow, mono has no superscript a, and only the
+        // math font, which has no bold face, has a triple integral
+        let fonts = Fonts::default();
+        assert_eq!(
+            fonts.cover(Font::SansBold, '\u{2192}'),
+            Some(Font::MonoBold)
+        );
+        assert_eq!(
+            fonts.cover(Font::MonoBold, '\u{1d43}'),
+            Some(Font::SansBold)
+        );
+        assert_eq!(fonts.cover(Font::SansBold, '\u{222d}'), Some(Font::Math));
+        let l = layout(&[run("a\u{2192}b", Font::SansBold)], 20.0, None);
+        assert_eq!(
+            drawn_from(&l),
+            [Font::SansBold, Font::MonoBold, Font::SansBold]
+        );
     }
 
     #[test]

@@ -80,6 +80,10 @@ struct Set {
 /// this order.
 pub const FALLBACK: [Font; 3] = [Font::Sans, Font::Mono, Font::Math];
 
+/// The fonts that set a character bold text's own font lacks, tried in
+/// this order. The math font has no bold face.
+pub const BOLD_FALLBACK: [Font; 3] = [Font::SansBold, Font::MonoBold, Font::Math];
+
 /// How many text faces acre embeds.
 const EMBEDDED_TEXT: usize = 5;
 
@@ -118,10 +122,15 @@ impl Fonts {
     }
 
     /// The font that sets `c` in text in `font`: `font` when it has a
-    /// glyph for `c`, else the first of [`FALLBACK`] that has one.
+    /// glyph for `c`, else the first font that has one, from
+    /// [`BOLD_FALLBACK`] when `font` is bold and [`FALLBACK`] otherwise.
     pub fn cover(&self, font: Font, c: char) -> Option<Font> {
+        let fallback = match font {
+            Font::SansBold | Font::MonoBold => BOLD_FALLBACK,
+            _ => FALLBACK,
+        };
         std::iter::once(font)
-            .chain(FALLBACK)
+            .chain(fallback)
             .find(|&f| self.face(f).glyph_index(c).is_some())
     }
 

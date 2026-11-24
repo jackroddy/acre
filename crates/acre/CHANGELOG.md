@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A character that bold text's own font lacks now comes from a bold face.
+  In `sans-bold` text, acre sets `→` in mono bold, where it used regular
+  mono before. Bold text falls back to sans bold, mono bold and the math
+  font, in the order `fonts::BOLD_FALLBACK` holds. The math font has no
+  bold face, so a character that only the math font has stays regular.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added
