@@ -1354,8 +1354,6 @@ fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -
     pressed
 }
 
-/// When the file at `path` last changed, or `None` when the disk cannot
-/// say.
 fn missing_glyph(c: char) -> String {
     format!(
         "warning: no font has a glyph for '{c}' (U+{:04X})",
@@ -1363,6 +1361,8 @@ fn missing_glyph(c: char) -> String {
     )
 }
 
+/// When the file at `path` last changed, or `None` when the disk cannot
+/// say.
 fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
