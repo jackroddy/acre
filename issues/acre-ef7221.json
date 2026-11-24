@@ -3,7 +3,7 @@
   "title": "Editing in the viewer",
   "body": "Dragging an object in acre-gui rewrites the number in the source that placed it. Every value keeps its span, so an edit replaces the text under one span and needs no new parser. The first version covers static figures: literal `at X Y`, the offsets of `at NAME DX DY`, `points` pairs and literal `from`/`to` ends, with an `at` inserted where a node has none. It refuses a value from a `let`, a `( ... )` expression or a `style`, a child a stack or grid places, a repeat copy, and an object a timeline moves, with the reason in the status line. With the neovim link the viewer sends an edit message that the plugin applies when the buffer has not changed since; without it the viewer writes the file. A drag on an object moves it and a drag on empty canvas pans. No new key bindings.",
   "type": "milestone",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:36:24.36691482Z",
-  "updated_at": "2026-11-24T07:54:29.108754471Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T22:59:28.853417603Z",
+  "closed_at": "2026-11-24T22:59:28.853417603Z",
+  "close_reason": "All 22 children are closed. acre-gui now edits the drawing it shows, and each change is written to the source: through the neovim plugin as one undo step, or to the file. A person can select by click or box, move with the drag or the arrow keys with snapping to objects and a grid, resize boxes and ellipses, move vertices, re-anchor line ends on anchor dots, and reorder stack and grid children. The tool palette draws new nodes. A double-click edits text, a panel sets colours and strokes, buttons align and distribute, and keys delete, copy and paste. The edits come from `scene::edit` in the acre library and keep the layout `acre fmt` gives.",
+  "resolution": "done",
   "notes": [
     {
       "id": "5f504120",
@@ -32,6 +32,9 @@
       "commit": "6faae32",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "3cf6d44",
+      "branch": "dev"
+    }
   }
 }
