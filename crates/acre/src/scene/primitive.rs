@@ -202,6 +202,15 @@ pub enum Primitive {
         points: Vec<Point>,
         stroke: Stroke,
     },
+    /// A cubic Bézier curve from `from` to `to` with handles `c1` and
+    /// `c2`.
+    Cubic {
+        from: Point,
+        c1: Point,
+        c2: Point,
+        to: Point,
+        stroke: Stroke,
+    },
     /// A closed outline through `points`.
     Polygon {
         points: Vec<Point>,
@@ -223,6 +232,41 @@ pub enum Primitive {
         /// counterclockwise.
         rotate: f64,
     },
+}
+
+/// The point at `t`, from 0 to 1, along the cubic through `p`.
+pub fn cubic_at(p: [Point; 4], t: f64) -> Point {
+    let u = 1.0 - t;
+    p[0] * (u * u * u) + p[1] * (3.0 * u * u * t) + p[2] * (3.0 * u * t * t) + p[3] * (t * t * t)
+}
+
+/// The values of `t` strictly between 0 and 1 where the cubic through
+/// `p` turns back in x or in y.
+fn cubic_turns(p: [Point; 4]) -> Vec<f64> {
+    let mut out = Vec::new();
+    for v in [p.map(|q| q.x), p.map(|q| q.y)] {
+        // the derivative over 3 is a t^2 + b t + c, with
+        //   a = -v0 + 3 v1 - 3 v2 + v3
+        //   b = 2 (v0 - 2 v1 + v2)
+        //   c = v1 - v0
+        let a = -v[0] + 3.0 * v[1] - 3.0 * v[2] + v[3];
+        let b = 2.0 * (v[0] - 2.0 * v[1] + v[2]);
+        let c = v[1] - v[0];
+        if a.abs() < 1e-12 {
+            if b.abs() > 1e-12 {
+                out.push(-c / b);
+            }
+        } else {
+            let disc = b * b - 4.0 * a * c;
+            if disc >= 0.0 {
+                let r = disc.sqrt();
+                out.push((-b + r) / (2.0 * a));
+                out.push((-b - r) / (2.0 * a));
+            }
+        }
+    }
+    out.retain(|t| *t > 0.0 && *t < 1.0);
+    out
 }
 
 /// `p` turned about `center` by `degrees`, counterclockwise on the
@@ -263,6 +307,20 @@ pub fn bounds(fonts: &Fonts, prims: &[Primitive]) -> Option<(Point, Point)> {
             Primitive::Polyline { points, stroke } => {
                 for p in points {
                     add(*p, stroke.width / 2.0);
+                }
+            }
+            Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke,
+            } => {
+                let p = [*from, *c1, *c2, *to];
+                add(*from, stroke.width / 2.0);
+                add(*to, stroke.width / 2.0);
+                for t in cubic_turns(p) {
+                    add(cubic_at(p, t), stroke.width / 2.0);
                 }
             }
             Primitive::Polygon { points, .. } => {
@@ -341,6 +399,18 @@ impl Primitive {
                 }
                 scale_stroke(stroke);
             }
+            Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke,
+            } => {
+                for p in [from, c1, c2, to] {
+                    *p = motion.apply(*p);
+                }
+                scale_stroke(stroke);
+            }
             Primitive::Polygon { points, stroke, .. } => {
                 for p in points {
                     *p = motion.apply(*p);
@@ -380,7 +450,9 @@ impl Primitive {
                 }
                 fade_stroke(stroke);
             }
-            Primitive::Line { stroke, .. } | Primitive::Polyline { stroke, .. } => {
+            Primitive::Line { stroke, .. }
+            | Primitive::Polyline { stroke, .. }
+            | Primitive::Cubic { stroke, .. } => {
                 stroke.color = stroke.color.faded(opacity);
             }
             Primitive::Text { runs, .. } => {

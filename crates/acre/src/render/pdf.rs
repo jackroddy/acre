@@ -12,7 +12,7 @@ use krilla::surface::Surface;
 use krilla::text::{Font as PdfFont, GlyphId, KrillaGlyph};
 use tiny_skia as sk;
 
-use super::{oval, path_through, rounded_rect};
+use super::{cubic_path, oval, path_through, rounded_rect};
 use crate::fonts::Fonts;
 use crate::scene::{Color, Font, Point, Primitive, Scene, Stroke};
 use crate::text::{self, Mark};
@@ -102,6 +102,17 @@ impl Pdf<'_> {
             }
             Primitive::Polyline { points, stroke } => {
                 if let Some(path) = path_through(points, false) {
+                    draw_path(surface, &path, None, Some(*stroke));
+                }
+            }
+            Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke,
+            } => {
+                if let Some(path) = cubic_path([*from, *c1, *c2, *to]) {
                     draw_path(surface, &path, None, Some(*stroke));
                 }
             }
@@ -381,6 +392,19 @@ mod tests {
         );
         assert!(fonts.iter().any(|f| f.ends_with("+JetBrainsMonoNL-Bold")));
         assert!(fonts.iter().any(|f| f.ends_with("+NotoSansMath-Regular")));
+    }
+
+    #[test]
+    fn a_sweep_draws_a_curve() {
+        let doc = pdf(
+            "canvas { size 200 200; sweep { from 10 10; to 150 150; leave down; enter down; } }",
+        );
+        let pages = doc.get_pages();
+        let content = doc.get_page_content(pages[&1]);
+        let ops = lopdf::content::Content::decode(&content)
+            .unwrap()
+            .operations;
+        assert!(ops.iter().any(|op| op.operator == "c"), "{ops:?}");
     }
 
     #[test]

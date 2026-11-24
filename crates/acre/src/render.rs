@@ -121,6 +121,17 @@ fn draw_primitives(
                     paint_path(pixmap, &path, None, Some(*stroke));
                 }
             }
+            Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke,
+            } => {
+                if let Some(path) = cubic_path([*from, *c1, *c2, *to]) {
+                    paint_path(pixmap, &path, None, Some(*stroke));
+                }
+            }
             Primitive::Polygon {
                 points,
                 fill,
@@ -253,6 +264,14 @@ fn path_through(points: &[Point], closed: bool) -> Option<sk::Path> {
     if closed {
         builder.close();
     }
+    builder.finish()
+}
+
+fn cubic_path(p: [Point; 4]) -> Option<sk::Path> {
+    let [a, c1, c2, b] = p.map(|q| (q.x as f32, q.y as f32));
+    let mut builder = sk::PathBuilder::new();
+    builder.move_to(a.0, a.1);
+    builder.cubic_to(c1.0, c1.1, c2.0, c2.1, b.0, b.1);
     builder.finish()
 }
 
@@ -434,6 +453,29 @@ mod tests {
         assert!(!is_white(&pixmap, 15, 5));
         assert!(!is_white(&pixmap, 25, 15));
         assert!(is_white(&pixmap, 15, 15));
+    }
+
+    #[test]
+    fn a_cubic_is_stroked_along_its_curve() {
+        let mut pixmap = blank(40, 40);
+        // a curve from the top left to the bottom right that bulges
+        // out to the right, well away from the straight line
+        let curve = Primitive::Cubic {
+            from: Point::new(5.0, 5.0),
+            c1: Point::new(45.0, 5.0),
+            c2: Point::new(45.0, 35.0),
+            to: Point::new(5.0, 35.0),
+            stroke: Stroke::solid(RED, 2.0),
+        };
+        draw_primitives(
+            &mut pixmap,
+            &Fonts::default(),
+            &[curve],
+            sk::Transform::identity(),
+            None,
+        );
+        assert!(!is_white(&pixmap, 35, 20));
+        assert!(is_white(&pixmap, 5, 20));
     }
 
     #[test]

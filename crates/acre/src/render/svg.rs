@@ -109,6 +109,27 @@ impl Svg<'_> {
                 self.points("polyline", points);
                 self.paint(None, Some(*stroke));
             }
+            Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke,
+            } => {
+                let _ = write!(
+                    self.body,
+                    "<path d=\"M{},{} C{},{} {},{} {},{}\"",
+                    Num(from.x),
+                    Num(from.y),
+                    Num(c1.x),
+                    Num(c1.y),
+                    Num(c2.x),
+                    Num(c2.y),
+                    Num(to.x),
+                    Num(to.y),
+                );
+                self.paint(None, Some(*stroke));
+            }
             Primitive::Polygon {
                 points,
                 fill,
@@ -403,6 +424,21 @@ mod tests {
             .find(|n| n.attribute("rx") == Some("6"))
             .expect("the box has rounded corners");
         assert_eq!(rounded.attribute("stroke-dasharray"), Some("4 2"));
+    }
+
+    #[test]
+    fn a_sweep_is_one_curved_path() {
+        let out = svg(
+            "canvas { size 200 200; sweep { from 10 10; to 150 150; leave down; enter down; } }",
+        );
+        let doc = roxmltree::Document::parse(&out).unwrap();
+        let curves: Vec<_> = doc
+            .descendants()
+            .filter_map(|n| n.attribute("d"))
+            .filter(|d| d.contains('C'))
+            .collect();
+        assert_eq!(curves.len(), 1, "{out}");
+        assert!(curves[0].starts_with("M10,10 C"), "{}", curves[0]);
     }
 
     #[test]
