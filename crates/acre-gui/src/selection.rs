@@ -58,14 +58,12 @@ impl Selection {
         }
     }
 
-    /// The selection once the editor's cursor moves to byte `offset` of
-    /// the source of `program`: this one when a selected node holds the
-    /// offset, else the innermost node under the canvas that holds it and
-    /// drew an object whose source is in `drawn`, else none.
-    pub fn at_cursor(self, program: &Program, drawn: &[Span], offset: usize) -> Selection {
-        if self.spans.iter().any(|&s| holds(s, offset)) {
-            return self;
-        }
+    /// The selection the editor's cursor at byte `offset` of `source`
+    /// makes, where `program` was parsed from `source`: the innermost
+    /// node under the canvas that holds the offset and drew an object
+    /// whose source is in `drawn`, else none.
+    pub fn at_cursor(program: &Program, source: &str, drawn: &[Span], offset: usize) -> Selection {
+        let offset = on_line(source, offset);
         let spans: Vec<Span> = innermost(program, drawn, offset).into_iter().collect();
         Selection {
             made_in_viewer: false,
@@ -113,6 +111,31 @@ impl Selection {
 /// of its kind up to its closing brace, both included.
 fn holds(span: Span, offset: usize) -> bool {
     span.start <= offset && offset < span.end
+}
+
+/// The offset that byte `offset` of `source` stands for on its line: the
+/// line's first non-blank byte when only blanks come before it, its last
+/// when only blanks come after it, and `offset` itself on a blank line.
+fn on_line(source: &str, offset: usize) -> usize {
+    let bytes = source.as_bytes();
+    let offset = offset.min(bytes.len());
+    let start = bytes[..offset]
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map_or(0, |i| i + 1);
+    let end = bytes[offset..]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(bytes.len(), |i| offset + i);
+    let line = &bytes[start..end];
+    let blank = |b: &u8| matches!(b, b' ' | b'\t' | b'\r');
+    let (Some(first), Some(last)) = (
+        line.iter().position(|b| !blank(b)),
+        line.iter().rposition(|b| !blank(b)),
+    ) else {
+        return offset;
+    };
+    (offset - start).clamp(first, last) + start
 }
 
 /// The innermost node under the canvas of `program` that holds byte
@@ -296,13 +319,12 @@ mod tests {
         );
     }
 
-    /// The selection the editor's cursor at `offset` in `src` makes from
-    /// `selected`.
-    fn cursor(src: &str, selected: Selection, offset: usize) -> Selection {
+    /// The selection the editor's cursor at `offset` in `src` makes.
+    fn cursor(src: &str, offset: usize) -> Selection {
         let program = parse(src).unwrap();
         let scene = scene::build(&program, &[], &[]).unwrap();
         let drawn: Vec<Span> = scene.objects.iter().map(|o| o.source).collect();
-        selected.at_cursor(&program, &drawn, offset)
+        Selection::at_cursor(&program, src, &drawn, offset)
     }
 
     #[test]
@@ -311,18 +333,15 @@ mod tests {
         let group = program.nodes[0].children[0].span;
         let c = span_of(GROUP, "box c");
         let in_c = GROUP.find("size 20").unwrap();
-        assert_eq!(cursor(GROUP, Selection::default(), in_c).spans(), [c]);
+        assert_eq!(cursor(GROUP, in_c).spans(), [c]);
         let in_group = GROUP.find("at 100").unwrap();
-        assert_eq!(
-            cursor(GROUP, Selection::default(), in_group).spans(),
-            [group]
-        );
+        assert_eq!(cursor(GROUP, in_group).spans(), [group]);
     }
 
     #[test]
     fn a_node_holds_the_cursor_from_its_kind_to_its_closing_brace() {
         let a = span_of(SRC, "box a");
-        let on = |offset| cursor(SRC, Selection::default(), offset);
+        let on = |offset| cursor(SRC, offset);
         assert_eq!(on(a.start).spans(), [a]);
         assert_eq!(on(a.end - 1).spans(), [a]);
 
@@ -333,57 +352,99 @@ mod tests {
 
     #[test]
     fn the_cursor_on_the_canvas_or_in_a_node_that_draws_nothing_selects_nothing() {
-        let on = |offset| cursor(SRC, Selection::default(), offset);
+        let on = |offset| cursor(SRC, offset);
         assert!(on(SRC.find("size 300").unwrap()).spans().is_empty());
         assert!(on(0).spans().is_empty());
 
         let styled = "canvas { size 300 200; style s { fill red; } \
                       box a { at 10 10; size 40 40; } }";
         let in_style = styled.find("fill").unwrap();
-        assert!(
-            cursor(styled, Selection::default(), in_style)
-                .spans()
-                .is_empty()
-        );
+        assert!(cursor(styled, in_style).spans().is_empty());
+    }
+
+    // the group's line is indented with tabs, and the lines that
+    // end in two spaces test the blanks after a node's last byte
+    const NESTED: &str = concat!(
+        "canvas {\n",
+        "  size 300 200;\n",
+        "  stack s {\n",
+        "    at 10 10;\n",
+        "\n",
+        "    box a { size 20 20; }\n",
+        "\t\tgroup g {\n",
+        "      at 0 0;\n",
+        "      box c { size 10 10; }  \n",
+        "    }  \n",
+        "  }\n",
+        "}\n",
+    );
+
+    /// The byte at column `col` of line `line` of `NESTED`, both from 0.
+    fn at(line: usize, col: usize) -> usize {
+        NESTED
+            .split_inclusive('\n')
+            .take(line)
+            .map(str::len)
+            .sum::<usize>()
+            + col
     }
 
     #[test]
-    fn the_cursor_inside_a_selected_node_leaves_the_selection() {
-        let program = parse(GROUP).unwrap();
-        let group = program.nodes[0].children[0].span;
-        let selected = Selection::of(&program, &[group]);
-        let in_c = GROUP.find("size 20").unwrap();
-        assert_eq!(
-            cursor(GROUP, Selection::of(&program, &[group]), in_c),
-            selected
-        );
+    fn the_cursor_in_a_lines_indentation_selects_the_node_the_line_starts() {
+        let program = parse(NESTED).unwrap();
+        let stack = &program.nodes[0].children[0];
+        let (a, group) = (stack.children[0].span, &stack.children[1]);
+        let c = group.children[0].span;
+        let on = |line, col| cursor(NESTED, at(line, col)).spans().to_vec();
+        assert_eq!(on(5, 0), [a]);
+        assert_eq!(on(5, 3), [a]);
+        assert_eq!(on(6, 1), [group.span]);
+        assert_eq!(on(8, 2), [c]);
+
+        // the closing brace's line belongs to the node it closes
+        assert_eq!(on(9, 0), [group.span]);
+        assert_eq!(on(10, 1), [stack.span]);
     }
 
     #[test]
-    fn a_boxed_selection_survives_the_cursor_its_goto_sends() {
-        let program = parse(SRC).unwrap();
-        let both = Selection::of(&program, &boxed(SRC, (0.0, 0.0), (300.0, 200.0)));
-        assert_eq!(both.spans().len(), 2);
-        let goto = both.spans()[1].start;
-        let after = cursor(SRC, Selection::of(&program, both.spans()), goto);
-        assert_eq!(after, both);
-        assert!(after.made_in_viewer());
+    fn the_cursor_on_a_containers_own_lines_or_a_blank_line_selects_it() {
+        let program = parse(NESTED).unwrap();
+        let stack = &program.nodes[0].children[0];
+        let group = stack.children[1].span;
+        let on = |line, col| cursor(NESTED, at(line, col)).spans().to_vec();
+        assert_eq!(on(2, 0), [stack.span]);
+        assert_eq!(on(2, 10), [stack.span]);
+        assert_eq!(on(3, 2), [stack.span]);
+        assert_eq!(on(3, 6), [stack.span]);
+        assert_eq!(on(4, 0), [stack.span]);
+        assert_eq!(on(7, 0), [group]);
+        assert!(on(1, 0).is_empty());
+        assert!(on(12, 0).is_empty());
+    }
+
+    #[test]
+    fn the_cursor_after_a_lines_last_byte_selects_the_node_that_byte_is_in() {
+        let program = parse(NESTED).unwrap();
+        let group = &program.nodes[0].children[0].children[1];
+        let c = group.children[0].span;
+        let on = |line, col| cursor(NESTED, at(line, col)).spans().to_vec();
+        assert_eq!(on(8, 28), [c]);
+        assert_eq!(on(8, 29), [c]);
+        assert_eq!(on(9, 6), [group.span]);
+        assert_eq!(on(9, 7), [group.span]);
     }
 
     #[test]
     fn the_cursor_moving_the_selection_makes_it_the_editors() {
         let program = parse(SRC).unwrap();
-        let a = span_of(SRC, "box a");
         let b = span_of(SRC, "box b");
-        let clicked = Selection::of(&program, &[a]);
-        assert!(clicked.made_in_viewer());
-        let moved = cursor(SRC, clicked, b.start + 1);
+        let moved = cursor(SRC, b.start + 1);
         assert_eq!(moved.spans(), [b]);
         assert!(!moved.made_in_viewer());
 
         // a click on the node the cursor picked hands it back to the viewer
         assert!(Selection::of(&program, moved.spans()).made_in_viewer());
-        let left = cursor(SRC, Selection::of(&program, &[a]), a.end);
+        let left = cursor(SRC, span_of(SRC, "box a").end);
         assert!(left.spans().is_empty());
         assert!(!left.made_in_viewer());
     }
@@ -391,7 +452,7 @@ mod tests {
     #[test]
     fn the_editors_selection_stays_the_editors_after_an_edit() {
         let a = span_of(SRC, "box a");
-        let picked = cursor(SRC, Selection::default(), a.start);
+        let picked = cursor(SRC, a.start);
         let edited = SRC.replace("at 10 10", "at 10.5 10.5");
         let followed = picked.follow(&parse(&edited).unwrap());
         assert_eq!(followed.spans(), [span_of(&edited, "box a")]);
@@ -401,9 +462,9 @@ mod tests {
     #[test]
     fn a_click_on_empty_canvas_clears_a_selection_the_cursor_made() {
         let a = span_of(SRC, "box a");
-        assert_eq!(cursor(SRC, Selection::default(), a.start).spans(), [a]);
+        assert_eq!(cursor(SRC, a.start).spans(), [a]);
         assert_eq!(click(SRC, Point::new(150.0, 150.0)), Selection::default());
-        assert_eq!(cursor(SRC, Selection::default(), a.start).spans(), [a]);
+        assert_eq!(cursor(SRC, a.start).spans(), [a]);
     }
 
     #[test]

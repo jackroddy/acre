@@ -32,9 +32,14 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   canvas that holds the cursor and draws something. A node holds the
   cursor from the first letter of its kind to its closing brace. The
   cursor between nodes or on the canvas's own lines clears the selection.
-  The cursor inside a node already selected leaves the selection as it is.
-  A click's goto therefore keeps the clicked node selected, and a cursor
-  in one node of a box selection keeps the whole box. The properties
+  The cursor in a line's indentation counts as on the line's first
+  character. The cursor in the spaces after a line's last character
+  counts as on that character, so the line of a closing brace selects the
+  node the brace closes. A blank line inside a stack or group selects the
+  stack or group. The cursor in a child of a selected node selects the
+  child. After a click, the viewer ignores the one cursor message that
+  answers its goto. The clicked node then stays selected and its
+  properties panel stays open. The properties
   panel opens only for a selection made in the viewer by a click, a box or
   a new node. A selection the cursor made leaves it closed.
 

@@ -52,9 +52,20 @@ pub struct App {
     scene: Option<Scene>,
     /// The program `scene` was built from.
     program: Option<lang::Program>,
+    /// The source `program` was parsed from.
+    program_text: String,
     /// The nodes clicked, dragged or boxed last, or under the editor's
     /// cursor, outlined until a click elsewhere.
     selection: Selection,
+    /// The offset of the last goto sent to the editor.
+    //
+    // the next batch of messages that holds a text or a cursor
+    // clears it. A cursor at this offset in that batch is the
+    // goto's echo and changes nothing. The editor sends no echo
+    // when its cursor is already at the offset. The offset then
+    // holds back at most the next cursor message, and only when
+    // that message is at this offset
+    goto: Option<usize>,
     /// The field open over an object to edit its text.
     field: Option<Field>,
     /// The panel that changes the selected nodes' colors and strokes.
@@ -101,7 +112,9 @@ impl App {
             error: None,
             scene: None,
             program: None,
+            program_text: String::new(),
             selection: Selection::default(),
+            goto: None,
             field: None,
             properties: Properties::default(),
             nudge: Nudge::default(),
@@ -174,6 +187,7 @@ impl App {
                 self.selection = std::mem::take(&mut self.selection).follow(&program);
                 self.scene = Some(scene);
                 self.program = Some(program);
+                self.program_text = self.text.clone();
                 self.version += 1;
             }
             Err(e) => self.error = Some(e),
@@ -251,6 +265,12 @@ impl App {
             }
         }
 
+        let goto = if newest.is_some() || cursor.is_some() {
+            self.goto.take()
+        } else {
+            None
+        };
+
         // only the newest text matters when several came at once
         if let Some((text, path, tick)) = newest {
             // the editor sends its text after an edit it makes or
@@ -279,13 +299,14 @@ impl App {
             }
         }
 
-        // after the text, so the offset is read against the newest
-        // source shown
+        // after the text, so the offset is read against the source
+        // of the newest program
         if let Some(offset) = cursor
+            && Some(offset) != goto
             && let (Some(scene), Some(program)) = (&self.scene, &self.program)
         {
             let drawn: Vec<lang::Span> = scene.objects.iter().map(|o| o.source).collect();
-            self.selection = std::mem::take(&mut self.selection).at_cursor(program, &drawn, offset);
+            self.selection = Selection::at_cursor(program, &self.program_text, &drawn, offset);
         }
         if !self.reported
             && let Some(link) = &self.link
@@ -573,7 +594,10 @@ impl App {
             return;
         };
         match &self.link {
-            Some(link) => link.send(&Outgoing::Goto { offset }),
+            Some(link) => {
+                link.send(&Outgoing::Goto { offset });
+                self.goto = Some(offset);
+            }
             None => {
                 let line = self.text[..offset.min(self.text.len())]
                     .matches('\n')
