@@ -336,6 +336,7 @@ impl App {
     /// it again.
     fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
         if self.link.is_some() {
+            self.nudge.admit()?;
             self.send_edits(edits);
             self.nudge.sent();
             return Ok(());

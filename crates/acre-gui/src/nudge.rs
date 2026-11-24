@@ -33,6 +33,15 @@ impl Nudge {
         self.waiting
     }
 
+    /// Whether another edit may go to the editor now, and the notice
+    /// for the status line when not.
+    pub fn admit(&self) -> Result<(), String> {
+        match self.waiting {
+            true => Err("waiting for the editor; try again".to_string()),
+            false => Ok(()),
+        }
+    }
+
     /// Note that an edit went to the editor.
     pub fn sent(&mut self) {
         self.waiting = true;
@@ -64,6 +73,16 @@ mod tests {
         nudge.answered();
         assert_eq!(nudge.ready(), Some((2.0, -1.0)));
         assert_eq!(nudge.ready(), None);
+    }
+
+    #[test]
+    fn an_edit_is_refused_while_another_is_out() {
+        let mut nudge = Nudge::default();
+        assert_eq!(nudge.admit(), Ok(()));
+        nudge.sent();
+        assert!(nudge.admit().is_err());
+        nudge.answered();
+        assert_eq!(nudge.admit(), Ok(()));
     }
 
     #[test]

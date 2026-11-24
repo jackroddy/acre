@@ -166,6 +166,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Fixed
 
+- Over the editor link, a drag, Delete, a paste, a duplicate, a text
+  edit or a property change made while an earlier edit is still with the
+  editor is now refused with "waiting for the editor; try again". Before,
+  the editor dropped it without a message. A refused drag snaps back.
+
 - A missing-glyph warning no longer hides the status line's notices. A
   notice set after the last build, such as the reason a drag was refused,
   now shows ahead of the warning. A new build clears the notice. A source
