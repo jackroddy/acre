@@ -16,6 +16,7 @@ use crate::field::{self, Field};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
+use crate::properties::Properties;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
 use crate::tool::{self, Step, Tool};
@@ -52,6 +53,8 @@ pub struct App {
     selection: Selection,
     /// The field open over an object to edit its text.
     field: Option<Field>,
+    /// The panel that changes the selected nodes' colors and strokes.
+    properties: Properties,
     nudge: Nudge,
     /// The nodes added by the edit with the editor, to select once the
     /// editor sends its text back.
@@ -98,6 +101,7 @@ impl App {
             program: None,
             selection: Selection::default(),
             field: None,
+            properties: Properties::default(),
             nudge: Nudge::default(),
             added: None,
             version: 0,
@@ -972,6 +976,63 @@ impl App {
         }
     }
 
+    /// The panel that changes the selected nodes' colors, strokes and
+    /// fonts.
+    fn properties(&mut self, ui: &mut egui::Ui) {
+        // with an error, the scene shown was built from an earlier
+        // text, so the selection's spans do not point into `text`
+        if self.error.is_some() {
+            ui.label("fix the source's error before changing properties");
+            return;
+        }
+        let fonts = self
+            .program
+            .as_ref()
+            .and_then(|p| scene::font_files(p).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| f.name)
+            .filter(|name| name != "math")
+            .collect();
+        self.properties
+            .read(self.version, &self.text, self.selection.spans(), fonts);
+        self.properties.ui(ui, self.selection.paths());
+    }
+
+    /// Write the first change in the properties panel not yet written,
+    /// once no pointer button is held, so that a drag in a color picker
+    /// writes once, and once the editor has taken the last edit.
+    fn write_property(&mut self, ctx: &egui::Context) {
+        if self.nudge.waiting() || ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let Some((key, value)) = self.properties.take(self.selection.paths()) else {
+            return;
+        };
+        let nodes = self.selection.spans().to_vec();
+        let written = self
+            .on_source("change it", |text| {
+                edit::property_edits(text, &nodes, key, &value)
+            })
+            .and_then(|edits| {
+                if edits.is_empty() {
+                    return Ok(false);
+                }
+                self.write(&edits).map(|()| true)
+            });
+
+        // a refusal or a change that made no edit leaves the panel
+        // showing a value the source does not hold
+        match written {
+            Ok(true) => self.notice = None,
+            Ok(false) => self.properties.clear(),
+            Err(why) => {
+                self.notice = Some(why);
+                self.properties.clear();
+            }
+        }
+    }
+
     fn status(&self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let where_ = self
@@ -1042,6 +1103,10 @@ impl eframe::App for App {
         let has_sections = self.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
         if self.sections_open && has_sections {
             egui::Panel::left("sections").show(ui, |ui| self.sections(ui));
+        }
+        if !self.selection.spans().is_empty() {
+            self.write_property(ui.ctx());
+            egui::Panel::right("properties").show(ui, |ui| self.properties(ui));
         }
         if self.playback.playing() {
             ui.ctx().request_repaint();

@@ -9,6 +9,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- With one or more nodes selected, a panel on the right lists the
+  properties every selected node's kind takes among `fill`, `stroke`,
+  `stroke-width`, `dash`, `color`, `text-color`, `text-size` and `font`.
+  Each row shows the value and whether the node, a style or the default
+  sets it, or "mixed" where the nodes differ. A color has a color button,
+  and a `none` toggle where the property takes `none`. A size has a number
+  field, and `font` a list of the five built-in fonts and those `fonts`
+  registers. acre-gui writes a change to every selected node as one edit.
+  It writes a drag in the color picker or on a number once, when the mouse
+  button is released. The × beside a node's own value takes it away. For
+  a refused change acre-gui writes nothing, and the status line gives the
+  reason.
 - The toolbar has a palette of tools: Select, Box, Ellipse, Text, Line,
   Arrow, Polygon and Polyline. After a tool adds a node, the palette goes
   back to Select. acre-gui adds each node at the end of the canvas, before

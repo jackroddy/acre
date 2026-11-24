@@ -8,12 +8,16 @@
 //! [`node_path`] and [`node_span`] find a node again after an edit
 //! shifts its span. [`insert_edits`], [`delete_edits`], [`copy_text`]
 //! and [`paste_edits`] add, delete and copy whole nodes.
+//! [`property_values`] reads a node's `fill`, `stroke` and the like, and
+//! [`property_edits`] sets them.
 
 mod nodes;
+mod properties;
 
 pub use nodes::{
     EndAt, NewNode, copy_text, delete_edits, fresh_name, insert_edits, name_edits, paste_edits,
 };
+pub use properties::{Origin, Setting, property_edits, property_values};
 
 use super::build::at_named;
 use crate::lang::{self, Error, Node, Property, Span, Value, ValueKind};
@@ -673,7 +677,8 @@ impl Mover<'_> {
 
     /// The insertion of `property;` before the node's first property or
     /// child, on its line when it shares the brace's line and on a line
-    /// of its own at the same indent when not.
+    /// of its own at the same indent when not, or in place of the spaces
+    /// of an empty body.
     fn insert(&self, property: &str) -> TextEdit {
         let node = self.target;
         let open = open_brace(self.source, node);
@@ -683,21 +688,30 @@ impl Mover<'_> {
             .map(|p| p.span.start)
             .chain(node.children.iter().map(|c| c.span.start))
             .min();
-        let (at, text) = match first {
+        let (span, text) = match first {
             Some(start) => {
                 let between = &self.source[open..start];
                 let text = match between.rfind('\n') {
                     Some(k) => format!("{property};\n{}", &between[k + 1..]),
                     None => format!("{property}; "),
                 };
-                (start, text)
+                (Span { start, end: start }, text)
             }
-            None => (open + 1, format!(" {property}; ")),
+            None => {
+                let close = node.span.end - 1;
+                let end = if self.source[open + 1..close].trim().is_empty() {
+                    close
+                } else {
+                    open + 1
+                };
+                let span = Span {
+                    start: open + 1,
+                    end,
+                };
+                (span, format!(" {property}; "))
+            }
         };
-        TextEdit {
-            span: Span { start: at, end: at },
-            text,
-        }
+        TextEdit { span, text }
     }
 }
 

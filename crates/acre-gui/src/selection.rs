@@ -55,6 +55,10 @@ impl Selection {
         &self.spans
     }
 
+    pub fn paths(&self) -> &[Vec<usize>] {
+        &self.paths
+    }
+
     /// Whether the node at `node` is selected.
     pub fn contains(&self, node: Span) -> bool {
         self.spans.contains(&node)

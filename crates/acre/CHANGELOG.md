@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::property_edits` works out the edits that set a property
+  such as `fill` or `dash` on one or more nodes. It replaces a node's own
+  value, or adds one before the node's first property, which then goes over
+  a style's value. An empty value takes the node's own value away. It
+  refuses a key the node's kind does not take, a node inside a `repeat`, a
+  value from a `let` or `( ... )`, and an edit after which the file would
+  no longer build.
+- `scene::edit::property_values` reads a node's value of each of a list of
+  keys its kind takes, and says whether the node, a style or the default
+  sets it. For a `let` name it gives the values the `let` names.
 - `scene::edit` works out the source edits that add, name, delete and copy
   whole nodes. `NewNode::text` writes a box, an ellipse, a text, a line,
   an arrow, a polygon or a polyline on one line, and `insert_edits` adds
@@ -509,6 +519,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A property added to a node whose body holds only spaces, such as
+  `group { }`, now replaces the spaces, so the result keeps the layout
+  `acre fmt` writes.
 - `brace { over a b; }` spans the box around every thing named after `over`.
   It used to cover `a` alone. A brace over several things follows the first
   as it moves. A word after `over` that names nothing is an error.

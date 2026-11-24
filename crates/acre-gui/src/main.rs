@@ -7,6 +7,7 @@ mod field;
 mod link;
 mod nudge;
 mod playback;
+mod properties;
 mod recent;
 mod selection;
 mod snap;

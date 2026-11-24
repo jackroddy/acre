@@ -566,7 +566,7 @@ pub(super) fn digits_after(word: &str, name: &str) -> bool {
 /// The span that deletes `span`: with its whole line, through the line
 /// break, when the line holds nothing else but a comment after it, and
 /// with one space next to it when not.
-fn removal(source: &str, span: Span) -> Span {
+pub(super) fn removal(source: &str, span: Span) -> Span {
     let start = line_start(source, span.start);
     let end = source[span.end..]
         .find('\n')
