@@ -261,6 +261,7 @@ pub fn build(
         objects,
         fonts,
         sections,
+        origin: offset,
     })
 }
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit` works out the source edits that add, name, delete and copy
+  whole nodes. `NewNode::text` writes a box, an ellipse, a text, a line,
+  an arrow, a polygon or a polyline on one line, and `insert_edits` adds
+  nodes at the end of the canvas, before its timeline. `fresh_name` picks
+  a name such as `box1` that no word in the file and no `repeat` copy
+  uses, and `name_edits` gives an unnamed node a name. `delete_edits`
+  removes one or more nodes with their lines, and refuses while anything
+  left in the file names one of them. `copy_text` gives nodes as text, and
+  `paste_edits` adds that text moved by an offset, with names that clash
+  with the file renamed along with the words that name them. Every result
+  keeps the layout `acre fmt` writes.
+- `Scene::origin` is where the source's 0 0 falls on the canvas. A canvas
+  whose `size` has an `auto` moves it away from the top-left corner, so a
+  viewer subtracts it from a canvas point to get source coordinates.
 - `scene::edit::text_edits` works out the edit that sets a drawn node's
   text, and `scene::edit::text_of` reads that text as the file writes it,
   markup included. A node's text is its `text` on a box, an ellipse, a
@@ -409,6 +423,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight segments.
 
 ### Changed
+
+- `Scene` has a public field `origin`, so code that builds a `Scene` by
+  hand sets it, to `Point::ZERO` for a canvas of fixed size.
 
 - Any node may keep values before `{`. When they are not one bare word,
   `lang::parse` keeps them in `Node::head`, as it did for a node that opens

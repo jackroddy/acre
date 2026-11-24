@@ -4,7 +4,7 @@ use super::Color;
 use crate::lang::{Error, Node, Property, Value, ValueKind};
 
 /// The words properties take as they are, which a `let` would hide.
-const RESERVED: &[&str] = &[
+pub(super) const RESERVED: &[&str] = &[
     "none",
     "left",
     "center",

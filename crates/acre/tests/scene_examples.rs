@@ -72,6 +72,7 @@ fn array_swap() -> Scene {
         objects: vec![Object::new(grid)],
         fonts: Fonts::default(),
         sections: Vec::new(),
+        origin: Point::ZERO,
     }
 }
 
@@ -104,6 +105,7 @@ fn self_drawing_plot() -> Scene {
         objects: vec![object],
         fonts: Fonts::default(),
         sections: Vec::new(),
+        origin: Point::ZERO,
     }
 }
 

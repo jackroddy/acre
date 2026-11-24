@@ -6,7 +6,14 @@
 //! One that edits an object's text reads it with [`text_of`] and asks
 //! [`text_edits`] for the change to its string.
 //! [`node_path`] and [`node_span`] find a node again after an edit
-//! shifts its span.
+//! shifts its span. [`insert_edits`], [`delete_edits`], [`copy_text`]
+//! and [`paste_edits`] add, delete and copy whole nodes.
+
+mod nodes;
+
+pub use nodes::{
+    EndAt, NewNode, copy_text, delete_edits, fresh_name, insert_edits, name_edits, paste_edits,
+};
 
 use super::build::at_named;
 use crate::lang::{self, Error, Node, Property, Span, Value, ValueKind};
@@ -64,37 +71,26 @@ pub fn move_edits(source: &str, node: Span, dx: f64, dy: f64) -> Result<Vec<Text
         canvas,
         target,
         by: [dx, dy],
+        paste: None,
     };
     mover.check_place(around)?;
-    let mut edits = match target.kind.text.as_str() {
-        "box" | "ellipse" | "row" | "matrix" | "text" | "math" | "table" | "ruler" | "code"
-        | "group" | "panel" | "stack" | "grid" => mover.at()?,
-        "marker" => mover.marker()?,
-        "line" | "arrow" | "sweep" | "brace" => {
-            if let Some(p) = own(target, "over") {
-                return Err(Error::new(
-                    p.span,
-                    "the brace is set by the things it brackets; move them instead",
-                ));
-            }
-            let mut edits = mover.end("from")?;
-            edits.extend(mover.end("to")?);
-            edits
-        }
-        "merge" => mover.merge()?,
-        "polygon" | "polyline" => mover.points()?,
-        "caption" => {
+    let Some(mut edits) = mover.edits()? else {
+        if let Some(p) = own(target, "over") {
             return Err(Error::new(
+                p.span,
+                "the brace is set by the things it brackets; move them instead",
+            ));
+        }
+        return Err(match target.kind.text.as_str() {
+            "caption" => Error::new(
                 target.kind.span,
                 "a caption sits under what comes before it and has no place of its own",
-            ));
-        }
-        other => {
-            return Err(Error::new(
+            ),
+            other => Error::new(
                 target.kind.span,
                 format!("a `{other}` has no place to move"),
-            ));
-        }
+            ),
+        });
     };
     edits.retain(|e| source[e.span.start..e.span.end] != e.text);
     edits.sort_by_key(|e| e.span.start);
@@ -117,6 +113,7 @@ pub fn text_of(source: &str, node: Span) -> Result<Option<String>, Error> {
         canvas,
         target,
         by: [0.0; 2],
+        paste: None,
     };
     let text = mover.text(around)?;
     Ok(text.set.map(|(_, s)| s.to_string()))
@@ -148,6 +145,7 @@ pub fn text_edits(source: &str, node: Span, new_text: &str) -> Result<Vec<TextEd
         canvas,
         target,
         by: [0.0; 2],
+        paste: None,
     };
     let NodeText { key, set } = mover.text(around)?;
     let unwritable = || {
@@ -244,15 +242,60 @@ struct NodeText<'a> {
 }
 
 /// What one call to [`move_edits`], [`text_of`] or [`text_edits`]
-/// reads. `by` is 0 for the text.
+/// reads, or [`paste_edits`] for one pasted node. `by` is 0 for the
+/// text.
 struct Mover<'a> {
     source: &'a str,
     canvas: &'a Node,
     target: &'a Node,
     by: [f64; 2],
+    /// The names in a paste, when the node is one of its nodes.
+    //
+    // a pasted end or marker on a thing follows it, and so does an `at`
+    // on a pasted thing, which moves with the paste: those take no edit
+    // where a move refuses them or adds the offset
+    paste: Option<&'a [String]>,
 }
 
 impl Mover<'_> {
+    /// The edits that move the node, or `None` when it has no place of
+    /// its own.
+    fn edits(&self) -> Result<Option<Vec<TextEdit>>, Error> {
+        let edits = match self.target.kind.text.as_str() {
+            "box" | "ellipse" | "row" | "matrix" | "text" | "math" | "table" | "ruler" | "code"
+            | "group" | "panel" | "stack" | "grid" => self.at()?,
+            "marker" => self.marker()?,
+            "line" | "arrow" | "sweep" | "brace" => {
+                if own(self.target, "over").is_some() {
+                    return Ok(None);
+                }
+                let mut edits = self.end("from")?;
+                edits.extend(self.end("to")?);
+                edits
+            }
+            "merge" => self.merge()?,
+            "polygon" | "polyline" => self.points()?,
+            _ => return Ok(None),
+        };
+        Ok(Some(edits))
+    }
+
+    /// Whether `value` names a thing the node follows in a paste:
+    /// anything, or with `pasted` only a thing of the paste.
+    fn follows(&self, value: Option<&Value>, pasted: bool) -> bool {
+        let (
+            Some(names),
+            Some(Value {
+                kind: ValueKind::Word(w),
+                ..
+            }),
+        ) = (self.paste, value)
+        else {
+            return false;
+        };
+        !pasted || names.contains(w)
+    }
+
     /// An error unless the node's place is its own to set: not a copy
     /// of a `repeat`, not a slot in a stack or grid, and not moved or
     /// scaled by the timeline, itself or with what it sits in.
@@ -428,6 +471,9 @@ impl Mover<'_> {
             return Ok(self.new_at().into_iter().collect());
         };
         self.literal(p)?;
+        if self.follows(p.values.first(), true) {
+            return Ok(Vec::new());
+        }
         if let [first, ..] = p.values.as_slice()
             && let ValueKind::Number(_) = first.kind
         {
@@ -459,6 +505,9 @@ impl Mover<'_> {
             return Ok(Vec::new());
         };
         self.literal(p)?;
+        if self.follows(p.values.first(), false) {
+            return Ok(Vec::new());
+        }
         match p.values.first() {
             Some(Value {
                 kind: ValueKind::Word(name),
@@ -482,6 +531,9 @@ impl Mover<'_> {
 
     fn end_point(&self, p: &Property) -> Result<Vec<TextEdit>, Error> {
         self.literal(p)?;
+        if self.follows(p.values.first(), false) {
+            return Ok(Vec::new());
+        }
         if let Some(Value {
             kind: ValueKind::Word(name),
             ..

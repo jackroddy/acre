@@ -72,6 +72,9 @@ pub struct Scene {
     pub fonts: Fonts,
     /// The labelled parts of the animation, in order of start.
     pub sections: Vec<Section>,
+    /// Where the source's 0 0 falls on the canvas, away from the top-left
+    /// corner when the canvas `size` has an `auto`.
+    pub origin: Point,
 }
 
 /// A labelled part of an animation, which runs until the next one starts.
@@ -743,6 +746,7 @@ mod tests {
             objects: vec![object],
             fonts: Fonts::default(),
             sections: Vec::new(),
+            origin: Point::ZERO,
         };
         assert!(scene.draw(0.5).is_empty());
         assert_eq!(scene.draw(1.0).len(), 2);
@@ -797,6 +801,7 @@ mod tests {
             objects: vec![target, Object::new(Kind::Connector(line))],
             fonts: Fonts::default(),
             sections: Vec::new(),
+            origin: Point::ZERO,
         };
         let ends = |t: f64| match scene.draw(t)[1] {
             Primitive::Line { from, to, .. } => (from, to),
@@ -836,6 +841,7 @@ mod tests {
             objects: vec![object],
             fonts: Fonts::default(),
             sections: Vec::new(),
+            origin: Point::ZERO,
         };
         assert!(scene.draw(0.0).is_empty());
         let prims = scene.draw(0.5);
