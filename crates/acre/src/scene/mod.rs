@@ -105,6 +105,8 @@ pub struct Object {
     pub offset: Track<Point>,
     /// Changes to the object's colors, applied in order.
     pub paints: Vec<Paint>,
+    /// Changes to the object's text, in order of start.
+    pub texts: Vec<TextChange>,
     /// When the object is on the canvas; absent means always.
     pub lifetime: Option<Lifetime>,
     /// The node in the source that made the object, or an empty span
@@ -185,6 +187,15 @@ pub struct Paint {
     pub start: f64,
 }
 
+/// A text an object takes from an instant on, until the next change.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextChange {
+    /// The row cell it changes, or `None` for the whole object.
+    pub cell: Option<usize>,
+    pub start: f64,
+    pub label: Label,
+}
+
 /// Which color of an object a [`Paint`] changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Part {
@@ -217,6 +228,7 @@ impl Object {
             pivot: Point::ZERO,
             offset: Track::Constant(Point::ZERO),
             paints: Vec::new(),
+            texts: Vec::new(),
             lifetime: None,
             source: Span::default(),
             groups: Vec::new(),
@@ -247,6 +259,18 @@ impl Object {
         self.groups
             .iter()
             .fold(Motion::NONE, |m, g| m.then(g.motion(t)))
+    }
+
+    /// Append what the object draws where layout put it at time 0, and
+    /// again with each text its timeline gives it, which is what layout
+    /// measures.
+    pub(super) fn draw_laid_out(&self, out: &mut Vec<Primitive>) {
+        self.kind.draw(0.0, out);
+        for change in &self.texts {
+            let mut kind = self.kind.clone();
+            kind.relabel(change.cell, &change.label);
+            kind.draw(0.0, out);
+        }
     }
 
     /// How opaque the object is at time `t`, its groups included.
@@ -327,6 +351,21 @@ impl Kind {
             (_, Part::Fill) => Err("has no fill"),
             (_, Part::Stroke) => Err("has no outline"),
             (_, Part::Text) => Err("has no text"),
+        }
+    }
+
+    /// Set the text of `cell`, or of the whole object, to `label`. A box,
+    /// an ellipse, a text and a row's cell have one to set.
+    pub fn relabel(&mut self, cell: Option<usize>, label: &Label) {
+        match (self, cell) {
+            (Kind::Shape(s), None) => s.label = Some(label.clone()),
+            (Kind::Text(t), None) => t.label = label.clone(),
+            (Kind::Row(r), Some(i)) => {
+                if let Some(cell) = r.cells.get_mut(i) {
+                    cell.label = Some(label.clone());
+                }
+            }
+            _ => {}
         }
     }
 
@@ -435,6 +474,9 @@ impl Scene {
         let start = out.len();
         let lifted_start = lifted.len();
         let mut kind = Cow::Borrowed(&object.kind);
+        for change in object.texts.iter().filter(|c| t >= c.start) {
+            kind.to_mut().relabel(change.cell, &change.label);
+        }
         for paint in object.paints.iter().filter(|p| t >= p.start) {
             kind.to_mut()
                 .repaint(paint.part, paint.cell, paint.color.at(t));
@@ -539,7 +581,7 @@ impl Scene {
     pub fn missing_glyphs(&self) -> Vec<char> {
         let mut prims = Vec::new();
         for object in &self.objects {
-            object.kind.draw(0.0, &mut prims);
+            object.draw_laid_out(&mut prims);
         }
         let mut out = Vec::new();
         for prim in &prims {

@@ -805,6 +805,11 @@ pub const NODES: &[NodeKind] = &[
                 "NAME COLOR | ROW N COLOR",
                 "change the color of every run of a node's text, or of a row's cell N",
             ),
+            prop(
+                "text",
+                "NAME \"TEXT\" | ROW N \"TEXT\"",
+                "change the text of a box, an ellipse, a text or a row's cell N, only at an instant; layout sizes and places the node at the widest text the timeline gives it, and a row's cell keeps its fill",
+            ),
         ],
         children: &[],
     },

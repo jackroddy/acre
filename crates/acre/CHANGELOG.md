@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A timeline changes a node's text with `text NAME "TEXT"`, and the text of
+  one cell of a row with `text ROW N "TEXT"`. The action works on a box, an
+  ellipse, a text and a row's cell. It takes effect at an instant. A span is
+  an error. A box or a text sets the new text with markup in its own font and
+  color. A row's cell keeps its fill. Layout measures the node once, at the
+  widest text the timeline gives it. A box without `size` keeps one size.
+  The nodes after it in a stack keep their places. Arrows and braces meet the
+  box where layout put it. `text-color` colors the new text too. This holds
+  for a cell or a box that has no text until the timeline gives it some.
+  `Object::texts` holds the changes, each a `TextChange`. `Kind::relabel`
+  sets one. `Span` implements `Hash`.
 - `matrix NAME { rows N; columns N; unit W H; }` draws a grid of equal cells.
   It takes `at` as a `row` does. `fill`, `stroke`, `stroke-width`, `dash`,
   `text-size`, `text-color` and `font` set every cell.

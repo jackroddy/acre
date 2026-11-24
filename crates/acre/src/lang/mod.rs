@@ -26,7 +26,7 @@ use std::fmt;
 use lex::{Tok, Token};
 
 /// A byte range in the source, `start..end`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

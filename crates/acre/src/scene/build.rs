@@ -7,11 +7,11 @@ use super::data::{self, Table};
 use super::expand::expand;
 use super::markup;
 use super::schema;
-use super::timeline;
+use super::timeline::{self, TextAction};
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Matrix,
     MatrixCell, Object, Point, Polygon, Polyline, Route, Row, RowCell, Ruler, Run, Scene, Shape,
-    Side, Stroke, Target, Text,
+    Side, Stroke, Target, Text, TextChange,
 };
 use crate::fonts::{Fonts, Typeface};
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
@@ -151,6 +151,7 @@ pub fn build(
     let canvas = &canvas;
     let fonts = read_fonts(&listed_fonts(canvas)?, font_bytes, canvas)?;
     let tables = data::read(&data::listed(canvas)?, data_bytes, canvas)?;
+    let texts = timeline::texts(canvas)?;
     let props = Props::new(canvas, &keys("canvas"), true)?;
     let size = props.require("size")?;
     let [width, height] = canvas_size(size)?;
@@ -180,6 +181,7 @@ pub fn build(
         badge: Badge::of_style(badge, canvas.span, &fonts)?,
         fonts: fonts.clone(),
         tables: &tables,
+        texts: &texts,
         palettes: HashMap::new(),
         shapes: HashMap::new(),
         rows: HashMap::new(),
@@ -499,9 +501,105 @@ fn add_objects(
                 ));
             }
         };
-        out.push(Object::new(kind).from_source(node.span));
+        let texts = text_changes(node, &kind, names)?;
+        out.push(Object {
+            texts,
+            ..Object::new(kind).from_source(node.span)
+        });
     }
     Ok(())
+}
+
+/// The texts the timeline's `text` actions give `node`, whose object is
+/// `kind`, in order of start.
+fn text_changes(node: &Node, kind: &Kind, names: &Names) -> Result<Vec<TextChange>, Error> {
+    let Some(actions) = names.texts.get(&node.span) else {
+        return Ok(Vec::new());
+    };
+    let props = Props::new(node, &keys(&node.kind.text), node.kind.text == "row")?;
+    let labels = match kind {
+        Kind::Shape(s) => changed_labels(
+            &props,
+            s.label.as_ref(),
+            "text-size",
+            "text-color",
+            actions,
+            names,
+        )?,
+        Kind::Text(t) => changed_labels(&props, Some(&t.label), "size", "color", actions, names)?,
+        Kind::Row(r) => {
+            let mut labels = Vec::new();
+            for a in actions {
+                let cell = a
+                    .cell
+                    .expect("`timeline::texts` changes a row's text by cell");
+                let Some(cell) = r.cells.get(cell) else {
+                    let name = node.name.as_ref().map_or("", |n| n.text.as_str());
+                    return Err(Error::new(
+                        a.span,
+                        format!("row `{name}` has cells 0 to {}", r.cells.len() - 1),
+                    ));
+                };
+                labels.push(match &cell.label {
+                    Some(l) => l.with_text(a.text.as_str()),
+                    None => Label::plain(
+                        &names.fonts,
+                        a.text.as_str(),
+                        props.number_or("text-size", TEXT_SIZE)?,
+                        props.font_or(names.font, &names.fonts)?,
+                        props.color_or("text-color", Color::BLACK)?,
+                    ),
+                });
+            }
+            labels
+        }
+        _ => unreachable!("`timeline::texts` lets through only boxes, ellipses, texts and rows"),
+    };
+    Ok(actions
+        .iter()
+        .zip(labels)
+        .map(|(a, label)| TextChange {
+            cell: a.cell,
+            start: a.start,
+            label,
+        })
+        .collect())
+}
+
+/// `label` with its text set to that of each of `actions`, in the font
+/// of `props` and its `color`. A node without text takes the text size
+/// of its `size` and the wrap width of its `width`.
+fn changed_labels(
+    props: &Props,
+    label: Option<&Label>,
+    size: &str,
+    color: &str,
+    actions: &[TextAction],
+    names: &Names,
+) -> Result<Vec<Label>, Error> {
+    let base = match label {
+        Some(l) => l.clone(),
+        None => Label {
+            runs: Vec::new(),
+            size: props.number_or(size, TEXT_SIZE)?,
+            width: props.number("width")?,
+            justify: false,
+            fonts: names.fonts.clone(),
+        },
+    };
+    let font = props.font_or(names.font, &names.fonts)?;
+    let color = props.color_or(color, Color::BLACK)?;
+    actions
+        .iter()
+        .map(|a| {
+            let runs = markup::runs(&a.text, font, color, &names.colors)
+                .map_err(|message| Error::new(a.span, message))?;
+            Ok(Label {
+                runs,
+                ..base.clone()
+            })
+        })
+        .collect()
 }
 
 /// Where a panel's frame, heading and contents go.
@@ -684,11 +782,12 @@ fn caption(node: &Node, names: &Names, above: Point) -> Result<Text, Error> {
     })
 }
 
-/// The box around what `objects` draw at time 0.
+/// The box around what `objects` draw at time 0, at the widest text
+/// the timeline gives each.
 fn bounds_of(fonts: &Fonts, objects: &[Object]) -> Option<(Point, Point)> {
     let mut prims = Vec::new();
     for o in objects {
-        o.kind.draw(0.0, &mut prims);
+        o.draw_laid_out(&mut prims);
     }
     super::primitive::bounds(fonts, &prims)
 }
@@ -913,6 +1012,8 @@ struct Names<'a> {
     badge: Badge,
     /// The table of each `data` node, by its name.
     tables: &'a HashMap<String, Table>,
+    /// The timeline's `text` actions on each node, by the node's source.
+    texts: &'a HashMap<Span, Vec<TextAction>>,
     palettes: HashMap<&'a str, Palette>,
     shapes: HashMap<&'a str, Shape>,
     rows: HashMap<&'a str, Row>,
@@ -1043,18 +1144,38 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
             }
         }),
     };
-    let size = match (props.get("size"), &label) {
-        (Some(p), _) => {
+    let changed = match names.texts.get(&node.span) {
+        Some(actions) => changed_labels(
+            &props,
+            label.as_ref(),
+            "text-size",
+            "text-color",
+            actions,
+            names,
+        )?,
+        None => Vec::new(),
+    };
+    let size = match props.get("size") {
+        Some(p) => {
             let [w, h] = p.numbers::<2>()?;
             Point::new(w, h)
         }
-        (None, Some(label)) => label.size() + padding * 2.0,
-        (None, None) => {
-            return Err(Error::new(
-                node.kind.span,
-                format!("`{}` needs `size` or `text`", node.kind.text),
-            ));
-        }
+        // the widest text the timeline gives the box sizes it, so
+        // the box keeps one size as its text changes
+        None => match label
+            .iter()
+            .chain(&changed)
+            .map(Label::size)
+            .reduce(|a, b| Point::new(a.x.max(b.x), a.y.max(b.y)))
+        {
+            Some(widest) => widest + padding * 2.0,
+            None => {
+                return Err(Error::new(
+                    node.kind.span,
+                    format!("`{}` needs `size` or `text`", node.kind.text),
+                ));
+            }
+        },
     };
 
     Ok(Shape {

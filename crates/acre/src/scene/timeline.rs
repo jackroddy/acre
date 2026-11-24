@@ -60,6 +60,15 @@ impl Change {
     }
 }
 
+/// A `text` action: the text a node, or one cell of a row, takes from
+/// an instant on.
+pub(super) struct TextAction {
+    pub cell: Option<usize>,
+    pub start: f64,
+    pub text: String,
+    pub span: Span,
+}
+
 /// The node kinds a timeline changes as one, with everything inside.
 const GROUPS: [&str; 4] = ["group", "panel", "stack", "grid"];
 
@@ -152,7 +161,7 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
             }
             Channel::Color(part) => {
                 for &i in &indices {
-                    let paint = paint(&objects[i].kind, name, part, cell, &actions)?;
+                    let paint = paint(&objects[i], name, part, cell, &actions)?;
                     objects[i].paints.push(paint);
                 }
             }
@@ -171,6 +180,88 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
         }
     }
     Ok(last)
+}
+
+/// The `text` actions of the canvas's `timeline` on each node, by the
+/// node's source, in order of start. Layout reads them before
+/// [`apply`] runs, to measure a node at the widest text it takes.
+pub(super) fn texts(canvas: &Node) -> Result<HashMap<Span, Vec<TextAction>>, Error> {
+    let mut out: HashMap<Span, Vec<TextAction>> = HashMap::new();
+    let Some(timeline) = canvas.children.iter().find(|n| n.kind.text == "timeline") else {
+        return Ok(out);
+    };
+    let mut nodes = HashMap::new();
+    named(&canvas.children, true, &mut nodes)?;
+    for entry in &timeline.children {
+        for p in entry.properties.iter().filter(|p| p.key.text == "text") {
+            let (start, end, _) = when(entry)?;
+            if start != end {
+                return Err(Error::new(
+                    p.key.span,
+                    "`text` happens at an instant, such as `2s { ... }`, since text steps",
+                ));
+            }
+            let (name, cell, rest) = target(p, &nodes)?;
+            let node = nodes[name].expect("`target` lets through only names one node has");
+            let kind = node.kind.text.as_str();
+            match (kind, cell) {
+                ("box" | "ellipse" | "text", None) | ("row", Some(_)) => {}
+                ("row", None) => {
+                    return Err(Error::new(
+                        p.span,
+                        format!(
+                            "`{name}` is a row, whose text changes by cell: `text {name} N \"TEXT\"`"
+                        ),
+                    ));
+                }
+                _ => {
+                    return Err(Error::new(
+                        p.span,
+                        format!(
+                            "`{name}` has no text a timeline changes; `text` changes a box, an ellipse, a text or a row's cell"
+                        ),
+                    ));
+                }
+            }
+            let text = match rest {
+                [
+                    Value {
+                        kind: ValueKind::Str(s),
+                        ..
+                    },
+                ] => s.clone(),
+                _ => {
+                    return Err(Error::new(
+                        p.span,
+                        "`text` takes a node's name, a cell's index for a row, and a string",
+                    ));
+                }
+            };
+            let actions = out.entry(node.span).or_default();
+            if actions.iter().any(|a| a.cell == cell && a.start == start) {
+                let what = match cell {
+                    Some(c) => format!("{name} {c}"),
+                    None => name.to_string(),
+                };
+                return Err(Error::new(
+                    p.span,
+                    format!(
+                        "this changes the text of `{what}` at {start}s, as another `text` does"
+                    ),
+                ));
+            }
+            actions.push(TextAction {
+                cell,
+                start,
+                text,
+                span: p.span,
+            });
+        }
+    }
+    for actions in out.values_mut() {
+        actions.sort_by(|a, b| a.start.total_cmp(&b.start));
+    }
+    Ok(out)
 }
 
 /// The sections of the canvas's `timeline`, in order of start, each with
@@ -370,7 +461,8 @@ fn runs<'a>(
         let (start, end, easing) = when(entry)?;
         last = last.max(end);
         let instant = start == end;
-        for p in &entry.properties {
+        // layout has read the `text` actions, through `texts`
+        for p in entry.properties.iter().filter(|p| p.key.text != "text") {
             let (name, cell, rest) = target(p, nodes)?;
             let change = change(p, rest)?;
             let node = nodes[name].expect("`target` lets through only names one node has");
@@ -433,10 +525,10 @@ fn runs<'a>(
     Ok((runs, last))
 }
 
-/// The paint that `actions` make of color `part` of `kind`, the object
+/// The paint that `actions` make of color `part` of `object`, the object
 /// of the node `name` names.
 fn paint(
-    kind: &Kind,
+    object: &Object,
     name: &str,
     part: Part,
     cell: Option<usize>,
@@ -447,6 +539,7 @@ fn paint(
         _ => unreachable!("a color run holds colors"),
     };
     let first = &actions[0];
+    let kind = &object.kind;
     if let (Kind::Row(row), Some(cell)) = (kind, cell)
         && cell >= row.cells.len()
     {
@@ -455,7 +548,18 @@ fn paint(
             format!("row `{name}` has cells 0 to {}", row.cells.len() - 1),
         ));
     }
-    let base = match kind.color(part, cell) {
+    let mut color = kind.color(part, cell);
+    // a node with no text until the timeline gives it some has the
+    // color of that first text
+    if color.is_err()
+        && part == Part::Text
+        && let Some(change) = object.texts.iter().find(|c| c.cell == cell)
+    {
+        let mut kind = kind.clone();
+        kind.relabel(cell, &change.label);
+        color = kind.color(part, cell);
+    }
+    let base = match color {
         Ok(Some(c)) => c,
         // a fill the node lacks fades in from clear
         Ok(None) => color_of(first.change).faded(0.0),
@@ -613,7 +717,7 @@ fn target<'p>(
 fn arity(p: &Property) -> Option<usize> {
     match p.key.text.as_str() {
         "show" | "hide" => Some(0),
-        "scale" | "fade" | "fill" | "stroke" | "text-color" => Some(1),
+        "scale" | "fade" | "fill" | "stroke" | "text-color" | "text" => Some(1),
         "move" => Some(2),
         _ => None,
     }
@@ -684,7 +788,7 @@ fn change(p: &Property, rest: &[Value]) -> Result<Change, Error> {
             p.key.span,
             format!(
                 "unknown action `{other}`; a timeline takes scale, move, fade, show, hide, fill, \
-                 stroke and text-color"
+                 stroke, text-color and text"
             ),
         )),
     }
@@ -713,7 +817,8 @@ fn track<T: Lerp>(base: T, actions: &[Action], value: impl Fn(Change) -> T) -> T
 }
 
 /// The point the node scales about: the point of the box around what its
-/// objects draw that its `anchor` names, the center by default.
+/// objects draw, at their widest text, that its `anchor` names, the
+/// center by default.
 fn pivot(
     node: &Node,
     objects: &[Object],
@@ -722,7 +827,7 @@ fn pivot(
 ) -> Result<Point, Error> {
     let mut prims = Vec::new();
     for &i in indices {
-        objects[i].kind.draw(0.0, &mut prims);
+        objects[i].draw_laid_out(&mut prims);
     }
     let (min, max) = primitive::bounds(fonts, &prims).unwrap_or((Point::ZERO, Point::ZERO));
     let mid = (min + max) * 0.5;
@@ -1241,7 +1346,7 @@ mod tests {
         );
         assert_eq!(
             err("timeline { 0s { spin a; } }"),
-            "unknown action `spin`; a timeline takes scale, move, fade, show, hide, fill, stroke and text-color"
+            "unknown action `spin`; a timeline takes scale, move, fade, show, hide, fill, stroke, text-color and text"
         );
         assert_eq!(
             err("group { timeline { } }"),
@@ -1381,6 +1486,129 @@ mod tests {
         assert_eq!(
             err("timeline { section 0s \"a\"; subsection 1s; 0s to 2s { scale a 2; } }"),
             "`subsection` takes a start and a title, such as `subsection 4s \"The types\"`"
+        );
+    }
+
+    /// The text and the color of the first run of each text object `i`
+    /// draws at `t`.
+    fn texts(s: &Scene, i: usize, t: f64) -> Vec<(String, Color)> {
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[i], t, &mut prims);
+        prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text { runs, .. } => Some((
+                    runs.iter().map(|r| r.text.as_str()).collect(),
+                    runs.first().map_or(Color::BLACK, |r| r.color),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn text_changes_at_an_instant_and_a_cell_can_be_named() {
+        let s = scene("timeline { 1s { text a \"4\"; text t \"bye\"; text r 1 \"q\"; } 2s { text a \"5\"; } }")
+            .unwrap();
+        let black = Color::BLACK;
+        assert!(texts(&s, 0, 0.9).is_empty());
+        assert_eq!(texts(&s, 0, 1.0), [("4".to_string(), black)]);
+        assert_eq!(texts(&s, 0, 2.0), [("5".to_string(), black)]);
+        assert_eq!(texts(&s, 4, 0.9), [("hi".to_string(), black)]);
+        assert_eq!(texts(&s, 4, 1.0), [("bye".to_string(), black)]);
+        let cells = |t| {
+            texts(&s, 3, t)
+                .into_iter()
+                .map(|(x, _)| x)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(cells(0.9), ["x", "y", "z"]);
+        assert_eq!(cells(1.0), ["x", "q", "z"]);
+    }
+
+    #[test]
+    fn a_changed_text_takes_the_text_color_a_timeline_gives_the_node() {
+        let s = canvas(
+            "box a { at 0 0; text \"0\"; text-color #0000ff; }
+             row r { at 0 100; unit 20 20; cells \"\" \"y\"; text-color #00ff00; }
+             timeline { 1s { text-color a #ff0000; } 2s { text a \"**4**\"; text r 0 \"7\"; }
+                3s { text-color r 0 #ff0000; } }",
+        );
+        let red = Color::rgb(1.0, 0.0, 0.0);
+        assert_eq!(texts(&s, 0, 1.5), [("0".to_string(), red)]);
+        assert_eq!(texts(&s, 0, 2.0), [("4".to_string(), red)]);
+        assert_eq!(
+            texts(&s, 1, 2.0)[0],
+            ("7".to_string(), Color::rgb(0.0, 1.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn layout_measures_a_node_at_the_widest_text_the_timeline_gives_it() {
+        let wide = canvas("box w { at 0 0; text \"1234\"; padding 4; }");
+        let s = canvas(
+            "stack { direction right;
+                box a { text \"0\"; padding 4; }
+                text t { text \"0\"; }
+                box b { size 10 10; } }
+             arrow { from a bottom; to b bottom; }
+             timeline { 1s { text a \"1234\"; text t \"wider and wider\"; } 2s { text a \"0\"; } }",
+        );
+        let (_, size, _) = rect(&wide, 0, 0.0);
+        for t in [0.0, 1.0, 2.0] {
+            assert_eq!(rect(&s, 0, t).1, size);
+        }
+        let (min, max) = s.bounds(1, 1.0).unwrap();
+        assert_eq!(min.x, size.x);
+        assert_eq!(rect(&s, 2, 0.0).0.x, max.x);
+        assert_eq!(rect(&s, 2, 0.0), rect(&s, 2, 1.0));
+        assert_eq!(line(&s, 3, 0.0).0.x, size.x / 2.0);
+    }
+
+    #[test]
+    fn a_box_without_text_takes_the_size_of_its_first_text() {
+        let s = canvas("box a { at 0 0; padding 4; } timeline { 1s { text a \"hello\"; } }");
+        let wide = canvas("box w { at 0 0; text \"hello\"; padding 4; }");
+        assert!(texts(&s, 0, 0.0).is_empty());
+        assert_eq!(rect(&s, 0, 0.0).1, rect(&wide, 0, 0.0).1);
+        assert_eq!(texts(&s, 0, 1.0)[0].0, "hello");
+    }
+
+    #[test]
+    fn the_glyphs_a_changed_text_needs_are_looked_for() {
+        let s = scene("timeline { 1s { text t \"\u{e000}\"; } }").unwrap();
+        assert_eq!(s.missing_glyphs(), ['\u{e000}']);
+    }
+
+    #[test]
+    fn mistakes_in_a_text_action_point_at_the_offending_text() {
+        assert_eq!(
+            scene("timeline {\n 0s to 1s { text a \"4\"; } }").unwrap_err(),
+            (
+                8,
+                13,
+                "`text` happens at an instant, such as `2s { ... }`, since text steps".into()
+            )
+        );
+        assert_eq!(
+            err("timeline { 1s { text r \"4\"; } }"),
+            "`r` is a row, whose text changes by cell: `text r N \"TEXT\"`"
+        );
+        assert_eq!(
+            err("timeline { 1s { text r 3 \"4\"; } }"),
+            "row `r` has cells 0 to 2"
+        );
+        assert_eq!(
+            err("timeline { 1s { text link \"4\"; } }"),
+            "`link` has no text a timeline changes; `text` changes a box, an ellipse, a text or a row's cell"
+        );
+        assert_eq!(
+            err("timeline { 1s { text a 4; } }"),
+            "`text` takes a node's name, a cell's index for a row, and a string"
+        );
+        assert_eq!(
+            err("timeline { 1s { text a \"4\"; } 1s { text a \"5\"; } }"),
+            "this changes the text of `a` at 1s, as another `text` does"
         );
     }
 }
