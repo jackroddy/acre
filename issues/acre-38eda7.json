@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.597792351Z",
-  "updated_at": "2026-11-24T06:36:24.467147424Z",
+  "updated_at": "2026-11-24T06:36:40.904616502Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "3de5bf94",
+      "at": "2026-11-24T06:36:40.904615972Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack accepted on 2026-11-23, provisionally: `tag auto` numbers through the whole canvas, and `tag \"(a)\"` sets a tag by hand. No `tag-side` for now.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "58993b6",
