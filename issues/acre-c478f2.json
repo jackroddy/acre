@@ -1,0 +1,28 @@
+{
+  "id": "acre-c478f2",
+  "title": "Dragging on empty canvas selects every node in the box",
+  "body": "Selection in acre-gui holds one node (`selection.rs`, 12eb9d6), and a drag on empty canvas pans.\n\n## Proposal\n\n- The selection holds any number of nodes, each by tree path.\n- A drag on empty canvas draws a box and selects every top-level drawn node whose objects lie inside it. Panning moves to a middle-button drag, which already pans.\n- A click selects one node; a click on empty canvas clears.\n- Dragging any selected node moves all of them, as one set of edits, with snapping on their joint box.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T20:07:01.208619815Z",
+  "updated_at": "2026-11-24T20:07:01.208619815Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "3818184",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
