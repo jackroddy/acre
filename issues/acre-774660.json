@@ -3,7 +3,7 @@
   "title": "A missing glyph hides every notice on the viewer's status line",
   "body": "In `crates/acre-gui/src/app.rs`, `App::status` shows the source error first, then the first missing-glyph warning, then `notice`. A drawing whose text has a character no font covers keeps the missing-glyph warning on the status line for as long as the drawing is open. Every notice is hidden behind it. That includes the reason a drag was refused, the \"drawn by line N\" from a click, and a file that cannot be opened or written.\n\n## Proposal\n\nShow a notice newer than the last build ahead of the missing-glyph warning, or show both side by side.",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-ef7221",
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T07:54:29.118853143Z",
-  "updated_at": "2026-11-24T07:54:56.929266098Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:55:34.198695045Z",
+  "closed_at": "2026-11-24T07:55:34.198695045Z",
+  "close_reason": "Fixed in d32efef. App::status shows notice before the missing-glyph warning, and App::show clears notice on a successful build.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "aa7933d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "d32efef",
+      "branch": "dev"
+    }
   }
 }
