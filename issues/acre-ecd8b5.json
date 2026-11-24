@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-24T22:56:35.939770957Z",
   "defer_until": null,
   "created_at": "2026-11-24T07:32:50.497338571Z",
-  "updated_at": "2026-11-24T22:41:35.939770957Z",
+  "updated_at": "2026-11-24T22:43:01.231394685Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "7ea2fba0",
+      "at": "2026-11-24T22:43:01.231393755Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "I measured this before changing anything. The space inside the code span is one monospace space, and no fix in shaping, layout or font fallback applies.\n\n- `text::layout` gives the space in `` `space shown` `` the mono font's own advance. At size 22 that is 13.2 px, the same as every other mono character (600 units to an em of 1000).\n- A `text` node in the mono font gives `space shown` the same advance. In mono, `space shown` and `spaceXshown` end at the same pixel.\n- At scale 2 the ink gap from the `e` to the `s` is 34 px in three places. These are bullet `b2` of `figures/space-shown.acre`, a sans `text` holding `` `space shown` ``, and a mono `text` holding `space shown`.\n\nA sans space at size 22 is 5.72 px. The gap in the code span is about 2.3 sans spaces wide. The \"twice\" in the title is most likely twice the sans word gaps around the span, not twice a monospace space.\n\nNarrowing it is a design choice for Jack. One option sets a space inside a code span at the sans space's width. Another sets it at a share of the mono cell. `wrap` already finds those spaces through its `code` mask, so either is a few lines in `text.rs`. Either one ends column alignment inside inline code. I made no change and unclaimed the issue.",
+      "commit": "8408529",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "03ebbdd",
