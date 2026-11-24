@@ -1,0 +1,28 @@
+{
+  "id": "acre-4bba1f",
+  "title": "A stack inside a repeat puts every copy at the last copy's place",
+  "body": "Inside a `repeat`, every copy of a `stack` lands where the last copy goes, even when the stack's `at` uses the repeat's index or a `group` around it does. A `box` or a `group` without a stack in it gets the right place in each copy.\n\n```acre\ncanvas {\n    size auto auto;\n    let c #ff0000 #00ff00 #0000ff;\n    repeat v 0 2 { stack { at (v * 50) 0; box { size 40 40; fill (c v); } } }\n    repeat v 0 2 { group { at (v * 50) 60; stack { box { size 40 40; fill (c v); } } } }\n    repeat v 0 2 { box { at (v * 50) 120; size 40 40; fill (c v); } }\n}\n```\n\nThe first two rows draw one blue square each, at the third copy's place. The third row draws red, green and blue side by side.\n\n`figures/decade-palette.acre` draws three columns with one `repeat`. Each column had to give up `stack` and place every section by hand with `at`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "acre-4ed6a0",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T23:40:04.153634544Z",
+  "updated_at": "2026-11-24T23:40:04.153634544Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "29eef0c",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
