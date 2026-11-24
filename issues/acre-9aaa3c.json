@@ -3,26 +3,29 @@
   "title": "Align and distribute buttons arrange the selected nodes",
   "body": "With 2 or more nodes selected the toolbar shows align left, centre, right, top, middle and bottom; with 3 or more, distribute horizontally and vertically, keeping the outer two in place and making the gaps between neighbouring boxes equal. A library `arrange_edits(source, &[(Span, dx, dy)])` applies a separate offset per node as one edit, so one undo step; arrows between the nodes follow by name. Nodes a stack or grid places are refused, as for a move.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T21:18:26.467008774Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:53:25.781594195Z",
-  "updated_at": "2026-11-24T21:03:26.467008774Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T21:09:21.436135185Z",
+  "closed_at": "2026-11-24T21:09:21.436135185Z",
+  "close_reason": "Landed in 301a2a1. `scene::edit::arrange_edits` writes an offset per node as one list of edits, and `move_edits` calls it. An `at` that names a node arranged by another offset takes the difference in its `DX DY`. An end, a marker or a brace on such a node is refused. acre-gui's `arrange` module holds the align and spacing maths (`offsets`, `bounds`, `outermost`), and `App::arrange` writes the result through `App::write`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f8cb0c5",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "301a2a1",
+      "branch": "dev"
+    }
   }
 }
