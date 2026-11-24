@@ -1,0 +1,28 @@
+{
+  "id": "acre-4c2d4f",
+  "title": "A row gives its cells widths in proportion to weights",
+  "body": "Today `row` puts cells side by side on equal units, and a cell can set `span N` to cover several units. No node sizes its children in proportion to numbers. The sufr pipeline figure in `sufr-figures` draws three strips whose pieces have unequal sizes: buckets by count, partitions by size, and the partitions again as stripes in a group box. Each piece is a box whose `at` and `size` a script worked out.\n\n## Proposal\n\n`row` takes `width W` and `weights N...`. The cells share W in proportion to the weights, in order, and the width in `unit` is ignored. With `weights DATA COL`, the weights come from a column of a data file, one cell per row.\n\n```text\nrow parts { at 60 300; width 1120; unit 0 24; weights 9 12 13 7 8 14 11 10;\n    cells \"40\" \"41\" \"42\" \"43\" \"44\" \"45\" \"46\" \"47\"; }\n```\n\n## Open\n\n- Whether a `gap` between cells comes out of W.\n- Whether a `stack` should take `weights` for its children too.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-fb60bb",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:21:35.525187394Z",
+  "updated_at": "2026-11-24T06:21:35.525187394Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "58993b6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
