@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-24T07:41:07.908879081Z",
   "defer_until": null,
   "created_at": "2026-11-23T19:55:32.935565709Z",
-  "updated_at": "2026-11-24T07:26:07.908879081Z",
+  "updated_at": "2026-11-24T07:32:43.619105441Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Jack accepted on 2026-11-23, provisionally: a node opts out of layout until it shows, rather than a stack that reflows over time.",
       "commit": "6faae32",
+      "branch": "dev"
+    },
+    {
+      "id": "ae0597c4",
+      "at": "2026-11-24T07:32:43.619104701Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Built in 03ebbdd as `space shown` on the child, for example `text b11c { ...; space shown; }`.\n\nWhat happens when the node shows: layout still runs once with every child in its slot. Until the node's first `show` or `fade NAME in`, the children after it draw back by its size along the stack plus the gap. As that action starts, they jump to their slots and stay there. A later `hide` does not give the space back.\n\nRejected: leaving the node out of layout for good and drawing it in its slot when it shows. In section 11 of `figures/sufr-build.acre` the code block would close up under `b11b`, and `b11c` and `b11d` would then draw over it. A scratch copy of that file with `space shown` on `b11c` and `b11d` draws the code under `b11b` at 256s and under `b11c` at 266s.\n\nRejected: sliding the later children with a `fade in` span. During the slide they cross the slot the node fades in at, and the two overlap. Tried in a demo, `figures/space-shown.acre`.\n\nLimits: a node placed with `at` from a child after it stays at that child's slot. The stack's box, for an `auto` canvas or a scale's anchor, is the full layout. The node needs a name, sits directly in a stack, and its first change of opacity is a `show` or `fade NAME in`. Otherwise the build fails with an error.",
+      "commit": "03ebbdd",
       "branch": "dev"
     }
   ],
