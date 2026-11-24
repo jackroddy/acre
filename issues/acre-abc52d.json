@@ -1,0 +1,28 @@
+{
+  "id": "acre-abc52d",
+  "title": "Neovim's cursor and the viewer's click select the same thing",
+  "body": "acre-gui has two notions of selection. A click selects nodes (blue outline, `Selection`) and sends `goto`; a cursor message from neovim only sets `App::cursor`, which `App::marks` draws as an orange outline.\n\n## Proposal\n\n- A cursor message selects the innermost node holding the cursor (not the canvas; nothing in whitespace between nodes), unless the cursor lies inside a node already selected, in which case nothing changes. That rule also absorbs the echo of the viewer's own `goto` after a click or box select. Provisional; Jack will tune it by live testing.\n- The orange cursor mark goes; blue is the only outline.\n- The selection remembers whether a viewer click made it. The properties panel opens only for a selection made in the viewer; a selection made by the editor cursor does everything else the same but leaves the panel closed.\n- A click on empty canvas clears the selection; the next cursor move may select again. Jack accepted this.\n- Visual-mode ranges selecting several nodes come later, once this is proven.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T23:20:53.28480245Z",
+  "updated_at": "2026-11-24T23:20:53.28480245Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "3cf6d44",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
