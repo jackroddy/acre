@@ -9,6 +9,7 @@ use eframe::egui::{
 };
 
 use crate::drag::{Drag, Release};
+use crate::snap::{self, Bounds, Snapped};
 
 const MIN_ZOOM: f32 = 0.05;
 const MAX_ZOOM: f32 = 40.0;
@@ -44,6 +45,12 @@ pub struct View {
     /// A node let go of after a drag, and how far, drawn there until
     /// the source it was moved in comes back.
     held: Option<(Span, Point)>,
+    /// Whether a dragged node snaps to other objects and the grid.
+    pub snap: bool,
+    /// Whether the grid is drawn and snapped to.
+    pub grid: bool,
+    /// The grid's spacing in canvas pixels.
+    pub spacing: f64,
 }
 
 /// What the person did in the pane this frame.
@@ -100,6 +107,9 @@ impl View {
             moved: None,
             drag: None,
             held: None,
+            snap: true,
+            grid: false,
+            spacing: 10.0,
         }
     }
 
@@ -140,8 +150,9 @@ impl View {
     /// and draw `scene`, whose version is `version`, at time `t`, with an
     /// outline around each box in `marks`, given in canvas pixels, and
     /// another around each object the node at `selected` draws. While a
-    /// node is dragged, its objects are drawn where it is dragged to and
-    /// outlined in place of `marks`.
+    /// node is dragged, its objects are drawn where it is dragged to,
+    /// snapped, and outlined in place of `marks`, with a guide for each
+    /// snap.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -223,6 +234,16 @@ impl View {
         {
             drag.follow(at, self.zoom);
         }
+        let mut guides = Vec::new();
+        if let Some(drag) = &mut self.drag
+            && let Some((node, by)) = drag.moving()
+        {
+            let reach = (snap::REACH / self.zoom) as f64;
+            let grid = self.grid.then_some(self.spacing);
+            let snapped = snap_drag(scene, node, by, t, self.snap, reach, grid);
+            drag.place(snapped.by);
+            guides = snapped.guides;
+        }
         if !down && let Some(drag) = self.drag.take() {
             match drag.release() {
                 Release::Click(at) => shown.clicked = Some(self.to_canvas(rect, at)),
@@ -296,6 +317,25 @@ impl View {
         }
         let to_screen =
             |p: Point| rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom;
+        if self.grid {
+            let step = snap::grid_step(self.spacing, self.zoom);
+            let (lo, hi) = (
+                self.to_canvas(rect, rect.min),
+                self.to_canvas(rect, rect.max),
+            );
+            let (width, height) = (canvas.x as f64, canvas.y as f64);
+            let (top, bottom) = (lo.y.max(0.0), hi.y.min(height));
+            let (left, right) = (lo.x.max(0.0), hi.x.min(width));
+            let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x80, 0x80, 0x80, 0x50));
+            for x in multiples(left, right, step) {
+                let ends = [Point::new(x, top), Point::new(x, bottom)];
+                painter.line_segment(ends.map(to_screen), stroke);
+            }
+            for y in multiples(top, bottom, step) {
+                let ends = [Point::new(left, y), Point::new(right, y)];
+                painter.line_segment(ends.map(to_screen), stroke);
+            }
+        }
         let lifted_marks: Vec<(Point, Point)>;
         let marks = if preview.is_some() {
             lifted_marks = lifted.iter().filter_map(|&i| scene.bounds(i, t)).collect();
@@ -325,6 +365,13 @@ impl View {
                 4.0,
                 Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
                 StrokeKind::Outside,
+            );
+        }
+
+        for g in &guides {
+            painter.line_segment(
+                [to_screen(g.from), to_screen(g.to)],
+                Stroke::new(1.0, Color32::from_rgb(0xf7, 0x76, 0x8e)),
             );
         }
 
@@ -397,6 +444,54 @@ fn drawn_by(scene: &Scene, node: Span) -> Vec<usize> {
         .collect()
 }
 
+/// Where the node at `node`, dragged `by` canvas pixels, goes at time
+/// `t`: its objects' box snapped to the boxes of the other objects and to
+/// the grid of `grid` pixels within `reach` canvas pixels when `on`, and
+/// moved by whole pixels when not.
+fn snap_drag(
+    scene: &Scene,
+    node: Span,
+    by: Point,
+    t: f64,
+    on: bool,
+    reach: f64,
+    grid: Option<f64>,
+) -> Snapped {
+    let lifted = drawn_by(scene, node);
+    let mut moving: Option<Bounds> = None;
+    let mut others = Vec::new();
+    for i in 0..scene.objects.len() {
+        let Some((min, max)) = scene.bounds(i, t) else {
+            continue;
+        };
+        if lifted.binary_search(&i).is_err() {
+            others.push((min, max));
+            continue;
+        }
+        moving = Some(match moving {
+            None => (min, max),
+            Some((a, b)) => (
+                Point::new(a.x.min(min.x), a.y.min(min.y)),
+                Point::new(b.x.max(max.x), b.y.max(max.y)),
+            ),
+        });
+    }
+    match moving {
+        Some(moving) if on => snap::snap(moving, &others, by, reach, grid),
+        _ => Snapped {
+            by: Point::new(by.x.round(), by.y.round()),
+            guides: Vec::new(),
+        },
+    }
+}
+
+/// The multiples of `step` from `lo` to `hi`.
+fn multiples(lo: f64, hi: f64, step: f64) -> impl Iterator<Item = f64> {
+    let first = (lo / step).ceil() as i64;
+    let last = (hi / step).floor() as i64;
+    (first..=last).map(move |k| k as f64 * step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,6 +535,48 @@ mod tests {
         let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
         assert_eq!(cover.min, pos2(-200.0, -100.0));
         assert_eq!(cover.size(), Vec2::new(1200.0, 600.0));
+    }
+
+    /// The left and right edges of object `i` of `src` at time 0.
+    fn edges(src: &str, i: usize) -> (f64, f64) {
+        let scene = acre::scene::build(&acre::lang::parse(src).unwrap(), &[], &[]).unwrap();
+        let (min, max) = scene.bounds(i, 0.0).unwrap();
+        (min.x, max.x)
+    }
+
+    /// `src` with object 0 dragged by `by` and snapped, written back by
+    /// `move_edits`.
+    fn dragged(src: &str, by: Point) -> String {
+        let scene = acre::scene::build(&acre::lang::parse(src).unwrap(), &[], &[]).unwrap();
+        let node = scene.objects[0].source;
+        let snapped = snap_drag(&scene, node, by, 0.0, true, 6.0, None);
+        let edits = acre::scene::edit::move_edits(src, node, snapped.by.x, snapped.by.y).unwrap();
+        acre::scene::edit::apply(src, &edits)
+    }
+
+    #[test]
+    fn a_snapped_edge_lands_on_the_edge_once_written() {
+        // the other box's centre is at 42.5, and the dragged box's left
+        // edge comes within 0.2 of it
+        let src =
+            "canvas { size 300 200; box { at 0 0; size 20 10; } box { at 34 50; size 17 20; } }";
+        let out = dragged(src, Point::new(42.3, 0.4));
+        assert!(out.contains("at 42.5 0;"), "{out}");
+        assert_eq!(edges(&out, 0).0, 42.5);
+
+        // a right edge at 73.333 is written to two decimals
+        let src = "canvas { size 300 200; box { at 0 0; size 20 10; } box { at 40 50; size 33.333 20; } }";
+        let out = dragged(src, Point::new(51.0, 0.0));
+        assert!(out.contains("at 53.33 0;"), "{out}");
+        assert!((edges(&out, 0).1 - edges(&out, 1).1).abs() < 0.005);
+    }
+
+    #[test]
+    fn an_unsnapped_drag_moves_by_whole_pixels() {
+        let src =
+            "canvas { size 300 200; box { at 0 0; size 20 10; } box { at 200 150; size 20 10; } }";
+        let out = dragged(src, Point::new(41.6, 20.4));
+        assert!(out.contains("at 42 20;"), "{out}");
     }
 
     fn texture_side(d: &Drawn) -> f32 {

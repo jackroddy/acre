@@ -38,7 +38,8 @@ pub fn apply(source: &str, edits: &[TextEdit]) -> String {
 /// The edits to `source` that move the node whose span is `node`, as an
 /// object's [`source`](super::Object::source) gives it, `dx` pixels
 /// across and `dy` down, in source order. A number keeps as many decimals
-/// as it was written with, and a new number is whole.
+/// as it was written with, or as the offset needs up to two, whichever is
+/// more.
 ///
 /// The edits change the node's `at`, adding `DX DY` to an `at` that names
 /// a thing and an `at X Y` to a node without one, or the numbers of its
@@ -414,15 +415,15 @@ impl Mover<'_> {
                 let decimals = written.split_once('.').map_or(0, |(_, f)| f.len());
                 Ok(TextEdit {
                     span: v.span,
-                    text: number(n + by, decimals),
+                    text: number(n + by, decimals.max(places(by))),
                 })
             })
             .collect()
     }
 
-    /// The offset as two whole numbers, or `None` when both are 0.
+    /// The offset as two numbers, or `None` when both are 0.
     fn offsets(&self) -> Option<String> {
-        let [x, y] = self.by.map(|n| number(n, 0));
+        let [x, y] = self.by.map(|n| number(n, places(n)));
         (x != "0" || y != "0").then(|| format!("{x} {y}"))
     }
 
@@ -483,6 +484,18 @@ fn open_brace(source: &str, node: &Node) -> usize {
             }
             _ => i += 1,
         }
+    }
+}
+
+/// The fewest decimals, up to two, that write `n` rounded to two.
+fn places(n: f64) -> usize {
+    let hundredths = (n * 100.0).round() as i64;
+    if hundredths % 100 == 0 {
+        0
+    } else if hundredths % 10 == 0 {
+        1
+    } else {
+        2
     }
 }
 
@@ -584,16 +597,25 @@ mod tests {
     }
 
     #[test]
-    fn a_number_is_written_whole_unless_it_had_decimals() {
+    fn a_number_keeps_its_decimals_or_the_offsets_up_to_two() {
         let src = "canvas { size 300 200; box { at 40 60.5; size 50 30; } }\n";
         let span = scene(src).objects[0].source;
-        let out = apply(src, &move_edits(src, span, 3.6, 3.26).unwrap());
-        assert!(out.contains("at 44 63.8;"), "{out}");
+        let out = apply(src, &move_edits(src, span, 3.0, 2.0).unwrap());
+        assert!(out.contains("at 43 62.5;"), "{out}");
+        let out = apply(src, &move_edits(src, span, 3.5, 0.25).unwrap());
+        assert!(out.contains("at 43.5 60.75;"), "{out}");
+        let out = apply(src, &move_edits(src, span, 1.004, -0.333).unwrap());
+        assert!(out.contains("at 41 60.17;"), "{out}");
 
         let src = "canvas { size 300 200; box { at 3 0.25; size 50 30; } }\n";
         let span = scene(src).objects[0].source;
-        let out = apply(src, &move_edits(src, span, -3.2, -0.25).unwrap());
+        let out = apply(src, &move_edits(src, span, -3.0, -0.25).unwrap());
         assert!(out.contains("at 0 0.00;"), "{out}");
+
+        let src = "canvas { size 300 200; box { size 50 30; } }\n";
+        let span = scene(src).objects[0].source;
+        let out = apply(src, &move_edits(src, span, 2.5, -0.004).unwrap());
+        assert!(out.contains("at 2.5 0;"), "{out}");
     }
 
     #[test]
@@ -601,7 +623,10 @@ mod tests {
         let src = "canvas { size 300 200; box { size 50 30; } box { at 4 4; size 5 5; } }\n";
         let s = scene(src);
         for o in &s.objects {
-            assert_eq!(move_edits(src, o.source, 0.2, -0.4).unwrap(), Vec::new());
+            assert_eq!(
+                move_edits(src, o.source, 0.002, -0.004).unwrap(),
+                Vec::new()
+            );
         }
     }
 

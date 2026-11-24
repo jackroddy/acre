@@ -53,6 +53,14 @@ impl Drag {
         self.by = Some(Point::new(by.x as f64, by.y as f64));
     }
 
+    /// Put the node at `by` canvas pixels from where it was, in place of
+    /// the pointer's offset, until the pointer moves again.
+    pub fn place(&mut self, by: Point) {
+        if self.by.is_some() {
+            self.by = Some(by);
+        }
+    }
+
     /// The node being moved and how far, once the pointer has gone past
     /// the threshold.
     pub fn moving(&self) -> Option<(Span, Point)> {
@@ -105,6 +113,22 @@ mod tests {
         drag.follow(pos2(30.0, 0.0), 1.0);
         drag.follow(pos2(2.0, 0.0), 1.0);
         assert_eq!(drag.moving(), Some((span(), Point::new(2.0, 0.0))));
+    }
+
+    #[test]
+    fn a_placed_drag_lets_go_where_it_was_placed() {
+        let mut drag = Drag::new(Some(span()), pos2(0.0, 0.0));
+        drag.place(Point::new(9.0, 9.0));
+        assert_eq!(drag.moving(), None);
+        drag.follow(pos2(30.0, 0.0), 1.0);
+        drag.place(Point::new(32.5, 0.0));
+        assert_eq!(
+            drag.release(),
+            Release::Move {
+                node: span(),
+                by: Point::new(32.5, 0.0),
+            }
+        );
     }
 
     #[test]

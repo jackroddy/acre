@@ -405,7 +405,7 @@ impl App {
         });
     }
 
-    /// The buttons that zoom the render.
+    /// The buttons that zoom the render, and the snap and grid toggles.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("−").on_hover_text("zoom out").clicked() {
@@ -424,6 +424,17 @@ impl App {
             {
                 self.view.actual_size(self.pane);
             }
+            ui.separator();
+            ui.toggle_value(&mut self.view.snap, "Snap")
+                .on_hover_text("snap a dragged object to other objects and the grid");
+            ui.toggle_value(&mut self.view.grid, "Grid")
+                .on_hover_text("draw the grid and snap to it");
+            ui.add(
+                egui::DragValue::new(&mut self.view.spacing)
+                    .range(1.0..=1000.0)
+                    .suffix(" px"),
+            )
+            .on_hover_text("the grid's spacing in canvas pixels");
         });
     }
 

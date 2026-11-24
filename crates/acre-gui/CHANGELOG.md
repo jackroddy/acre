@@ -9,6 +9,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A dragged object snaps to other objects. Its left edge, centre and right
+  edge snap to those of any other object, and so do its top, middle and
+  bottom. Each axis snaps on its own. A snap reaches 6 screen points at any
+  zoom, and the object comes free once the pointer moves past that. A thin
+  line marks each snap that holds. The written numbers land on the snap,
+  to two decimals. Without a snap, a move is in whole pixels.
+- The toolbar has a `Snap` toggle, on at start, that turns snapping on and
+  off. A `Grid` toggle, off at start, draws a faint grid over the canvas.
+  The field beside it sets the grid's spacing in canvas pixels, 10 at
+  start. When zoomed far out, the viewer draws every second line, or
+  fewer. With the grid on, an axis that snaps to no object snaps the
+  dragged object's top-left corner to the grid.
 - A click on an object selects the node that drew it. The viewer outlines
   the node's objects in blue at their bounds at the time shown. The blue
   outline sits outside the orange one that follows the editor's cursor.

@@ -31,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named thing, and onto every number of `from`, `to` and `points`. A node
   with no `at` gets one before its first property, on that property's line
   or on a line of its own as the body is written. A number keeps the
-  decimals it was written with, and a new number is whole. For a node in a
+  decimals it was written with. It takes more when the offset needs them,
+  up to two, so an offset of 2.5 writes 2.5. For a node in a
   `repeat`, a child of a stack or grid, a node the timeline moves or scales
   or that sits in one, a value from a `let`, a `( ... )` or a style, and an
   end or a marker placed on a named thing, `move_edits` returns an error
