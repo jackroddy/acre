@@ -3,7 +3,7 @@
   "title": "Dragging snaps to other objects and to an optional grid",
   "body": "Dragging in acre-gui moves an object by the raw pointer offset, rounded to whole pixels by `scene::edit::move_edits`.\n\n## Proposal\n\n- While dragging, the left edge, centre and right edge of the dragged box snap to those of other objects, and so do the top, middle and bottom. A snap reaches about 6 screen pixels, so it feels the same at any zoom, and moving past that frees the object at once.\n- A thin guide line shows each snap that holds, so no snap is hidden.\n- A `Grid` toggle in the toolbar draws a faint grid, off by default, and snaps the box's top-left corner to it when no alignment snap holds. A number field beside it sets the spacing in canvas pixels, 10 by default.\n- A `Snap` toggle in the toolbar turns snapping off. No modifier key, since the viewer takes no new key bindings.\n- The snap logic is plain code with unit tests, apart from egui.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T19:00:01.73571619Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T18:41:30.081141052Z",
-  "updated_at": "2026-11-24T18:45:01.73571619Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T18:49:49.340780835Z",
+  "closed_at": "2026-11-24T18:49:49.340780835Z",
+  "close_reason": "Landed in 89cb1c2 on dev. The snap maths is `snap::snap` and `snap::grid_step` in `crates/acre-gui/src/snap.rs`. `snap_drag` in `view.rs` feeds it the boxes, and `Drag::place` holds the snapped offset. `move_edits` now writes up to two decimals when the offset needs them. The grid is drawn faintly over the canvas image, since the canvas background is opaque. Turning `Snap` off turns off grid snapping too.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "4c45d30",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "89cb1c2",
+      "branch": "dev"
+    }
   }
 }
