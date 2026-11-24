@@ -10,8 +10,8 @@ use super::schema;
 use super::timeline::{self, TextAction};
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Matrix,
-    MatrixCell, Object, Point, Polygon, Polyline, Route, Row, RowCell, Ruler, Run, Scene, Shape,
-    Side, Stroke, Target, Text, TextChange,
+    MatrixCell, Merge, Object, Point, Polygon, Polyline, Route, Row, RowCell, Ruler, Run, Scene,
+    Shape, Side, Stroke, Target, Text, TextChange,
 };
 use crate::fonts::{Fonts, Typeface};
 use crate::lang::{Error, Node, Program, Property, Span, Value, ValueKind};
@@ -440,6 +440,16 @@ fn add_objects(
             "sweep" => {
                 match sweep(node, names, offset) {
                     Ok(c) => out.push(Object::new(Kind::Connector(c)).from_source(node.span)),
+                    // a measure leaves out what names a thing not
+                    // placed yet
+                    Err(_) if pass.measuring => {}
+                    Err(e) => return Err(e),
+                }
+                continue;
+            }
+            "merge" => {
+                match merge(node, names, offset) {
+                    Ok(m) => out.push(Object::new(Kind::Merge(m)).from_source(node.span)),
                     // a measure leaves out what names a thing not
                     // placed yet
                     Err(_) if pass.measuring => {}
@@ -1846,6 +1856,88 @@ fn sweep(node: &Node, names: &Names, offset: Point) -> Result<Connector, Error> 
     })
 }
 
+/// The node and property that may be set more than once: each `from` of
+/// a `merge` starts a line of its own.
+const REPEATED: (&str, &str) = ("merge", "from");
+
+fn merge(node: &Node, names: &Names, offset: Point) -> Result<Merge, Error> {
+    let props = Props::new(node, &keys("merge"), false)?;
+    props.require("from")?;
+    let to_prop = props.require("to")?;
+    let (to, to_target) = end(to_prop, names, offset, 0)?;
+    let at = props
+        .get("at")
+        .map(|p| p.numbers::<2>().map(|[x, y]| offset + Point::new(x, y)))
+        .transpose()?;
+    let stroke = props
+        .stroke(Some(Color::BLACK))?
+        .unwrap_or(Stroke::solid(Color::BLACK, STROKE_WIDTH));
+    let tail = props.choice("tail", Head::None, &HEADS)?;
+    let head_size = props.number("head-size")?;
+    let line = |follow: [Option<Box<Follow>>; 2]| Connector {
+        from: Point::ZERO,
+        to: Point::ZERO,
+        from_dir: None,
+        to_dir: None,
+        follow,
+        looped: false,
+        stroke,
+        route: Route::Straight,
+        head: Head::None,
+        tail: Head::None,
+        head_size,
+        label: None,
+        label_side: LabelSide::Above,
+        label_at: 0.5,
+    };
+    let mut froms = Vec::new();
+    let mut branches = Vec::new();
+    for p in props.all("from") {
+        let (from, target) = end(p, names, offset, 0)?;
+        let follow = target.map(|target| {
+            Box::new(Follow {
+                target,
+                end: from.clone(),
+            })
+        });
+        branches.push(Connector {
+            route: Route::Sweep {
+                leave: None,
+                enter: None,
+            },
+            tail,
+            ..line([follow, None])
+        });
+        froms.push(from);
+    }
+    let to_follow = to_target.map(|target| {
+        Box::new(Follow {
+            target,
+            end: to.clone(),
+        })
+    });
+    let mut merge = Merge {
+        branches,
+        trunk: Connector {
+            head: props.choice("head", Head::Triangle, &HEADS)?,
+            label: props.label("label", "text-size", "text-color", names)?,
+            label_side: props.choice("label-side", LabelSide::Above, &LABEL_SIDES)?,
+            label_at: props.number_or("label-at", 0.5)?,
+            ..line([None, to_follow])
+        },
+        at,
+    };
+    merge.join(&froms, &to);
+    if merge.trunk.from == merge.trunk.to {
+        let span = props.get("at").unwrap_or(to_prop).span;
+        return Err(Error::new(
+            span,
+            "the junction meets `to`, so the arrow draws nothing",
+        ));
+    }
+    Ok(merge)
+}
+
 /// The way `key` gives a sweep's end, which `end` gives as a point or
 /// a thing with no side when `side` is false.
 fn way(props: &Props, key: &str, end: &Property, side: bool) -> Result<Option<Dir>, Error> {
@@ -2701,7 +2793,9 @@ impl<'a> Props<'a> {
                     ),
                 ));
             }
-            if node.properties[..i].iter().any(|q| q.key.text == *key) {
+            if (kind.as_str(), key.as_str()) != REPEATED
+                && node.properties[..i].iter().any(|q| q.key.text == *key)
+            {
                 return Err(Error::new(p.key.span, format!("`{key}` is set twice")));
             }
         }
@@ -2710,6 +2804,15 @@ impl<'a> Props<'a> {
 
     fn get(&self, key: &str) -> Option<&'a Property> {
         self.node.properties.iter().find(|p| p.key.text == key)
+    }
+
+    /// Every setting of `key`, in order, for the one property that may
+    /// repeat.
+    fn all(&self, key: &'a str) -> impl Iterator<Item = &'a Property> {
+        self.node
+            .properties
+            .iter()
+            .filter(move |p| p.key.text == key)
     }
 
     pub(super) fn require(&self, key: &str) -> Result<&'a Property, Error> {
@@ -3255,6 +3358,75 @@ mod tests {
                 25,
                 "`side` places a loop, whose `from` and `to` name one thing with no side".into()
             )
+        );
+    }
+
+    fn merge_of(body: &str) -> Merge {
+        let s = scene(&format!(
+            "canvas {{ size 300 300;
+                box a {{ at 0 0; size 40 20; }}
+                box b {{ at 100 0; size 40 20; }}
+                box t {{ at 40 200; size 100 40; }}
+                {body} }}"
+        ))
+        .unwrap();
+        match &s.objects[3].kind {
+            Kind::Merge(m) => m.clone(),
+            other => panic!("expected a merge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_merge_joins_each_from_halfway_to_the_nearest_and_runs_on_to_to() {
+        let m = merge_of("merge { from a bottom; from b bottom; to t top; label \"x\"; }");
+        // the froms sit 180 above the top of t, so the junction sits 90
+        // above it
+        let junction = Point::new(90.0, 110.0);
+        assert_eq!(m.branches.len(), 2);
+        assert_eq!(
+            m.branches
+                .iter()
+                .map(|b| (b.from, b.to))
+                .collect::<Vec<_>>(),
+            [
+                (Point::new(20.0, 20.0), junction),
+                (Point::new(120.0, 20.0), junction)
+            ]
+        );
+        assert!(m.branches.iter().all(|b| b.head == Head::None));
+        assert_eq!(m.branches[0].to_dir, Some(Point::new(0.0, -1.0)));
+        assert_eq!(
+            (m.trunk.from, m.trunk.to),
+            (junction, Point::new(90.0, 200.0))
+        );
+        assert_eq!(m.trunk.head, Head::Triangle);
+        assert!(m.trunk.label.is_some());
+    }
+
+    #[test]
+    fn a_merge_joins_at_at_and_a_from_with_no_side_leaves_the_way_the_trunk_runs() {
+        let m = merge_of("merge { from 0 100; from b; to t top; at 90 150; tail dot; }");
+        let junction = Point::new(90.0, 150.0);
+        assert_eq!(m.trunk.from, junction);
+        assert_eq!(m.branches[0].from_dir, Some(Point::new(0.0, 1.0)));
+        assert_eq!(m.branches[1].to, junction);
+        assert!(m.branches.iter().all(|b| b.tail == Head::Dot));
+    }
+
+    #[test]
+    fn only_a_merge_may_set_from_more_than_once() {
+        let twice = |node: &str| {
+            scene(&format!("canvas {{ size 10 10; {node} }}"))
+                .unwrap_err()
+                .2
+        };
+        assert_eq!(
+            twice("merge { from 0 0; from 9 0; to 5 9; to 5 8; }"),
+            "`to` is set twice"
+        );
+        assert_eq!(
+            twice("arrow { from 0 0; from 9 0; to 5 9; }"),
+            "`from` is set twice"
         );
     }
 

@@ -23,7 +23,7 @@ pub mod track;
 
 pub use build::{FontFile, build, font_files};
 pub use code::Code;
-pub use connector::{Connector, End, Follow, Head, LabelSide, Route};
+pub use connector::{Connector, End, Follow, Head, LabelSide, Merge, Route};
 pub use data::{DataFile, data_files};
 pub use diagram::{Brace, Label, Polygon, Polyline, Ruler, Shape, Side, Text};
 pub use grid::{Cell, Grid};
@@ -168,6 +168,7 @@ pub enum Kind {
     Polygon(Polygon),
     Polyline(Polyline),
     Connector(Connector),
+    Merge(Merge),
     Text(Text),
     Row(Row),
     Matrix(Matrix),
@@ -292,6 +293,7 @@ impl Kind {
             Kind::Polygon(polygon) => polygon.draw(out),
             Kind::Polyline(polyline) => polyline.draw(out),
             Kind::Connector(connector) => connector.draw(out),
+            Kind::Merge(merge) => merge.draw(out),
             Kind::Text(text) => text.draw(out),
             Kind::Row(row) => row.draw(out),
             Kind::Matrix(matrix) => matrix.draw(out),
@@ -326,6 +328,8 @@ impl Kind {
             (Kind::Text(t), Part::Text) => Ok(t.label.runs.first().map(|r| r.color)),
             (Kind::Connector(c), Part::Stroke) => Ok(Some(c.stroke.color)),
             (Kind::Connector(c), Part::Text) => text(&c.label),
+            (Kind::Merge(m), Part::Stroke) => Ok(Some(m.trunk.stroke.color)),
+            (Kind::Merge(m), Part::Text) => text(&m.trunk.label),
             (Kind::Row(r), _) => {
                 let Some(i) = cell else {
                     return Err("is a row, whose colors change by cell: `NAME N`");
@@ -392,6 +396,12 @@ impl Kind {
             (Kind::Text(t), Part::Text) => text(&mut t.label),
             (Kind::Connector(c), Part::Stroke) => c.stroke.color = color,
             (Kind::Connector(c), Part::Text) => c.label.iter_mut().for_each(text),
+            (Kind::Merge(m), Part::Stroke) => {
+                for c in m.branches.iter_mut().chain([&mut m.trunk]) {
+                    c.stroke.color = color;
+                }
+            }
+            (Kind::Merge(m), Part::Text) => m.trunk.label.iter_mut().for_each(text),
             (Kind::Row(r), part) => {
                 let Some(cell) = cell.and_then(|i| r.cells.get_mut(i)) else {
                     return;
@@ -494,6 +504,25 @@ impl Scene {
                     c.draw(out);
                 } else {
                     c.followed(motions).draw(out);
+                }
+                object.own_motion(t)
+            }
+            Kind::Merge(m)
+                if m.trunk.follow[1].is_some()
+                    || m.branches.iter().any(|b| b.follow[0].is_some()) =>
+            {
+                let groups = object.group_motion(t);
+                let motion_of = |f: &Option<Box<Follow>>| match f {
+                    Some(f) => self.motion_of(f.target, t),
+                    None => groups,
+                };
+                let froms: Vec<Motion> =
+                    m.branches.iter().map(|b| motion_of(&b.follow[0])).collect();
+                let to = motion_of(&m.trunk.follow[1]);
+                if to.is_none() && groups.is_none() && froms.iter().all(Motion::is_none) {
+                    m.draw(out);
+                } else {
+                    m.followed(&froms, to, groups).draw(out);
                 }
                 object.own_motion(t)
             }

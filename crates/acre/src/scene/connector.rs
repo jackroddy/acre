@@ -207,11 +207,7 @@ impl Connector {
     /// attached end with the thing it is attached to, and a free end on
     /// its own.
     pub fn followed(&self, motions: [Motion; 2]) -> Connector {
-        let [from, to] = [0, 1].map(|i| match &self.follow[i] {
-            Some(f) => f.end.moved(motions[i]),
-            None if motions[i].is_none() => End::Point([self.from, self.to][i]),
-            None => End::Point(motions[i].apply([self.from, self.to][i])),
-        });
+        let [from, to] = self.moved_ends(motions);
         let ([from_at, to_at], [from_dir, to_dir]) = place(&from, &to);
         Connector {
             from: from_at,
@@ -220,6 +216,15 @@ impl Connector {
             to_dir,
             ..self.clone()
         }
+    }
+
+    /// The ends `from` and `to` where `motions` take them.
+    fn moved_ends(&self, motions: [Motion; 2]) -> [End; 2] {
+        [0, 1].map(|i| match &self.follow[i] {
+            Some(f) => f.end.moved(motions[i]),
+            None if motions[i].is_none() => End::Point([self.from, self.to][i]),
+            None => End::Point(motions[i].apply([self.from, self.to][i])),
+        })
     }
 
     pub fn draw(&self, out: &mut Vec<Primitive>) {
@@ -477,6 +482,100 @@ impl Connector {
             Point::new(half_w, ascent / 2.0),
         )
     }
+}
+
+/// Several lines joined into one arrow: a sweep from each `from` into a
+/// junction, and an arrow on from the junction to `to`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Merge {
+    /// One sweep per `from`, each ending at the junction.
+    pub branches: Vec<Connector>,
+    /// The arrow from the junction to `to`, which carries the head and
+    /// the label.
+    pub trunk: Connector,
+    /// The junction, when `at` sets it.
+    pub at: Option<Point>,
+}
+
+impl Merge {
+    /// Put the junction, and every line between it and `froms` and `to`,
+    /// one `from` per branch.
+    pub fn join(&mut self, froms: &[End], to: &End) {
+        let junction = self.at.unwrap_or_else(|| junction(froms, to));
+        let ([at, to_at], [_, to_dir]) = place(&End::Point(junction), to);
+        let way = if at == to_at {
+            Point::new(0.0, 1.0)
+        } else {
+            unit(to_at - at)
+        };
+        self.trunk.from = at;
+        self.trunk.to = to_at;
+        self.trunk.to_dir = to_dir;
+        for (branch, from) in self.branches.iter_mut().zip(froms) {
+            let ([from_at, _], [from_dir, _]) = place(from, &End::Point(junction));
+            branch.from = from_at;
+            branch.to = junction;
+            // a `from` with no side sets off the way the trunk runs,
+            // and every branch arrives along it, so they meet the trunk
+            // without a corner
+            branch.from_dir = Some(from_dir.unwrap_or(way));
+            branch.to_dir = Some(way * -1.0);
+        }
+    }
+
+    /// This merge with each branch's `from` where `froms` take it, `to`
+    /// where `to` takes it, and a junction `at` sets where `free` does.
+    pub fn followed(&self, froms: &[Motion], to: Motion, free: Motion) -> Merge {
+        let from_ends: Vec<End> = self
+            .branches
+            .iter()
+            .zip(froms)
+            .map(|(branch, &motion)| {
+                let [end, _] = branch.moved_ends([motion, free]);
+                end
+            })
+            .collect();
+        let [_, to_end] = self.trunk.moved_ends([free, to]);
+        let mut merge = Merge {
+            at: self.at.map(|p| free.apply(p)),
+            ..self.clone()
+        };
+        merge.join(&from_ends, &to_end);
+        merge
+    }
+
+    pub fn draw(&self, out: &mut Vec<Primitive>) {
+        for branch in &self.branches {
+            branch.draw(out);
+        }
+        self.trunk.draw(out);
+    }
+}
+
+/// The junction of a merge with no `at`: out of `to`'s side, or above
+/// `to` when it names none, halfway to the nearest `from` along that way.
+fn junction(froms: &[End], to: &End) -> Point {
+    let up = Point::new(0.0, -1.0);
+    let (base, out) = match to {
+        End::Side { at, out } => (*at, *out),
+        End::Box(s) => (Point::new(s.center().x, s.origin.y), up),
+        End::Point(p) => (*p, up),
+    };
+    let nearest = froms
+        .iter()
+        .map(|from| {
+            let d = from.on_edge(&End::Point(base)) - base;
+            d.x * out.x + d.y * out.y
+        })
+        .fold(f64::INFINITY, f64::min);
+    // with no `from` ahead of `to`, the junction steps out as far as an
+    // elbow steps past its ends
+    let reach = if nearest > 0.0 && nearest.is_finite() {
+        nearest / 2.0
+    } else {
+        STEP_OUT
+    };
+    base + out * reach
 }
 
 /// Three segments from `a` to `b` that turn where the horizontal or

@@ -75,8 +75,8 @@ impl Lang {
             ],
             Lang::Acre => &[
                 "canvas", "box", "ellipse", "polygon", "polyline", "row", "matrix", "cell", "line",
-                "arrow", "sweep", "text", "marker", "table", "brace", "ruler", "group", "panel",
-                "caption", "stack", "grid", "palette", "style", "code", "let",
+                "arrow", "sweep", "merge", "text", "marker", "table", "brace", "ruler", "group",
+                "panel", "caption", "stack", "grid", "palette", "style", "code", "let",
             ],
             Lang::Text => &[],
         }

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `merge` joins several lines into one arrow. Each `from` starts a line,
+  and `from` on a `merge` is the one property a node may set more than
+  once. Each line sweeps into a junction, and an arrow runs on from the
+  junction to `to`. `at X Y` sets the junction. Without `at`, the junction
+  sits out of `to`'s side, or above `to` when `to` names no side, halfway to
+  the nearest `from`. A line from an end with no side sets off the way the
+  arrow runs. The arrow takes `head`, `head-size`, `label`, `label-side` and
+  `label-at`, and `tail` draws at each `from`. `stroke`, `stroke-width` and
+  `dash` set every line. When a timeline moves or scales the things the
+  ends name, the lines follow, and `fade`, `show`, `hide` and `stroke` act
+  on the whole merge. `Merge` and `Kind::Merge` are new.
 - `label-side on` sets a connector's label centered on its line at
   `label-at`. acre breaks the line around the label's box and leaves on each
   side the gap that a label beside a line keeps from it. On an elbow the

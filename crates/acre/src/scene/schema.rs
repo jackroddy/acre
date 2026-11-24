@@ -237,10 +237,54 @@ const CONNECTOR: &[Property] = &[
     STYLE,
 ];
 
+const MERGE: &[Property] = &[
+    prop(
+        "from",
+        "X Y | NAME [SIDE [F] | CORNER] | ROW N [SIDE [F] | CORNER] | MATRIX R C [SIDE [F] | CORNER]",
+        "where one line starts, in the forms an `arrow` takes; set it once for each line",
+    ),
+    prop(
+        "to",
+        "X Y | NAME [SIDE [F] | CORNER] | ROW N [SIDE [F] | CORNER] | MATRIX R C [SIDE [F] | CORNER]",
+        "where the arrow out of the junction ends",
+    ),
+    prop(
+        "at",
+        "X Y",
+        "the junction, where the lines join; without it, out of `to`'s side, or above `to` when it names no side, halfway to the nearest `from`",
+    ),
+    STROKE,
+    STROKE_WIDTH,
+    DASH,
+    prop(
+        "head",
+        "none | triangle | open | dot",
+        "what it draws at `to`; a triangle unless set",
+    ),
+    prop(
+        "tail",
+        "none | triangle | open | dot",
+        "what it draws at each `from`",
+    ),
+    HEAD_SIZE,
+    LABEL,
+    LABEL_SIDE,
+    prop(
+        "label-at",
+        "F",
+        "how far along the arrow from the junction to `to` the label sits, from 0 at the junction to 1 at `to`; the default is 0.5",
+    ),
+    TEXT_SIZE,
+    TEXT_COLOR,
+    FONT,
+    ANCHOR,
+    STYLE,
+];
+
 const DRAWN: &[&str] = &[
-    "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep", "text",
-    "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid",
-    "code", "repeat",
+    "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep", "merge",
+    "text", "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack",
+    "grid", "code", "repeat",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -273,8 +317,9 @@ pub const NODES: &[NodeKind] = &[
         ],
         children: &[
             "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep",
-            "text", "math", "marker", "table", "brace", "ruler", "group", "panel", "caption",
-            "stack", "grid", "code", "repeat", "palette", "style", "fonts", "data", "timeline",
+            "merge", "text", "math", "marker", "table", "brace", "ruler", "group", "panel",
+            "caption", "stack", "grid", "code", "repeat", "palette", "style", "fonts", "data",
+            "timeline",
         ],
     },
     NodeKind {
@@ -459,6 +504,12 @@ pub const NODES: &[NodeKind] = &[
         name: "sweep",
         about: "an arrow along one curve that sets off and arrives in set ways, and moves each way for half the distance between its ends along that way",
         properties: SWEEP,
+        children: &[],
+    },
+    NodeKind {
+        name: "merge",
+        about: "several lines that join into one arrow: each `from` sweeps into a junction, and an arrow runs on from there to `to`",
+        properties: MERGE,
         children: &[],
     },
     NodeKind {

@@ -1216,6 +1216,39 @@ mod tests {
     }
 
     #[test]
+    fn a_merge_follows_its_moved_ends_and_fades_as_one() {
+        let s = canvas(
+            "box a { at 0 0; size 40 20; }
+             box b { at 100 0; size 40 20; }
+             box t { at 40 200; size 100 40; }
+             merge m { from a bottom; from b bottom; to t top; }
+             timeline { 0s to 1s { move a 0 100; move t 0 40; } 1s to 2s { fade m out; } }",
+        );
+        let cubics = |t: f64| {
+            let mut prims = Vec::new();
+            s.draw_object(&s.objects[3], t, &mut prims);
+            prims
+                .iter()
+                .filter_map(|p| match p {
+                    Primitive::Cubic { from, to, .. } => Some((*from, *to)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        // a's bottom moves to y 120 and t's top to y 240, so the
+        // junction sits halfway between, at y 180
+        let junction = Point::new(90.0, 180.0);
+        assert_eq!(
+            cubics(1.0),
+            [
+                (Point::new(20.0, 120.0), junction),
+                (Point::new(120.0, 20.0), junction)
+            ]
+        );
+        assert!(cubics(2.0).is_empty());
+    }
+
+    #[test]
     fn a_group_scales_as_one_about_its_center_or_its_anchor() {
         let boxes = "box a { at 0 0; size 40 40; stroke none; } box c { at 60 0; size 40 40; stroke none; }";
         let s = canvas(&format!(
