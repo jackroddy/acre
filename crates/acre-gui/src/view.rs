@@ -9,6 +9,7 @@ use eframe::egui::{
 };
 
 use crate::drag::{Drag, Release};
+use crate::selection;
 use crate::snap::{self, Bounds, Snapped};
 
 const MIN_ZOOM: f32 = 0.05;
@@ -42,10 +43,10 @@ pub struct View {
     moved: Option<Instant>,
     /// The primary press in the pane, until it is let go.
     drag: Option<Drag>,
-    /// A node let go of after a drag, and how far, drawn there until
-    /// the source it was moved in comes back.
-    held: Option<(Span, Point)>,
-    /// Whether a dragged node snaps to other objects and the grid.
+    /// The nodes let go of after a drag, and how far, drawn there until
+    /// the source they were moved in comes back.
+    held: Option<(Vec<Span>, Point)>,
+    /// Whether dragged nodes snap to other objects and the grid.
     pub snap: bool,
     /// Whether the grid is drawn and snapped to.
     pub grid: bool,
@@ -63,13 +64,15 @@ pub struct Shown {
     pub clicked: Option<Point>,
     /// The node that drew the object double-clicked.
     pub double_clicked: Option<Span>,
-    /// The node dragged and let go of this frame, and how far it moved
-    /// in canvas pixels.
-    pub moved: Option<(Span, Point)>,
+    /// The nodes dragged and let go of this frame, and how far they
+    /// moved in canvas pixels.
+    pub moved: Option<(Vec<Span>, Point)>,
+    /// The selection box let go of this frame, in canvas pixels.
+    pub boxed: Option<Bounds>,
 }
 
 /// The view the texture was drawn for.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Drawn {
     pane: Vec2,
     pixels_per_point: f32,
@@ -79,8 +82,8 @@ struct Drawn {
     origin: Vec2,
     scene: u64,
     time: f64,
-    /// The node drawn moved by a drag, and how far.
-    preview: Option<(Span, Point)>,
+    /// The nodes drawn moved by a drag, and how far.
+    preview: Option<(Vec<Span>, Point)>,
 }
 
 impl Drawn {
@@ -116,8 +119,8 @@ impl View {
         }
     }
 
-    /// Stop drawing the node let go of after a drag where it was moved
-    /// to.
+    /// Stop drawing the nodes let go of after a drag where they were
+    /// moved to.
     pub fn end_move(&mut self) {
         self.held = None;
     }
@@ -152,10 +155,11 @@ impl View {
     /// Lay the pane out in `ui`, take the person's zoom, pan and drag,
     /// and draw `scene`, whose version is `version`, at time `t`, with an
     /// outline around each box in `marks`, given in canvas pixels, and
-    /// another around each object the node at `selected` draws. While a
-    /// node is dragged, its objects are drawn where it is dragged to,
-    /// snapped, and outlined in place of `marks`, with a guide for each
-    /// snap. A double-click on no object fits the canvas to the pane.
+    /// another around each object the nodes at `selected` draw. While
+    /// nodes are dragged, their objects are drawn where they are dragged
+    /// to, snapped, and outlined in place of `marks`, with a guide for
+    /// each snap. A drag on empty canvas draws a selection box. A
+    /// double-click on no object fits the canvas to the pane.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -163,7 +167,7 @@ impl View {
         version: u64,
         t: f64,
         marks: &[(Point, Point)],
-        selected: Option<Span>,
+        selected: &[Span],
     ) -> Shown {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         let mut shown = Shown {
@@ -172,6 +176,7 @@ impl View {
             clicked: None,
             double_clicked: None,
             moved: None,
+            boxed: None,
         };
         let Some(scene) = scene else {
             self.drag = None;
@@ -193,11 +198,12 @@ impl View {
             && response.contains_pointer()
             && let Some(at) = pointer
         {
-            let node = scene
+            let nodes = scene
                 .object_at(self.to_canvas(rect, at), t)
                 .map(|i| scene.objects[i].source)
-                .filter(|s| s.start < s.end);
-            self.drag = Some(Drag::new(node, at));
+                .filter(|s| s.start < s.end)
+                .map_or(Vec::new(), |node| selection::dragged(selected, node));
+            self.drag = Some(Drag::new(nodes, at));
         }
 
         if response.double_clicked() {
@@ -210,10 +216,7 @@ impl View {
                 None => self.fit = true,
             }
         }
-        let pans = self.drag.as_ref().is_some_and(Drag::pans);
-        if response.dragged_by(PointerButton::Middle)
-            || (pans && response.dragged_by(PointerButton::Primary))
-        {
+        if response.dragged_by(PointerButton::Middle) {
             self.origin += response.drag_delta();
             self.fit = false;
             self.moved = Some(Instant::now());
@@ -247,38 +250,47 @@ impl View {
         }
         let mut guides = Vec::new();
         if let Some(drag) = &mut self.drag
-            && let Some((node, by)) = drag.moving()
+            && let Some((nodes, by)) = drag.moving()
         {
             let reach = (snap::REACH / self.zoom) as f64;
             let grid = self.grid.then_some(self.spacing);
-            let snapped = snap_drag(scene, node, by, t, self.snap, reach, grid);
+            let snapped = snap_drag(scene, nodes, by, t, self.snap, reach, grid);
             drag.place(snapped.by);
             guides = snapped.guides;
         }
         if !down && let Some(drag) = self.drag.take() {
             match drag.release() {
                 Release::Click(at) => shown.clicked = Some(self.to_canvas(rect, at)),
-                Release::Move { node, by } => {
-                    self.held = Some((node, by));
-                    shown.moved = Some((node, by));
+                Release::Move { nodes, by } => {
+                    self.held = Some((nodes.clone(), by));
+                    shown.moved = Some((nodes, by));
 
                     // the caller ends the move or shows the moved
                     // source after this frame is drawn
                     ui.ctx().request_repaint();
                 }
-                Release::Pan => {}
+                Release::Select(from, to) => {
+                    let (a, b) = (self.to_canvas(rect, from), self.to_canvas(rect, to));
+                    shown.boxed = Some((
+                        Point::new(a.x.min(b.x), a.y.min(b.y)),
+                        Point::new(a.x.max(b.x), a.y.max(b.y)),
+                    ));
+                }
             }
         }
-        let preview = self.drag.as_ref().and_then(Drag::moving).or(self.held);
-        let lifted: Vec<usize> = match preview {
-            Some((node, by)) => {
-                let lifted = drawn_by(scene, node);
+        let preview = match self.drag.as_ref().and_then(Drag::moving) {
+            Some((nodes, by)) => Some((nodes.to_vec(), by)),
+            None => self.held.clone(),
+        };
+        let lifted: Vec<usize> = match &preview {
+            Some((nodes, by)) => {
+                let lifted = drawn_by(scene, nodes);
 
                 // the last group is applied last, so an extra one moves
                 // the objects by `by` on the canvas whatever their own
                 // groups scale them by
                 let mut shift = Animation::new(Point::ZERO);
-                shift.offset = Track::Constant(by);
+                shift.offset = Track::Constant(*by);
                 for &i in &lifted {
                     scene.objects[i].groups.push(shift.clone());
                 }
@@ -299,13 +311,13 @@ impl View {
             preview,
         };
         let painter = ui.painter_at(rect);
-        let mut cover = self.drawn.map(|d| self.texture_rect(rect, &d));
+        let mut cover = self.drawn.as_ref().map(|d| self.texture_rect(rect, d));
 
         // between pans and zooms the last texture is moved and scaled
         // into place, and the scene is drawn again only once the person
         // stops, or when the texture no longer covers the pane
         let settled = self.moved.is_none_or(|t| t.elapsed() >= SETTLE) && !response.dragged();
-        let stale = match self.drawn {
+        let stale = match &self.drawn {
             None => true,
             Some(d) => {
                 d.scene != version
@@ -313,13 +325,13 @@ impl View {
                     || d.pane != wanted.pane
                     || d.pixels_per_point != ppp
                     || d.preview != wanted.preview
-                    || (d != wanted && settled)
+                    || (*d != wanted && settled)
                     || !cover.is_some_and(|c| c.contains_rect(rect))
             }
         };
-        if stale && self.draw(ui.ctx(), scene, wanted) {
+        if stale && self.draw(ui.ctx(), scene, &wanted) {
             cover = Some(self.texture_rect(rect, &wanted));
-        } else if self.drawn != Some(wanted) {
+        } else if self.drawn.as_ref() != Some(&wanted) {
             ui.ctx().request_repaint_after(SETTLE);
         }
         if let (Some(texture), Some(cover)) = (&self.texture, cover) {
@@ -347,7 +359,7 @@ impl View {
             }
         }
         let lifted_marks: Vec<(Point, Point)>;
-        let marks = if preview.is_some() {
+        let marks = if wanted.preview.is_some() {
             lifted_marks = lifted.iter().filter_map(|&i| scene.bounds(i, t)).collect();
             &lifted_marks
         } else {
@@ -365,7 +377,7 @@ impl View {
 
         // after the lift, so a dragged selection is outlined where it is
         // drawn, and wider than a mark, so both show on one object
-        for i in selected.map_or(Vec::new(), |node| drawn_by(scene, node)) {
+        for i in drawn_by(scene, selected) {
             let Some((min, max)) = scene.bounds(i, t) else {
                 continue;
             };
@@ -376,6 +388,13 @@ impl View {
                 Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
                 StrokeKind::Outside,
             );
+        }
+
+        if let Some((from, to)) = self.drag.as_ref().and_then(Drag::boxed) {
+            let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
+            let area = Rect::from_two_pos(from, to);
+            painter.rect_filled(area, 0.0, blue.gamma_multiply(0.15));
+            painter.rect_stroke(area, 0.0, Stroke::new(1.0, blue), StrokeKind::Inside);
         }
 
         for g in &guides {
@@ -406,7 +425,7 @@ impl View {
 
     /// Draw `scene` into the texture for the view `wanted`, with the
     /// overdraw around the pane. False when the pane has no pixels.
-    fn draw(&mut self, ctx: &egui::Context, scene: &Scene, wanted: Drawn) -> bool {
+    fn draw(&mut self, ctx: &egui::Context, scene: &Scene, wanted: &Drawn) -> bool {
         let overdraw = wanted.overdraw();
         let area = wanted.pane + overdraw * 2.0;
         let ppp = wanted.texture_pixels_per_point();
@@ -434,7 +453,7 @@ impl View {
                 self.texture = Some(ctx.load_texture("render", image, TextureOptions::LINEAR));
             }
         }
-        self.drawn = Some(wanted);
+        self.drawn = Some(wanted.clone());
         true
     }
 
@@ -450,29 +469,29 @@ impl View {
     }
 }
 
-/// The indices of the objects in `scene` that the node at `node` or a
-/// node inside it drew.
-fn drawn_by(scene: &Scene, node: Span) -> Vec<usize> {
-    let inside = |s: Span| node.start <= s.start && s.end <= node.end;
+/// The indices of the objects in `scene` that the nodes at `nodes` or
+/// nodes inside them drew.
+fn drawn_by(scene: &Scene, nodes: &[Span]) -> Vec<usize> {
+    let inside = |s: Span| nodes.iter().any(|n| n.start <= s.start && s.end <= n.end);
     (0..scene.objects.len())
         .filter(|&i| inside(scene.objects[i].source))
         .collect()
 }
 
-/// Where the node at `node`, dragged `by` canvas pixels, goes at time
-/// `t`: its objects' box snapped to the boxes of the other objects and to
+/// Where the nodes at `nodes`, dragged `by` canvas pixels, go at time
+/// `t`: the box around their objects snapped to the boxes of the other objects and to
 /// the grid of `grid` pixels within `reach` canvas pixels when `on`, and
 /// moved by whole pixels when not.
 fn snap_drag(
     scene: &Scene,
-    node: Span,
+    nodes: &[Span],
     by: Point,
     t: f64,
     on: bool,
     reach: f64,
     grid: Option<f64>,
 ) -> Snapped {
-    let lifted = drawn_by(scene, node);
+    let lifted = drawn_by(scene, nodes);
     let mut moving: Option<Bounds> = None;
     let mut others = Vec::new();
     for i in 0..scene.objects.len() {
@@ -564,7 +583,7 @@ mod tests {
     fn dragged(src: &str, by: Point) -> String {
         let scene = acre::scene::build(&acre::lang::parse(src).unwrap(), &[], &[]).unwrap();
         let node = scene.objects[0].source;
-        let snapped = snap_drag(&scene, node, by, 0.0, true, 6.0, None);
+        let snapped = snap_drag(&scene, &[node], by, 0.0, true, 6.0, None);
         let edits = acre::scene::edit::move_edits(src, node, snapped.by.x, snapped.by.y).unwrap();
         acre::scene::edit::apply(src, &edits)
     }
@@ -584,6 +603,25 @@ mod tests {
         let out = dragged(src, Point::new(51.0, 0.0));
         assert!(out.contains("at 53.33 0;"), "{out}");
         assert!((edges(&out, 0).1 - edges(&out, 1).1).abs() < 0.005);
+    }
+
+    #[test]
+    fn several_nodes_snap_on_the_box_around_them_all() {
+        // a and b span 0 to 50, whose centre at 25 + 84.5 comes within
+        // 0.5 of c's centre at 110; no edge of a or b alone is within 2
+        // of one of c's
+        let src = "canvas { size 300 200; box a { at 0 0; size 20 10; } \
+                   box b { at 30 0; size 20 10; } box c { at 100 50; size 20 20; } }";
+        let scene = acre::scene::build(&acre::lang::parse(src).unwrap(), &[], &[]).unwrap();
+        let nodes = [scene.objects[0].source, scene.objects[1].source];
+        let snapped = snap_drag(&scene, &nodes, Point::new(84.5, 0.0), 0.0, true, 2.0, None);
+        assert_eq!(snapped.by, Point::new(85.0, 0.0));
+        let edits = crate::selection::move_edits(src, &nodes, 85.0, 0.0).unwrap();
+        let out = acre::scene::edit::apply(src, &edits);
+        assert!(
+            out.contains("at 85 0;") && out.contains("at 115 0;"),
+            "{out}"
+        );
     }
 
     #[test]

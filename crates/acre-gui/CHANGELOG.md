@@ -9,6 +9,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A drag with the primary button that starts on empty canvas draws a
+  translucent selection box. On release, the viewer selects each node whose
+  objects all lie inside the box. When a whole group lies inside, the viewer
+  selects the group and not its children. When only one child of a group
+  lies inside, the viewer selects that child. A box around no whole node
+  clears the selection.
+- The selection can hold several nodes, and the viewer outlines each in
+  blue. A drag on any selected node, or on an object inside one, moves every
+  selected node by the same offset. A node inside another selected node moves
+  with that node. The nodes snap as one, on the box around all their objects.
+  When acre cannot move one of them, none moves, and the status line gives
+  that node's reason.
 - A double-click on an object opens a field over it that holds its node's
   text as the file writes it, markup included. The field takes one line,
   or several when the text has a line break. The viewer writes the text
@@ -44,8 +56,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   for the move. With `--stdio` it sends them to the editor as an `edit`.
   Without, it writes them to the file and shows the result. When acre cannot
   move the object, the object goes back and the status line gives the reason.
-  A drag that starts on empty canvas pans as before. A drag with the middle
-  button always pans. A click still goes to the node under the pointer.
+  A drag with the middle button pans. A click still goes to the node under
+  the pointer.
 - With `--stdio`, a `text` message carries a `tick`. The tick is the
   editor's number for that version of the source. A new outgoing message
   `edit` holds a list of `{start, end, text}` byte ranges in the source of a
@@ -94,6 +106,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - A click on the render sends the editor to the node that drew the object
   under the pointer. Without an editor, the status line names the node's
   line. The render outlines what the node under the editor's cursor drew.
+
+### Changed
+
+- A drag with the primary button on empty canvas no longer pans. The viewer
+  draws a selection box for it instead. A drag with the middle button pans.
 
 ### Fixed
 

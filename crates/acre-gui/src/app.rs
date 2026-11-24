@@ -15,7 +15,7 @@ use crate::field::{self, Field};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
-use crate::selection::Selection;
+use crate::selection::{self, Selection};
 use crate::view::View;
 
 /// How often an open file is checked for a change on disk.
@@ -44,8 +44,9 @@ pub struct App {
     scene: Option<Scene>,
     /// The program `scene` was built from.
     program: Option<lang::Program>,
-    /// The node clicked or dragged last, outlined until a click elsewhere.
-    selection: Option<Selection>,
+    /// The nodes clicked, dragged or boxed last, outlined until a click
+    /// elsewhere.
+    selection: Selection,
     /// The field open over an object to edit its text.
     field: Option<Field>,
     /// Counts the scenes built, so the view draws again on a new one.
@@ -88,7 +89,7 @@ impl App {
             error: None,
             scene: None,
             program: None,
-            selection: None,
+            selection: Selection::default(),
             field: None,
             version: 0,
             reported: false,
@@ -127,7 +128,7 @@ impl App {
                 let now = Instant::now();
                 self.playback.pause(now);
                 self.playback.seek(now, 0.0);
-                self.selection = None;
+                self.selection = Selection::default();
                 self.field = None;
                 self.show(text);
                 self.notice = self.recent.touch(path).err();
@@ -156,7 +157,7 @@ impl App {
                     }
                     self.missing = missing;
                 }
-                self.selection = self.selection.take().and_then(|s| s.follow(&program));
+                self.selection = std::mem::take(&mut self.selection).follow(&program);
                 self.scene = Some(scene);
                 self.program = Some(program);
                 self.version += 1;
@@ -242,7 +243,7 @@ impl App {
             self.view.end_move();
             let path = path.map(PathBuf::from);
             if path != self.path {
-                self.selection = None;
+                self.selection = Selection::default();
                 self.field = None;
             }
             self.path = path;
@@ -278,18 +279,22 @@ impl App {
         });
     }
 
-    /// Move the node at `node` by `by` canvas pixels: ask the editor to
+    /// Move the nodes at `nodes` by `by` canvas pixels: ask the editor to
     /// make the edits, or make them in the file and show it again. A
-    /// refusal snaps the node back and names the reason on the status
-    /// line.
-    fn move_node(&mut self, node: lang::Span, by: scene::Point) {
-        self.selection = self.program.as_ref().and_then(|p| Selection::of(p, node));
+    /// refusal of any node snaps them all back and names the reason on
+    /// the status line.
+    fn move_nodes(&mut self, nodes: &[lang::Span], by: scene::Point) {
+        if !nodes.iter().all(|&n| self.selection.contains(n))
+            && let Some(program) = &self.program
+        {
+            self.selection = Selection::of(program, nodes);
+        }
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
         let edits = match &self.error {
             Some(_) => Err("fix the source's error before moving things".to_string()),
-            None => edit::move_edits(&self.text, node, by.x, by.y).map_err(|e| {
+            None => selection::move_edits(&self.text, nodes, by.x, by.y).map_err(|e| {
                 let (line, col) = e.line_col(&self.text);
                 format!("cannot move: {line}:{col}: {}", e.message)
             }),
@@ -329,7 +334,7 @@ impl App {
     /// no text to edit.
     fn open_field(&mut self, node: lang::Span) {
         let Some(program) = &self.program else { return };
-        self.selection = Selection::of(program, node);
+        self.selection = Selection::of(program, &[node]);
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
@@ -407,6 +412,16 @@ impl App {
         }
     }
 
+    /// Select every node whose objects lie inside `area`, in canvas
+    /// pixels, at the time shown.
+    fn select_in(&mut self, area: (scene::Point, scene::Point)) {
+        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+            return;
+        };
+        let spans = selection::in_box(program, scene, self.time, area);
+        self.selection = Selection::of(program, &spans);
+    }
+
     /// The boxes of the objects the node under the editor's cursor drew.
     /// The innermost node holding the cursor wins, so a cursor inside a
     /// group's child marks that child.
@@ -439,11 +454,11 @@ impl App {
             return;
         };
         let Some(index) = scene.object_at(point, self.time) else {
-            self.selection = None;
+            self.selection = Selection::default();
             return;
         };
         let source = scene.objects[index].source;
-        self.selection = Selection::of(program, source);
+        self.selection = Selection::of(program, &[source]);
         let offset = source.start;
         match &self.link {
             Some(link) => {
@@ -708,14 +723,13 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let marks = self.marks();
-                let selected = self.selection.as_ref().map(Selection::span);
                 let shown = self.view.show(
                     ui,
                     self.scene.as_mut(),
                     self.version,
                     self.time,
                     &marks,
-                    selected,
+                    self.selection.spans(),
                 );
                 self.pane = shown.rect.size();
                 self.hover = shown.hover;
@@ -725,8 +739,11 @@ impl eframe::App for App {
                 if let Some(node) = shown.double_clicked {
                     self.open_field(node);
                 }
-                if let Some((node, by)) = shown.moved {
-                    self.move_node(node, by);
+                if let Some((nodes, by)) = shown.moved {
+                    self.move_nodes(&nodes, by);
+                }
+                if let Some(area) = shown.boxed {
+                    self.select_in(area);
                 }
                 self.edit_field(ui, shown.rect);
             });
