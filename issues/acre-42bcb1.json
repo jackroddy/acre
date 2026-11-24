@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-23T19:55:32.935565709Z",
-  "updated_at": "2026-11-24T06:36:24.476055525Z",
+  "updated_at": "2026-11-24T06:36:40.914428998Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "a32657eb",
+      "at": "2026-11-24T06:36:40.914428498Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack accepted on 2026-11-23, provisionally: a node opts out of layout until it shows, rather than a stack that reflows over time.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "023610e",
