@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-24T07:35:22.350757212Z",
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.597792351Z",
-  "updated_at": "2026-11-24T07:20:22.350757212Z",
+  "updated_at": "2026-11-24T07:25:44.510347886Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Jack accepted on 2026-11-23, provisionally: `tag auto` numbers through the whole canvas, and `tag \"(a)\"` sets a tag by hand. No `tag-side` for now.",
       "commit": "6faae32",
+      "branch": "dev"
+    },
+    {
+      "id": "c58d661c",
+      "at": "2026-11-24T07:25:44.510346886Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Built in commit 93032ac. Provisional choices for review:\n\n- The tag sits left of the node and centered, as the body proposed. A panel frame grows only right and down from its corner, so a tag on a node at the left edge of a framed panel sticks out past the frame. In a stack or grid a child's slot starts at the node, so a tag can overlap the child before it in a `direction right` stack. Give the node room with `at` for now.\n- A tag set by hand does not advance `tag auto`.\n- After (z) come (aa), (ab) and on.\n- The default look is 14 pixels, black, sans-bold. `tag-size`, `tag-color` and `tag-font` change it, and a style can carry them.\n- `caption` and a row's `cell` take no tag.",
+      "commit": "93032ac",
       "branch": "dev"
     }
   ],
