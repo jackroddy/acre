@@ -3,26 +3,29 @@
   "title": "The viewer's side panels cover the render without resizing it",
   "body": "The properties panel (`Panel::right(\"properties\")`) and the sections panel (`Panel::left(\"sections\")`) in `crates/acre-gui/src/app.rs` take their width from the render pane. In fit mode `View::show` recomputes the zoom from the pane each frame, so selecting a node shrinks the drawing; outside fit mode the pane edge moves and the drawing shifts. Jack wants a panel to never change the zoom or position of the render.\n\n## Proposal\n\nDraw both panels as overlays at the window edges, looking as they do now, while the render pane keeps the full width. Part of the drawing sits under an open panel.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T23:36:11.375329086Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T23:20:53.274012943Z",
-  "updated_at": "2026-11-24T23:21:11.375329086Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T23:23:20.913108601Z",
+  "closed_at": "2026-11-24T23:23:20.913108601Z",
+  "close_reason": "Landed in 4e821af. side_panel in crates/acre-gui/src/app.rs draws the sections and properties panels as egui Areas on the Middle layer, anchored to the render pane's edges, so the pane keeps its full width and the zoom stays put. Pointer input over a panel goes to the panel through egui's layer hit test.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3cf6d44",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "4e821af",
+      "branch": "dev"
+    }
   }
 }
