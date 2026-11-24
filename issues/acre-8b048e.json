@@ -3,7 +3,7 @@
   "title": "A sweep node draws an arrow that leaves and arrives in set directions",
   "body": "Today `arrow { route curve; }` draws a cubic whose handles leave each end along its side, or along the longer axis at a bare point. `Connector::handles` in `crates/acre/src/scene/connector.rs` gives a side's handle a reach of half the arrow's full length. An arrow much wider than it is tall then gets handles far longer than its height. Between a `bottom` and a `top`, the curve dips below its target and climbs back up into it. A file cannot give a bare point a direction, so a figure names an invisible box at each end to get vertical ends.\n\n## Proposal\n\nA new node kind, `sweep`, draws one cubic from `from` to `to`.\n\n- `from` and `to` take a point or `NAME SIDE`, as on `arrow`.\n- `leave DIR` and `enter DIR`, with DIR one of `up`, `down`, `left` and `right`, give the direction of travel at a bare end. An end that names a side takes the side's direction. An end with neither, or with both, is an error.\n- Each handle reaches half the distance between the ends, measured along its own direction. Between `leave down` and `enter down` the curve only moves down. When the other end lies behind a direction or level with it, that handle reaches half the full length, as on `arrow`.\n- `stroke`, `stroke-width`, `dash`, `head`, `tail` and `head-size` work as on `arrow`, and the head is a triangle by default. `sweep` takes no `route`, `repeat` or label.\n\n`sweep` builds a `Connector` with a route of its own, so it shares drawing, heads and following moved things with `arrow`.\n\n## Rejected\n\n- Changing the reach for `route curve`. Every figure with a curve between sides would redraw.",
   "type": "feature",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T03:59:35.295738711Z",
-  "updated_at": "2026-11-24T03:59:35.295738711Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T04:01:53.408968758Z",
+  "closed_at": "2026-11-24T04:01:53.408968758Z",
+  "close_reason": "Landed in fc6a5fe on dev, as proposed.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "283ff9d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "fc6a5fe",
+      "branch": "dev"
+    }
   }
 }
