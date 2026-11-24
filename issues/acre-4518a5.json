@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T01:11:48.607427776Z",
+  "updated_at": "2026-11-24T03:56:33.162544129Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -228,6 +228,14 @@
       "author": "Jack Roddy/903974e6",
       "text": "`text` takes `rotate DEGREES`, added in commit a541e3c. The text turns about its `at` point by that angle, counterclockwise. A positive angle therefore reads uphill, and `rotate 45` slants up to the right.\n\nA figure needed bucket prefixes as tilted labels over narrow bars, where flat labels collide. Counterclockwise follows the math convention, so the sign matches what a reader expects of an angle.\n\nOnly `text` takes it. Brace, arrow and cell labels still draw flat.",
       "commit": "a541e3c",
+      "branch": "dev"
+    },
+    {
+      "id": "5ccd65dc",
+      "at": "2026-11-24T03:56:33.162541949Z",
+      "author": "Jack Roddy/d9c4e091",
+      "text": "Connectors and `polyline` gained `head-size N` in 283ff9d. It sets the length of a triangle or open head and the diameter of a dot, in pixels. Every head size had been fixed by `stroke-width`, and a figure with about 100 thin arrows into 8 px slots needed heads half that size. See acre-c43a99.",
+      "commit": "283ff9d",
       "branch": "dev"
     }
   ],
