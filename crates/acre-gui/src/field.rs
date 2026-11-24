@@ -19,15 +19,12 @@ pub struct Field {
 
 impl Field {
     /// A field for the text of the node at `node` in `source`, which
-    /// parses as `program`, or the reason it has none for the status
-    /// line.
+    /// parses as `program`, empty when the node has none yet, or the
+    /// reason it cannot take text for the status line.
     pub fn open(source: &str, program: &Program, node: Span) -> Result<Field, String> {
         let text = match edit::text_of(source, node) {
             Ok(Some(text)) => text,
-            Ok(None) => {
-                let kind = source[node.start..].split_whitespace().next().unwrap_or("");
-                return Err(format!("the {kind} has no text of its own to edit"));
-            }
+            Ok(None) => String::new(),
             Err(e) => {
                 let (line, col) = e.line_col(source);
                 return Err(format!("cannot edit text: {line}:{col}: {}", e.message));
@@ -143,9 +140,26 @@ mod tests {
     }
 
     #[test]
-    fn a_node_without_text_or_with_text_not_its_own_opens_no_field() {
-        let why = open(SRC, Point::new(110.0, 110.0)).err().unwrap();
-        assert_eq!(why, "the box has no text of its own to edit");
+    fn a_node_without_text_opens_an_empty_field_that_writes_nothing_while_empty() {
+        let mut field = open(SRC, Point::new(110.0, 110.0)).unwrap();
+        assert_eq!(field.text, "");
+        let program = parse(SRC).unwrap();
+        assert_eq!(field.edits(SRC, &program), Ok(Vec::new()));
+
+        field.text = "hi".into();
+        let out = edit::apply(SRC, &field.edits(SRC, &program).unwrap());
+        assert!(out.contains(r#"text "hi";"#), "{out}");
+    }
+
+    #[test]
+    fn a_connector_without_a_label_opens_an_empty_field() {
+        let src = "canvas { size 300 200; line l { from 10 10; to 100 100; } }";
+        let field = open(src, Point::new(55.0, 55.0)).unwrap();
+        assert_eq!(field.text, "");
+    }
+
+    #[test]
+    fn a_node_that_cannot_take_text_or_has_text_not_its_own_opens_no_field() {
         let src = "canvas { size 300 200; let t \"x\"; box a { at 10 10; size 40 20; text t; } }";
         let why = open(src, Point::new(20.0, 20.0)).err().unwrap();
         assert!(why.starts_with("cannot edit text: 1:"), "{why}");

@@ -7,6 +7,13 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+
+- A double-click on a box, an ellipse or a connector with no text opens an
+  empty field over it. Typing writes the `text` (or `label`) property. An
+  empty field writes nothing. Before, acre-gui refused with "the box has
+  no text of its own to edit".
+
 ### Added
 
 - With one or more nodes selected, a panel on the right lists the
