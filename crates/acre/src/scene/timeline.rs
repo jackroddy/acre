@@ -1305,6 +1305,25 @@ mod tests {
     }
 
     #[test]
+    fn a_moved_cell_of_a_weighted_row_keeps_its_share() {
+        let s = canvas(
+            "row r { at 0 200; unit 0 20; width 100; weights 1 3 1; cells \"x\" \"y\" \"z\"; }
+             line l { from 0 0; to r 1 top; }
+             timeline { 0s to 1s ease linear { move r 1 0 -100; } }",
+        );
+        assert_eq!(line(&s, 1, 0.0).1, Point::new(50.0, 200.0));
+        assert_eq!(line(&s, 1, 1.0).1, Point::new(50.0, 100.0));
+        assert_eq!(
+            origins(&s, 0, 1.0),
+            [
+                Point::new(0.0, 200.0),
+                Point::new(80.0, 200.0),
+                Point::new(20.0, 100.0)
+            ]
+        );
+    }
+
+    #[test]
     fn a_moved_cell_draws_above_every_row_and_a_still_one_in_its_place() {
         let s = canvas(
             "row r { at 0 0; unit 20 20; cells \"a\" \"b\" \"c\"; }

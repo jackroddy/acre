@@ -198,6 +198,25 @@ impl Table {
         Ok(out)
     }
 
+    /// The numbers `p` takes as `PROP DATA COL`, one per row from column
+    /// COL.
+    pub(super) fn column_numbers(&self, p: &Property) -> Result<Vec<f64>, Error> {
+        let [_, column] = p.values.as_slice() else {
+            return Err(Error::new(
+                p.span,
+                format!(
+                    "`{} DATA COL` takes one column name after the data name",
+                    p.key.text
+                ),
+            ));
+        };
+        let column = self.column(column)?;
+        self.rows
+            .iter()
+            .map(|(n, cells)| self.number(*n, cells, column))
+            .collect()
+    }
+
     /// The cells `p` gives text as `cells DATA RCOL CCOL TEXTCOL`, one
     /// per row, as each cell's row and column in a matrix of `rows` by
     /// `columns`, and its text.

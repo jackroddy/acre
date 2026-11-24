@@ -260,11 +260,29 @@ pub const NODES: &[NodeKind] = &[
     },
     NodeKind {
         name: "row",
-        about: "cells side by side on a grid of equal units",
+        about: "cells side by side on a grid of equal units, or sharing a width by weight",
         properties: &[
             AT,
-            prop("unit", "W H", "the width of one unit and the row's height"),
-            prop("span", "N", "how many units each cell covers"),
+            prop(
+                "unit",
+                "W H",
+                "the width of one unit and the row's height; with `weights`, only the height counts",
+            ),
+            prop(
+                "span",
+                "N",
+                "how many units each cell covers; not with `weights`",
+            ),
+            prop(
+                "width",
+                "N",
+                "the width the cells share by `weights`, gaps included",
+            ),
+            prop(
+                "weights",
+                "N... | DATA COL",
+                "one weight per cell, in order, or one per row of a data column; each cell's share of `width` is its weight over the sum",
+            ),
             prop("gap", "N", "the space between cells"),
             RADIUS,
             prop("cells", "\"TEXT\"...", "one cell per string"),
@@ -348,7 +366,11 @@ pub const NODES: &[NodeKind] = &[
                 "\"TEXT\"",
                 "small text under the cell's text, in a row",
             ),
-            prop("span", "N", "how many units it covers, in a row"),
+            prop(
+                "span",
+                "N",
+                "how many units it covers, in a row without `weights`",
+            ),
             FILL,
             STROKE,
             STROKE_WIDTH,

@@ -1290,6 +1290,18 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     let follow = props.get("at").and_then(|p| cell_named(p, names));
     let [unit_w, unit_h] = props.require("unit")?.numbers::<2>()?;
     let span = props.count_or("span", 1)?;
+    let weighted = match (props.get("width"), props.get("weights")) {
+        (Some(w), Some(p)) => Some((w.numbers::<1>()?[0], weights(p, names)?, p)),
+        (None, None) => None,
+        (Some(w), None) => return Err(Error::new(w.span, "`width` goes with `weights`")),
+        (None, Some(p)) => return Err(Error::new(p.span, "`weights` goes with `width`")),
+    };
+    if let (Some(_), Some(p)) = (&weighted, props.get("span")) {
+        return Err(Error::new(
+            p.span,
+            "a row with `weights` gives each cell one weight and takes no `span`",
+        ));
+    }
     let palette = match props.get("palette") {
         None => None,
         Some(p) => {
@@ -1343,7 +1355,8 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     let mut push = |text: &str, span: usize, cell: Option<&Props>| -> Result<(), Error> {
         let from_palette = palette.and_then(|p| p.get(text));
         let mut out = RowCell {
-            start,
+            left: start as f64 * unit_w,
+            width: span as f64 * unit_w,
             span,
             fill: from_palette.map_or(fill, |s| Some(s.fill)),
             stroke,
@@ -1405,17 +1418,72 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
             Some(p) => p.string()?,
             None => String::new(),
         };
+        if let (Some(_), Some(p)) = (&weighted, cell.get("span")) {
+            return Err(Error::new(
+                p.span,
+                "a cell of a row with `weights` takes its width from its weight, not `span`",
+            ));
+        }
         push(&text, cell.count_or("span", span)?, Some(&cell))?;
+    }
+    if let Some((width, weights, p)) = weighted {
+        share(&mut cells, width, &weights, p)?;
     }
     Ok(Row {
         origin,
-        unit: Point::new(unit_w, super::row::height(unit_h, &cells)),
+        height: super::row::height(unit_h, &cells),
         noted: cells.iter().any(|c| c.note.is_some()),
         gap: props.number_or("gap", 0.0)?,
         radius: props.number_or("radius", 0.0)?,
         cells,
         follow,
     })
+}
+
+/// The weights `weights` lists as `N...`, or takes from a table as
+/// `DATA COL`.
+fn weights(p: &Property, names: &Names) -> Result<Vec<f64>, Error> {
+    let weights = match p.values.first() {
+        Some(Value {
+            kind: ValueKind::Word(name),
+            span,
+        }) => data_table(names, name, *span)?.column_numbers(p)?,
+        _ => p
+            .values
+            .iter()
+            .map(|v| match v.kind {
+                ValueKind::Number(n) => Ok(n),
+                _ => Err(Error::new(v.span, "`weights` takes numbers")),
+            })
+            .collect::<Result<_, _>>()?,
+    };
+    if weights.iter().any(|w| *w < 0.0) || weights.iter().sum::<f64>() <= 0.0 {
+        return Err(p.expected("weights of 0 or more, not all 0"));
+    }
+    Ok(weights)
+}
+
+/// Give `cells` their shares of `width` in proportion to `weights`,
+/// left to right, with an error at `p` when the counts differ.
+fn share(cells: &mut [RowCell], width: f64, weights: &[f64], p: &Property) -> Result<(), Error> {
+    if weights.len() != cells.len() {
+        return Err(Error::new(
+            p.span,
+            format!(
+                "`weights` gives {} weights for {} cells",
+                weights.len(),
+                cells.len()
+            ),
+        ));
+    }
+    let total: f64 = weights.iter().sum();
+    let mut left = 0.0;
+    for (cell, w) in cells.iter_mut().zip(weights) {
+        cell.left = left;
+        cell.width = width * w / total;
+        left += cell.width;
+    }
+    Ok(())
 }
 
 /// The row cell `p`, an `at`, names, as in `at r 3` or `at r 3 0 -40`,
@@ -2437,8 +2505,7 @@ fn target<'v>(
             Ok((as_box(origin, size), Some(index), rest))
         }
         _ => {
-            let units: usize = row.cells.iter().map(|c| c.span).sum();
-            let size = Point::new(units as f64 * row.unit.x, row.unit.y);
+            let size = Point::new(row.width(), row.height);
             Ok((as_box(row.origin, size), None, rest))
         }
     }
@@ -2871,8 +2938,12 @@ mod tests {
         let Kind::Row(row) = &s.objects[0].kind else {
             panic!("expected a row");
         };
-        let starts: Vec<(usize, usize)> = row.cells.iter().map(|c| (c.start, c.span)).collect();
-        assert_eq!(starts, [(0, 2), (2, 2), (4, 1)]);
+        let places: Vec<(f64, f64, usize)> = row
+            .cells
+            .iter()
+            .map(|c| (c.left, c.width, c.span))
+            .collect();
+        assert_eq!(places, [(0.0, 20.0, 2), (20.0, 20.0, 2), (40.0, 10.0, 1)]);
         assert_eq!(row.cells[0].fill, Some(Color::rgb(1.0, 0.0, 0.0)));
         assert_eq!(row.cells[0].note.as_ref().unwrap().text(), "01");
         assert_eq!(row.cells[1].fill, Some(Color::WHITE));
@@ -3322,7 +3393,7 @@ mod tests {
         let Kind::Row(row) = &s.objects[0].kind else {
             panic!("expected a row");
         };
-        let height = row.unit.y;
+        let height = row.height;
         assert!(height > 20.0);
         let (_, max) = s.bounds(0, 0.0).unwrap();
         assert!((max.y - height).abs() < 1e-9, "{max:?} {height}");
@@ -3333,7 +3404,84 @@ mod tests {
         let Kind::Row(low) = &s.objects[2].kind else {
             panic!("expected a row");
         };
-        assert_eq!(low.unit.y, 60.0);
+        assert_eq!(low.height, 60.0);
+    }
+
+    #[test]
+    fn a_weighted_row_shares_its_width_less_the_gaps() {
+        let s = scene(
+            r#"canvas { size 300 100;
+                row r { at 10 20; unit 0 30; width 200; gap 4; weights 1 2 1;
+                    cells "a" "b" "c"; }
+                brace { over r 1; side bottom; gap 0; }
+                arrow { from 0 0; to r 2 top; }
+                arrow { from 0 0; to r right; } }"#,
+        )
+        .unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        assert_eq!(
+            row.cell_rect(1),
+            (Point::new(62.0, 20.0), Point::new(96.0, 30.0))
+        );
+        let Kind::Brace(brace) = &s.objects[1].kind else {
+            panic!("expected a brace");
+        };
+        assert_eq!(
+            (brace.from, brace.to),
+            (Point::new(62.0, 50.0), Point::new(158.0, 50.0))
+        );
+        let Kind::Connector(arrow) = &s.objects[2].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(arrow.to, Point::new(185.0, 20.0));
+        let Kind::Connector(whole) = &s.objects[3].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(whole.to, Point::new(210.0, 35.0));
+    }
+
+    #[test]
+    fn a_row_takes_its_weights_from_a_data_column() {
+        let src = r#"canvas { size 300 100;
+            data d { file "d.tsv"; }
+            row r { at 0 0; unit 0 10; width 90; weights d n;
+                cell { text "x"; } cell { text "y"; } } }"#;
+        let s = scene_data(src, &[b"name\tn\nx\t2\ny\t1\n"]).unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        let widths: Vec<f64> = row.cells.iter().map(|c| c.width).collect();
+        assert_eq!(widths, [60.0, 30.0]);
+    }
+
+    #[test]
+    fn a_weighted_row_says_what_is_wrong_with_its_weights() {
+        let err = |body: &str| {
+            let src =
+                format!("canvas {{ size 9 9;\n row r {{ unit 0 9; cells \"a\" \"b\"; {body} }} }}");
+            scene(&src).unwrap_err().2
+        };
+        assert_eq!(err("width 9;"), "`width` goes with `weights`");
+        assert_eq!(err("weights 1 1;"), "`weights` goes with `width`");
+        assert_eq!(
+            err("width 9; weights 1 2 3;"),
+            "`weights` gives 3 weights for 2 cells"
+        );
+        assert_eq!(
+            err("width 9; weights 0 0;"),
+            "`weights` takes weights of 0 or more, not all 0"
+        );
+        assert_eq!(err("width 9; weights 1 x;"), "`weights` takes numbers");
+        assert_eq!(
+            err("width 9; weights 1 1; span 2;"),
+            "a row with `weights` gives each cell one weight and takes no `span`"
+        );
+        assert_eq!(
+            err("width 9; weights 1 1 1; cell { span 2; }"),
+            "a cell of a row with `weights` takes its width from its weight, not `span`"
+        );
     }
 
     #[test]

@@ -2,14 +2,14 @@ use super::Target;
 use super::diagram::Label;
 use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign, bounds};
 
-/// A horizontal run of cells on a grid of equal units, for words of
-/// bits, arrays and strings. A cell covers a whole number of units.
+/// A horizontal run of cells, for words of bits, arrays and strings.
+/// A cell covers a whole number of equal units, or a share of the row's
+/// width in proportion to its weight.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
-    /// The top-left corner of the first unit.
+    /// The top-left corner of the first cell.
     pub origin: Point,
-    /// The width of one unit and the height of the row.
-    pub unit: Point,
+    pub height: f64,
     /// Whether any cell has a note, which raises every cell's label so
     /// the labels of the row line up.
     pub noted: bool,
@@ -26,9 +26,12 @@ pub struct Row {
 /// One cell of a row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RowCell {
-    /// The first unit the cell covers.
-    pub start: usize,
-    /// The number of units the cell covers.
+    /// The distance from the row's left edge to the cell's, before the
+    /// gap.
+    pub left: f64,
+    /// The width the cell covers, gap included.
+    pub width: f64,
+    /// The number of units the cell covers, 1 in a row with weights.
     pub span: usize,
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
@@ -69,9 +72,15 @@ impl Row {
     /// The rectangle cell `index` fills, as its origin and size.
     pub fn cell_rect(&self, index: usize) -> (Point, Point) {
         let cell = &self.cells[index];
-        let x = self.origin.x + cell.start as f64 * self.unit.x + self.gap / 2.0;
-        let width = cell.span as f64 * self.unit.x - self.gap;
-        (Point::new(x, self.origin.y), Point::new(width, self.unit.y))
+        let x = self.origin.x + cell.left + self.gap / 2.0;
+        let width = (cell.width - self.gap).max(0.0);
+        (Point::new(x, self.origin.y), Point::new(width, self.height))
+    }
+
+    /// The width of the whole row, from the left edge of its first cell
+    /// to the right edge of its last, gaps included.
+    pub fn width(&self) -> f64 {
+        self.cells.last().map_or(0.0, |c| c.left + c.width)
     }
 
     pub fn draw(&self, out: &mut Vec<Primitive>) {
@@ -111,9 +120,10 @@ impl Row {
             let text = note.text();
             let chars = text.chars().count();
             if chars == cell.span && chars > 1 {
-                let left = self.origin.x + cell.start as f64 * self.unit.x;
+                let left = self.origin.x + cell.left;
+                let unit = cell.width / cell.span as f64;
                 for (k, c) in text.chars().enumerate() {
-                    let x = left + (k as f64 + 0.5) * self.unit.x;
+                    let x = left + (k as f64 + 0.5) * unit;
                     let one = note.with_text(c);
                     out.push(one.at(Point::new(x, y), HAlign::Center, VAlign::Middle));
                 }
@@ -128,10 +138,11 @@ impl Row {
 mod tests {
     use super::*;
 
-    fn cell(start: usize, span: usize) -> RowCell {
+    fn cell(left: f64, width: f64) -> RowCell {
         RowCell {
-            start,
-            span,
+            left,
+            width,
+            span: 1,
             fill: Some(Color::WHITE),
             stroke: None,
             label: None,
@@ -143,11 +154,11 @@ mod tests {
     fn a_cell_covers_its_units_less_the_gap() {
         let row = Row {
             origin: Point::new(10.0, 20.0),
-            unit: Point::new(16.0, 40.0),
+            height: 40.0,
             noted: false,
             gap: 2.0,
             radius: 0.0,
-            cells: vec![cell(0, 3), cell(3, 1)],
+            cells: vec![cell(0.0, 48.0), cell(48.0, 16.0)],
             follow: None,
         };
         assert_eq!(

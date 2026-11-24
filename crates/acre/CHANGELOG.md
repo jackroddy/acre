@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `row` with `width W` and `weights N...` gives each cell a share of W in
+  proportion to its weight, in order. The `gap` between cells comes out of
+  each cell's share. `weights DATA COL` takes one weight per line of a column
+  of a `data` file. A weighted row takes its height from `unit` and ignores
+  the unit's width. `span` on the row or on one of its cells is an error. A
+  count of weights that differs from the count of cells is an error. Weights
+  are 0 or more, and at least one is above 0. `at`, `from`, `to`, `over` and
+  the timeline's cell actions find each cell at its weighted place.
 - A row-wide `fill`, `stroke` or `text-color` action in a timeline, such as
   `fill r #ffcc00`, changes every cell of the row. Each cell changes from
   its own color, so a cell with its own fill or a palette's fill blends
@@ -296,6 +304,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Row` holds the row's height in `height`, where it held `unit`. `RowCell`
+  holds a cell's place in pixels from the row's left edge in `left` and
+  `width`, where it held `start`. `Row::width` gives the width of the whole
+  row.
 - A `row` is as tall as its tallest note needs. When a note would reach past
   the bottom of `unit`, every cell of the row grows until the note fits. A
   stack places the next node below the taller row, and braces and arrows meet
