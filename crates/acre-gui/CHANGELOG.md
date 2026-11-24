@@ -9,6 +9,22 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- With a selection, each press of an arrow key moves the selected nodes
+  one canvas pixel, without snapping. Holding the key keeps moving them.
+  With `--stdio`, the presses made while an edit is with the editor add up
+  and go out as one edit once the editor sends its text back. The editor
+  drops an edit made to an older text, so presses sent one by one would be
+  lost. With nothing
+  selected, Left and Right step a frame as before, and Up and Down do
+  nothing.
+- Delete deletes the selected nodes and clears the selection. When acre
+  cannot delete them, the status line gives the reason.
+- Ctrl+C puts the selected nodes' source on the clipboard. Ctrl+V adds the
+  nodes on the clipboard to the canvas, 10 pixels right of and below where
+  they were, and selects them. When the clipboard holds no acre nodes, or
+  acre cannot add them, the status line gives the reason.
+- While a text field has focus, none of the viewer's keys acts, except
+  Shift+Enter in the field.
 - A drag with the primary button that starts on empty canvas draws a
   translucent selection box. On release, the viewer selects each node whose
   objects all lie inside the box. When a whole group lies inside, the viewer
@@ -24,10 +40,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   When acre cannot move one of them, none moves, and the status line gives
   that node's reason.
 - A double-click on an object opens a field over it that holds its node's
-  text as the file writes it, markup included. The field takes one line,
-  or several when the text has a line break. The viewer writes the text
-  when the field loses focus: on a click elsewhere, or on Enter in a
-  one-line field, Escape or Tab. An unchanged text writes nothing. The
+  text as the file writes it, markup included. The field shows as many
+  lines as the text has, and Shift+Enter starts a new line. The viewer
+  writes the text when the field loses focus: on Enter, Escape, Tab or a
+  click elsewhere. An unchanged text writes nothing. The
   edit goes to the editor over the link, or into the file, as a drag's
   does. The double-click selects the node, and the selection stays on it
   after the edit. When the node has no text of its own, or its text comes

@@ -5,6 +5,7 @@ mod app;
 mod drag;
 mod field;
 mod link;
+mod nudge;
 mod playback;
 mod recent;
 mod selection;

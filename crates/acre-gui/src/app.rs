@@ -8,11 +8,13 @@ use acre::scene::{self, Scene, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{
-    self, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2, ViewportCommand,
+    self, Color32, Event, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2,
+    ViewportCommand,
 };
 
 use crate::field::{self, Field};
 use crate::link::{Incoming, Link, Outgoing, Replace};
+use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
@@ -49,6 +51,10 @@ pub struct App {
     selection: Selection,
     /// The field open over an object to edit its text.
     field: Option<Field>,
+    nudge: Nudge,
+    /// The places of the nodes pasted by the edit with the editor, to
+    /// select once the editor sends its text back.
+    pasted: Option<Vec<Vec<usize>>>,
     /// Counts the scenes built, so the view draws again on a new one.
     version: u64,
     /// Whether the editor heard about the current error, or that there
@@ -91,6 +97,8 @@ impl App {
             program: None,
             selection: Selection::default(),
             field: None,
+            nudge: Nudge::default(),
+            pasted: None,
             version: 0,
             reported: false,
             view: View::new(),
@@ -239,7 +247,9 @@ impl App {
         // only the newest text matters when several came at once
         if let Some((text, path, tick)) = newest {
             // the editor sends its text after an edit it makes or
-            // drops alike, so a drag it dropped snaps back here
+            // drops alike, so a drag it dropped snaps back here, and
+            // this text is taken as the answer to the edit sent last
+            self.nudge.answered();
             self.view.end_move();
             let path = path.map(PathBuf::from);
             if path != self.path {
@@ -253,6 +263,9 @@ impl App {
             self.tick = tick;
             if text != self.text || self.version == 0 {
                 self.show(text);
+            }
+            if let (Some(paths), Some(program)) = (self.pasted.take(), &self.program) {
+                self.selection = Selection::at(program, paths);
             }
         }
         if !self.reported
@@ -319,6 +332,7 @@ impl App {
     fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
         if self.link.is_some() {
             self.send_edits(edits);
+            self.nudge.sent();
             return Ok(());
         }
         let path = self.path.clone().ok_or("no file to write the edit to")?;
@@ -368,24 +382,11 @@ impl App {
                     self.view.to_screen(rect, max),
                 );
                 let width = (max.x - min.x).max(160.0);
-                let multiline = f.multiline();
-                let rows = f.text.lines().count().max(2);
-                let shown = egui::Area::new(ui.scope_id().with("text field"))
+                egui::Area::new(ui.scope_id().with("text field"))
                     .order(egui::Order::Foreground)
                     .fixed_pos(min)
-                    .show(ui.ctx(), |ui| {
-                        let edit = if multiline {
-                            egui::TextEdit::multiline(&mut f.text).desired_rows(rows)
-                        } else {
-                            egui::TextEdit::singleline(&mut f.text)
-                        };
-                        ui.add(edit.desired_width(width))
-                    });
-                let response = shown.inner;
-                if f.wants_focus() {
-                    response.request_focus();
-                }
-                f.left(response.has_focus())
+                    .show(ui.ctx(), |ui| f.ui(ui, width))
+                    .inner
             }
 
             // the node draws nothing now, so the field has nothing to
@@ -541,30 +542,144 @@ impl App {
         });
     }
 
-    /// Space plays and pauses, and Left and Right step a frame, unless a
-    /// text field has the keys.
+    /// Space plays and pauses. With a selection the arrow keys move it a
+    /// canvas pixel, and with none Left and Right step a frame. Delete
+    /// deletes the selection, and Ctrl+C and Ctrl+V copy and paste. No
+    /// key acts while a text field has the keys.
     fn keys(&mut self, ctx: &egui::Context) {
-        let Some(scene) = &self.scene else { return };
-        if self.playback.duration() <= 0.0 || ctx.text_edit_focused() {
-            return;
+        if !ctx.text_edit_focused() {
+            self.take_keys(ctx);
         }
+        if let Some((dx, dy)) = self.nudge.ready() {
+            let nodes = self.selection.spans().to_vec();
+            if !nodes.is_empty() {
+                self.move_nodes(&nodes, scene::Point::new(dx, dy));
+            }
+        }
+    }
 
+    fn take_keys(&mut self, ctx: &egui::Context) {
         // consumed before the bar is laid out, so a focused button does
         // not take the same press
-        let (space, left, right) = ctx.input_mut(|i| {
-            (
-                i.count_and_consume_key(Modifiers::NONE, Key::Space),
-                i.count_and_consume_key(Modifiers::NONE, Key::ArrowLeft),
-                i.count_and_consume_key(Modifiers::NONE, Key::ArrowRight),
-            )
+        let count = |key| ctx.input_mut(|i| i.count_and_consume_key(Modifiers::NONE, key)) as i64;
+        let space = count(Key::Space);
+        let across = count(Key::ArrowRight) - count(Key::ArrowLeft);
+        let down = count(Key::ArrowDown) - count(Key::ArrowUp);
+        let delete = count(Key::Delete) > 0;
+
+        // the windowing layer turns Ctrl+C and Ctrl+V into these events,
+        // reading the clipboard for a paste
+        let (copy, pasted) = ctx.input_mut(|i| {
+            let copy = i.events.contains(&Event::Copy);
+            let pasted = i.events.iter().find_map(|e| match e {
+                Event::Paste(text) => Some(text.clone()),
+                _ => None,
+            });
+            i.events
+                .retain(|e| !matches!(e, Event::Copy | Event::Paste(_)));
+            (copy, pasted)
         });
+
         let now = Instant::now();
-        if space % 2 == 1 {
+        let fps = self.scene.as_ref().map(|s| s.canvas.fps);
+        if self.playback.duration() > 0.0 && space % 2 == 1 {
             self.playback.toggle(now);
         }
-        let frames = right as i64 - left as i64;
-        if frames != 0 {
-            self.playback.step(now, frames, scene.canvas.fps);
+        if !self.selection.spans().is_empty() {
+            self.nudge.press(across as f64, down as f64);
+        } else if let Some(fps) = fps
+            && self.playback.duration() > 0.0
+            && across != 0
+        {
+            self.playback.step(now, across, fps);
+        }
+        if delete {
+            self.delete();
+        }
+        if copy {
+            self.copy(ctx);
+        }
+        if let Some(text) = pasted {
+            self.paste(&text);
+        }
+    }
+
+    /// What `work` makes of the source, or the reason for the status line
+    /// that it cannot, with `verb` naming the work.
+    fn on_source<T>(
+        &self,
+        verb: &str,
+        work: impl FnOnce(&str) -> Result<T, lang::Error>,
+    ) -> Result<T, String> {
+        // with an error, the scene shown was built from an earlier
+        // text, so the selection's spans do not point into `text`
+        if self.error.is_some() {
+            return Err(format!("fix the source's error before you {verb}"));
+        }
+        work(&self.text).map_err(|e| {
+            let (line, col) = e.line_col(&self.text);
+            format!("cannot {verb}: {line}:{col}: {}", e.message)
+        })
+    }
+
+    /// Delete the selected nodes, or name on the status line why not.
+    fn delete(&mut self) {
+        let nodes = self.selection.spans().to_vec();
+        if nodes.is_empty() {
+            return;
+        }
+        let deleted = self
+            .on_source("delete", |text| edit::delete_edits(text, &nodes))
+            .and_then(|edits| self.write(&edits));
+        match deleted {
+            Ok(()) => {
+                self.notice = None;
+                self.selection = Selection::default();
+            }
+            Err(why) => self.notice = Some(why),
+        }
+    }
+
+    /// Put the selected nodes' source on the clipboard, or name on the
+    /// status line why not.
+    fn copy(&mut self, ctx: &egui::Context) {
+        let nodes = self.selection.spans().to_vec();
+        if nodes.is_empty() {
+            return;
+        }
+        match self.on_source("copy", |text| edit::copy_text(text, &nodes)) {
+            Ok(text) => {
+                self.notice = None;
+                ctx.copy_text(text);
+            }
+            Err(why) => self.notice = Some(why),
+        }
+    }
+
+    /// Add the nodes in `text` to the canvas, 10 pixels right of and
+    /// below where they were, and select them, or name on the status
+    /// line why not.
+    fn paste(&mut self, text: &str) {
+        // the error's place may be in `text` or in the source, so the
+        // reason names no line
+        let edits = match &self.error {
+            Some(_) => Err("fix the source's error before you paste".to_string()),
+            None => edit::paste_edits(&self.text, text, 10.0, 10.0)
+                .map_err(|e| format!("cannot paste: {}", e.message)),
+        };
+        let pasted = edits.and_then(|(edits, paths)| self.write(&edits).map(|()| paths));
+        let paths = match pasted {
+            Ok(paths) => paths,
+            Err(why) => {
+                self.notice = Some(why);
+                return;
+            }
+        };
+        self.notice = None;
+        if self.link.is_some() {
+            self.pasted = Some(paths);
+        } else if let Some(program) = &self.program {
+            self.selection = Selection::at(program, paths);
         }
     }
 

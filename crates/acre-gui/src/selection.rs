@@ -30,6 +30,13 @@ impl Selection {
         Selection { paths, spans }
     }
 
+    /// The selection of the nodes at `paths` in `program`, leaving out a
+    /// path no node has.
+    pub fn at(program: &Program, paths: Vec<Vec<usize>>) -> Selection {
+        let spans = Vec::new();
+        Selection { paths, spans }.follow(program)
+    }
+
     /// The same nodes in `program`, built after an edit, without those
     /// that are gone.
     pub fn follow(self, program: &Program) -> Selection {
@@ -181,6 +188,13 @@ mod tests {
         let edited = "canvas { size 300 200; box a { at 10 10; size 40 40; } }";
         let followed = selected.follow(&parse(edited).unwrap());
         assert_eq!(followed.spans(), [span_of(edited, "box a")]);
+    }
+
+    #[test]
+    fn the_nodes_at_paths_are_selected_and_a_path_no_node_has_is_not() {
+        let program = parse(SRC).unwrap();
+        let selected = Selection::at(&program, vec![vec![0, 1], vec![0, 5]]);
+        assert_eq!(selected.spans(), [span_of(SRC, "box b")]);
     }
 
     #[test]
