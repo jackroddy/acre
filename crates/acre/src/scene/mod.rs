@@ -188,7 +188,8 @@ pub enum Kind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Paint {
     pub part: Part,
-    /// The row cell it colors, or `None` for the whole object.
+    /// The row or matrix cell it colors, or `None` for the whole
+    /// object.
     pub cell: Option<usize>,
     pub color: Track<Color>,
     /// The time from which the track's color replaces the object's.
@@ -323,7 +324,12 @@ impl Kind {
             Some(s) => Ok(Some(s.color)),
             None => Err("has no outline"),
         };
-        if cell.is_some() && !matches!(self, Kind::Row(_)) {
+        let of_cell = |fill: Option<Color>, s: &Option<Stroke>, label: &Option<Label>| match part {
+            Part::Fill => Ok(fill),
+            Part::Stroke => stroke(s),
+            Part::Text => text(label),
+        };
+        if cell.is_some() && !matches!(self, Kind::Row(_) | Kind::Matrix(_)) {
             return Err("has no cells; only a row does");
         }
         match (self, part) {
@@ -342,15 +348,15 @@ impl Kind {
                 let Some(i) = cell else {
                     return Err("is a row, whose colors change by cell: `NAME N`");
                 };
-                let Some(cell) = r.cells.get(i) else {
-                    return Err("has no such cell");
-                };
-                match part {
-                    Part::Fill => Ok(cell.fill),
-                    Part::Stroke => stroke(&cell.stroke),
-                    Part::Text => text(&cell.label),
+                match r.cells.get(i) {
+                    Some(c) => of_cell(c.fill, &c.stroke, &c.label),
+                    None => Err("has no such cell"),
                 }
             }
+            (Kind::Matrix(m), _) if cell.is_some() => match cell.and_then(|i| m.cells.get(i)) {
+                Some(c) => of_cell(c.fill, &c.stroke, &c.label),
+                None => Err("has no such cell"),
+            },
             (Kind::Matrix(m), Part::Fill) => Ok(m.fill),
             (Kind::Matrix(m), Part::Stroke) => stroke(&m.stroke),
             (Kind::Matrix(m), Part::Text) => Ok(m.text.runs.first().map(|r| r.color)),
@@ -394,6 +400,13 @@ impl Kind {
                 s.color = color;
             }
         };
+        let of_cell = |fill: &mut Option<Color>,
+                       s: &mut Option<Stroke>,
+                       label: &mut Option<Label>| match part {
+            Part::Fill => *fill = Some(color),
+            Part::Stroke => stroke(s),
+            Part::Text => label.iter_mut().for_each(text),
+        };
         match (self, part) {
             (Kind::Shape(s), Part::Fill) => s.fill = Some(color),
             (Kind::Shape(s), Part::Stroke) => stroke(&mut s.stroke),
@@ -410,14 +423,14 @@ impl Kind {
                 }
             }
             (Kind::Merge(m), Part::Text) => m.trunk.label.iter_mut().for_each(text),
-            (Kind::Row(r), part) => {
-                let Some(cell) = cell.and_then(|i| r.cells.get_mut(i)) else {
-                    return;
-                };
-                match part {
-                    Part::Fill => cell.fill = Some(color),
-                    Part::Stroke => stroke(&mut cell.stroke),
-                    Part::Text => cell.label.iter_mut().for_each(text),
+            (Kind::Row(r), _) => {
+                if let Some(c) = cell.and_then(|i| r.cells.get_mut(i)) {
+                    of_cell(&mut c.fill, &mut c.stroke, &mut c.label);
+                }
+            }
+            (Kind::Matrix(m), _) if cell.is_some() => {
+                if let Some(c) = cell.and_then(|i| m.cells.get_mut(i)) {
+                    of_cell(&mut c.fill, &mut c.stroke, &mut c.label);
                 }
             }
             (Kind::Matrix(m), Part::Fill) => m.repaint_fill(color),

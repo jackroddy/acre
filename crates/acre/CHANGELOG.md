@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mono before. Bold text falls back to sans bold, mono bold and the math
   font, in the order `fonts::BOLD_FALLBACK` holds. The math font has no
   bold face, so a character that only the math font has stays regular.
+- `fill`, `stroke` and `text-color` on a matrix's name now blend each cell
+  from that cell's own color over a span. Before, a cell with its own
+  fill, such as `cell { at 0 1; fill #228833; }`, jumped to the matrix's
+  fill when the span began and blended from there. The row and column
+  numbers blend from the matrix's `text-color`. `stroke` on a matrix with
+  `stroke none` now changes the cells that set their own outline. It is an
+  error only when no cell has an outline.
 
 ## [0.2.0] - 2026-11-24
 

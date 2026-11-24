@@ -598,9 +598,10 @@ fn runs<'a>(
     Ok((runs, last))
 }
 
-/// `runs` with each run that colors a whole row split into one run per
-/// cell that has that color, joined to the cell's own run, so that each
-/// cell changes from its own color.
+/// `runs` with each run that colors a whole row or matrix split into
+/// one run per cell that has that color, joined to the cell's own run,
+/// so that each cell changes from its own color. A matrix keeps its own
+/// run too, for its numbers.
 fn by_cell<'a>(
     runs: Vec<Run<'a>>,
     nodes: &HashMap<&str, Option<&Node>>,
@@ -613,23 +614,29 @@ fn by_cell<'a>(
     };
     for ((name, cell, channel), actions) in runs {
         let node = nodes[name].expect("`target` lets through only names one node has");
-        let row = objects.iter().find_map(|o| match &o.kind {
-            Kind::Row(r) if o.source == node.span => Some((o, r)),
+        let split = objects.iter().find_map(|o| match &o.kind {
+            Kind::Row(r) if o.source == node.span => Some((o, "row", r.cells.len())),
+            Kind::Matrix(m) if o.source == node.span => Some((o, "matrix", m.cells.len())),
             _ => None,
         });
-        let (Some((row, r)), None, Channel::Color(part)) = (row, cell, channel) else {
+        let (Some((object, kind, count)), None, Channel::Color(part)) = (split, cell, channel)
+        else {
             join((name, cell, channel), actions);
             continue;
         };
         // a cell with no text until the timeline gives it some takes
         // the color too, as it would by its own index
-        let cells: Vec<usize> = (0..r.cells.len())
+        let cells: Vec<usize> = (0..count)
             .filter(|&c| {
-                row.kind.color(part, Some(c)).is_ok()
-                    || part == Part::Text && row.texts.iter().any(|t| t.cell == Some(c))
+                object.kind.color(part, Some(c)).is_ok()
+                    || part == Part::Text && object.texts.iter().any(|t| t.cell == Some(c))
             })
             .collect();
-        if cells.is_empty() {
+        if object.kind.color(part, None).is_ok() {
+            // ahead of the cells, so that each cell's paint sets the
+            // cell after this one does, and an overlap names the matrix
+            join((name, None, channel), actions.clone());
+        } else if cells.is_empty() {
             let what = match part {
                 Part::Fill => "a fill",
                 Part::Stroke => "an outline",
@@ -637,7 +644,7 @@ fn by_cell<'a>(
             };
             return Err(Error::new(
                 actions[0].span,
-                format!("no cell of row `{name}` has {what}"),
+                format!("no cell of {kind} `{name}` has {what}"),
             ));
         }
         for c in cells {
@@ -1662,6 +1669,47 @@ mod tests {
                 other => panic!("expected a rect or a text, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn a_matrix_wide_color_changes_every_cell_from_its_own_color() {
+        let s = canvas(
+            "matrix m { at 0 0; rows 1; columns 2; unit 10 10; row-numbers 0 1;
+                cell { at 0 1; fill #00ff00; text \"x\"; text-color #0000ff; } }
+             timeline { 0s to 1s ease linear { fill m #ff0000; text-color m #ffffff; } }",
+        );
+        let mut prims = Vec::new();
+        s.draw_object(&s.objects[0], 0.5, &mut prims);
+        let fills: Vec<Option<Color>> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Rect { fill, .. } => Some(*fill),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            fills,
+            [
+                Some(Color::rgb(1.0, 0.5, 0.5)),
+                Some(Color::rgb(0.5, 0.5, 0.0))
+            ]
+        );
+        let texts: Vec<Color> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text { runs, .. } => Some(runs[0].color),
+                _ => None,
+            })
+            .collect();
+        // the cell's text, then the row's number
+        assert_eq!(
+            texts,
+            [Color::rgb(0.5, 0.5, 1.0), Color::rgb(0.5, 0.5, 0.5)]
+        );
+        let empty = "canvas { size 100 100; matrix e { at 0 0; rows 1; columns 1; unit 10 10;
+            stroke none; } timeline { 1s { stroke e #ff0000; } } }";
+        let error = build(&parse(empty).unwrap(), &[], &[]).unwrap_err();
+        assert_eq!(error.message, "no cell of matrix `e` has an outline");
     }
 
     #[test]
