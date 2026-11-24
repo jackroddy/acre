@@ -273,8 +273,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unless set. `Route::Sweep` holds the ways.
 - `Primitive::Cubic` is a cubic Bézier curve with two handles. The PNG, SVG
   and PDF renderers draw it as a curve, not as straight segments. A `sweep`
-  draws its shaft as one `Cubic`, cut where each head begins, and points
-  each head along the curve's end. `arrow { route curve; }` still draws 24
+  draws its shaft as one `Cubic` that runs between the backs of its heads,
+  so it meets each head at the middle of its back. Each head points along
+  the sweep's way at its end. `arrow { route curve; }` still draws 24
   straight segments.
 
 ### Changed

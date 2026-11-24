@@ -1,6 +1,6 @@
 use super::Target;
 use super::diagram::{Label, Shape};
-use super::primitive::{HAlign, Motion, Point, Primitive, Stroke, VAlign, cubic_at};
+use super::primitive::{HAlign, Motion, Point, Primitive, Stroke, VAlign};
 
 /// The path a connector takes from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -244,32 +244,22 @@ impl Connector {
         }
     }
 
-    /// Draw a sweep's shaft as one cubic, cut short where each head
-    /// begins, with the heads along the curve's ends. `length` is the
+    /// Draw a sweep's shaft as one cubic that ends where each head
+    /// begins, with the heads along the sweep's ways. `length` is the
     /// curve's length, about.
     fn draw_sweep(&self, length: f64, out: &mut Vec<Primitive>) {
-        let (a, b) = (self.from, self.to);
-        let (c1, c2) = self.handles();
-        let curve = [a, c1, c2, b];
         let heads = [self.head, self.tail]
             .iter()
             .filter(|h| **h != Head::None)
             .count();
         let avail = length / heads.max(1) as f64;
         let size = HeadSize::new(self.stroke, self.head_size);
-        // a handle at its own end has no direction, so the tangent
-        // there runs to the other handle, or to the other end
-        let end_dir = [c2, c1, a]
-            .into_iter()
-            .find(|p| *p != b)
-            .map_or(Point::new(0.0, 1.0), |p| unit(b - p));
-        let start_dir = [c1, c2, b]
-            .into_iter()
-            .find(|p| *p != a)
-            .map_or(Point::new(0.0, -1.0), |p| unit(a - p));
-        let t1 = 1.0 - param_at_distance(curve, true, cut(self.head, size, avail));
-        let t0 = param_at_distance(curve, false, cut(self.tail, size, avail));
-        let [from, c1, c2, to] = sub_cubic(curve, t0, t1);
+        let (leave, arrive) = self.sweep_ways();
+        // the shaft runs between the backs of the heads, so it meets
+        // each head at the middle of its back and along its axis
+        let from = self.from + leave * cut(self.tail, size, avail);
+        let to = self.to - arrive * cut(self.head, size, avail);
+        let (c1, c2) = sweep_handles(from, to, leave, arrive);
         out.push(Primitive::Cubic {
             from,
             c1,
@@ -277,8 +267,39 @@ impl Connector {
             to,
             stroke: self.stroke,
         });
-        draw_head(self.head, b, end_dir, self.stroke, size, avail, out);
-        draw_head(self.tail, a, start_dir, self.stroke, size, avail, out);
+        draw_head(self.head, self.to, arrive, self.stroke, size, avail, out);
+        draw_head(
+            self.tail,
+            self.from,
+            leave * -1.0,
+            self.stroke,
+            size,
+            avail,
+            out,
+        );
+    }
+
+    /// The unit ways a sweep sets off from `from` and arrives at `to`. A
+    /// side sets an end's way, and `leave` or `enter` sets it at an end
+    /// with none.
+    fn sweep_ways(&self) -> (Point, Point) {
+        let Route::Sweep { leave, enter } = self.route else {
+            unreachable!("only a sweep has ways");
+        };
+        let d = self.to - self.from;
+        // to_dir points out of the box at `to`, against the way of
+        // travel; an end with no way at all, which a build never makes,
+        // heads straight for the other end
+        let out = self
+            .from_dir
+            .or(leave.map(Dir::vector))
+            .map_or(unit(d), unit);
+        let arrive = self
+            .to_dir
+            .map(|dir| dir * -1.0)
+            .or(enter.map(Dir::vector))
+            .map_or(unit(d), unit);
+        (out, arrive)
     }
 
     /// The route as a list of points, each joined to the next by a
@@ -347,8 +368,9 @@ impl Connector {
     fn handles(&self) -> (Point, Point) {
         let (a, b) = (self.from, self.to);
         let d = b - a;
-        if let Route::Sweep { leave, enter } = self.route {
-            return sweep_handles(a, b, self.from_dir, self.to_dir, leave, enter);
+        if let Route::Sweep { .. } = self.route {
+            let (out, arrive) = self.sweep_ways();
+            return sweep_handles(a, b, out, arrive);
         }
         if self.looped
             && let Some(out) = self.from_dir
@@ -423,27 +445,10 @@ fn bend(a: Point, b: Point, horizontal: bool, turn: f64) -> Vec<Point> {
     }
 }
 
-/// The two inner control points of a sweep from `a` to `b`. A side
-/// sets an end's way of travel, and `leave` or `enter` sets it at an
-/// end with none.
-fn sweep_handles(
-    a: Point,
-    b: Point,
-    from_dir: Option<Point>,
-    to_dir: Option<Point>,
-    leave: Option<Dir>,
-    enter: Option<Dir>,
-) -> (Point, Point) {
+/// The two inner control points of a sweep from `a` to `b` that sets
+/// off along `out` and arrives along `arrive`, both unit vectors.
+fn sweep_handles(a: Point, b: Point, out: Point, arrive: Point) -> (Point, Point) {
     let d = b - a;
-    let unit = |v: Point| v * (1.0 / length(v));
-    // to_dir points out of the box at `b`, against the way of travel;
-    // an end with no way at all, which a build never makes, heads
-    // straight for the other end
-    let out = from_dir.or(leave.map(Dir::vector)).map_or(unit(d), unit);
-    let arrive = to_dir
-        .map(|dir| dir * -1.0)
-        .or(enter.map(Dir::vector))
-        .map_or(unit(d), unit);
     // half the distance along the way of travel keeps the curve moving
     // that way from end to end; an end behind or level with the way
     // has no such distance and takes half the whole length instead
@@ -460,49 +465,6 @@ fn sweep_handles(
 
 fn unit(v: Point) -> Point {
     v * (1.0 / length(v))
-}
-
-/// How far along `curve` it first lies `distance` from one end, as a
-/// parameter counted from that end: from `to` when `from_end`, and from
-/// `from` when not.
-fn param_at_distance(curve: [Point; 4], from_end: bool, distance: f64) -> f64 {
-    if distance <= 0.0 {
-        return 0.0;
-    }
-    let end = if from_end { curve[3] } else { curve[0] };
-    let at = |s: f64| cubic_at(curve, if from_end { 1.0 - s } else { s });
-    let (mut lo, mut hi) = (0.0, 1.0);
-    for _ in 0..50 {
-        let mid = (lo + hi) / 2.0;
-        if length(at(mid) - end) < distance {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    hi
-}
-
-/// The part of `curve` between parameters `t0` and `t1`, as its own
-/// cubic, by de Casteljau's construction.
-fn sub_cubic(curve: [Point; 4], t0: f64, t1: f64) -> [Point; 4] {
-    // split at a, keeping the part before or after it
-    let split = |p: [Point; 4], a: f64, before: bool| {
-        let lerp = |u: Point, v: Point| u + (v - u) * a;
-        let (p01, p12, p23) = (lerp(p[0], p[1]), lerp(p[1], p[2]), lerp(p[2], p[3]));
-        let (p012, p123) = (lerp(p01, p12), lerp(p12, p23));
-        let mid = lerp(p012, p123);
-        if before {
-            [p[0], p01, p012, mid]
-        } else {
-            [mid, p123, p23, p[3]]
-        }
-    };
-    let head = split(curve, t1, true);
-    if t0 <= 0.0 || t1 <= 0.0 {
-        return head;
-    }
-    split(head, t0 / t1, false)
 }
 
 fn bend_halfway(a: Point, b: Point, horizontal: bool) -> Vec<Point> {
@@ -825,7 +787,33 @@ mod tests {
         assert_eq!(points[1].y, tip.y - 14.0);
         assert_eq!(points[2].y, tip.y - 14.0);
         assert_eq!(points[1].x + points[2].x, 2.0 * tip.x);
-        assert!((length(*to - tip) - 14.0).abs() < 1e-6, "{to:?}");
+        assert_eq!(*to, Point::new(tip.x, tip.y - 14.0));
+    }
+
+    #[test]
+    fn a_bent_sweep_meets_its_head_at_the_middle_of_its_back() {
+        // short and wide, so the curve still bends within a head length
+        // of its end
+        let mut c = sweep((0.0, 0.0), (300.0, 30.0));
+        c.tail = Head::Triangle;
+        let mut out = Vec::new();
+        c.draw(&mut out);
+        let [
+            Primitive::Cubic {
+                from, c1, c2, to, ..
+            },
+            Primitive::Polygon { points: head, .. },
+            Primitive::Polygon { points: tail, .. },
+        ] = &out[..]
+        else {
+            panic!("expected a cubic and two heads, got {out:?}");
+        };
+        let back = |p: &[Point]| (p[1] + p[2]) * 0.5;
+        assert_eq!(*to, back(head));
+        assert_eq!(*from, back(tail));
+        // the last handle lies on the head's axis and the first on the
+        // tail's, both vertical here
+        assert_eq!((c2.x, c1.x), (to.x, from.x));
     }
 
     #[test]
