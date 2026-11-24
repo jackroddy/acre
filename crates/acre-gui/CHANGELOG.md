@@ -9,6 +9,28 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- The toolbar has a palette of tools: Select, Box, Ellipse, Text, Line,
+  Arrow, Polygon and Polyline. After a tool adds a node, the palette goes
+  back to Select. acre-gui adds each node at the end of the canvas, before
+  its timeline, as one edit, and selects it. When the source with the new
+  node would not build, acre-gui writes nothing and the status line gives
+  the build's error.
+- With Box or Ellipse, a drag from one corner to the other draws the
+  outline, and the dragged corner snaps to other objects and the grid as a
+  moved object does. A click adds one 80 by 48 pixels at the click.
+- With Text, a click adds `text "text"` there and opens its text field.
+  With `--stdio`, the field opens once the editor sends its text back.
+- With Line or Arrow, a drag runs from one end to the other. An end on a
+  box, ellipse, polygon, polyline, row, matrix or code joins it by name,
+  and the same edit names it when it has no name. An end anywhere else is
+  a point. acre-gui refuses a line with both ends on one thing or at one
+  point.
+- With Polygon or Polyline, each click adds a point. A click on the first
+  point closes a polygon, and a click on the last point again ends a
+  polyline. While a path is drawn, the toolbar shows Done and Cancel.
+- A right-click on an object selects its node and opens a menu with Delete
+  and Duplicate. Duplicate adds a copy 10 pixels right of and below the
+  node, as a copy and a paste do.
 - With a selection, each press of an arrow key moves the selected nodes
   one canvas pixel, without snapping. Holding the key keeps moving them.
   With `--stdio`, the presses made while an edit is with the editor add up

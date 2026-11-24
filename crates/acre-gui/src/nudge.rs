@@ -28,6 +28,11 @@ impl Nudge {
         Some((std::mem::take(&mut self.dx), std::mem::take(&mut self.dy)))
     }
 
+    /// Whether an edit is with the editor.
+    pub fn waiting(&self) -> bool {
+        self.waiting
+    }
+
     /// Note that an edit went to the editor.
     pub fn sent(&mut self) {
         self.waiting = true;

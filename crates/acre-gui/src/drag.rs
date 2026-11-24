@@ -11,6 +11,9 @@ pub struct Drag {
     /// The nodes the drag moves, or none on empty canvas, where the drag
     /// draws a selection box.
     nodes: Vec<Span>,
+    /// Whether the drag draws a new node, and so neither moves nor
+    /// selects.
+    create: bool,
     /// Where the press was, on screen.
     from: Pos2,
     /// Where the pointer is, on screen.
@@ -29,15 +32,26 @@ pub enum Release {
     Move { nodes: Vec<Span>, by: Point },
     /// Select what lies in the box between two corners on screen.
     Select(Pos2, Pos2),
+    /// Draw a new node from one point on screen to another.
+    Create(Pos2, Pos2),
 }
 
 impl Drag {
     pub fn new(nodes: Vec<Span>, from: Pos2) -> Self {
         Drag {
             nodes,
+            create: false,
             from,
             to: from,
             by: None,
+        }
+    }
+
+    /// A press that draws a new node.
+    pub fn create(from: Pos2) -> Self {
+        Drag {
+            create: true,
+            ..Drag::new(Vec::new(), from)
         }
     }
 
@@ -70,12 +84,20 @@ impl Drag {
     /// The corners on screen of the selection box, once the pointer has
     /// gone past the threshold on empty canvas.
     pub fn boxed(&self) -> Option<(Pos2, Pos2)> {
-        (self.nodes.is_empty() && self.by.is_some()).then_some((self.from, self.to))
+        let selecting = self.nodes.is_empty() && !self.create;
+        (selecting && self.by.is_some()).then_some((self.from, self.to))
+    }
+
+    /// Where on screen a drag that draws a new node runs from and to,
+    /// once the pointer has gone past the threshold.
+    pub fn creating(&self) -> Option<(Pos2, Pos2)> {
+        (self.create && self.by.is_some()).then_some((self.from, self.to))
     }
 
     pub fn release(self) -> Release {
         match self.by {
             None => Release::Click(self.from),
+            Some(_) if self.create => Release::Create(self.from, self.to),
             Some(_) if self.nodes.is_empty() => Release::Select(self.from, self.to),
             Some(by) => Release::Move {
                 nodes: self.nodes,
@@ -154,6 +176,25 @@ mod tests {
         assert_eq!(
             drag.release(),
             Release::Select(pos2(10.0, 10.0), pos2(50.0, 5.0))
+        );
+    }
+
+    #[test]
+    fn a_drag_that_creates_neither_selects_nor_moves() {
+        let mut drag = Drag::create(pos2(10.0, 10.0));
+        drag.follow(pos2(12.0, 12.0), 1.0);
+        assert_eq!(drag.creating(), None);
+        drag.follow(pos2(60.0, 40.0), 2.0);
+        assert_eq!(drag.boxed(), None);
+        assert_eq!(drag.moving(), None);
+        assert_eq!(drag.creating(), Some((pos2(10.0, 10.0), pos2(60.0, 40.0))));
+        assert_eq!(
+            drag.release(),
+            Release::Create(pos2(10.0, 10.0), pos2(60.0, 40.0))
+        );
+        assert_eq!(
+            Drag::create(pos2(5.0, 5.0)).release(),
+            Release::Click(pos2(5.0, 5.0))
         );
     }
 }

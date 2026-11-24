@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use acre::lang;
-use acre::scene::edit::{self, TextEdit};
+use acre::scene::edit::{self, NewNode, TextEdit};
 use acre::scene::{self, Scene, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
@@ -18,7 +18,8 @@ use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
-use crate::view::View;
+use crate::tool::{self, Step, Tool};
+use crate::view::{MenuItem, View};
 
 /// How often an open file is checked for a change on disk.
 const DISK_CHECK: Duration = Duration::from_millis(500);
@@ -52,9 +53,9 @@ pub struct App {
     /// The field open over an object to edit its text.
     field: Option<Field>,
     nudge: Nudge,
-    /// The places of the nodes pasted by the edit with the editor, to
-    /// select once the editor sends its text back.
-    pasted: Option<Vec<Vec<usize>>>,
+    /// The nodes added by the edit with the editor, to select once the
+    /// editor sends its text back.
+    added: Option<Added>,
     /// Counts the scenes built, so the view draws again on a new one.
     version: u64,
     /// Whether the editor heard about the current error, or that there
@@ -98,7 +99,7 @@ impl App {
             selection: Selection::default(),
             field: None,
             nudge: Nudge::default(),
-            pasted: None,
+            added: None,
             version: 0,
             reported: false,
             view: View::new(),
@@ -264,8 +265,8 @@ impl App {
             if text != self.text || self.version == 0 {
                 self.show(text);
             }
-            if let (Some(paths), Some(program)) = (self.pasted.take(), &self.program) {
-                self.selection = Selection::at(program, paths);
+            if let Some(added) = self.added.take() {
+                self.select(added);
             }
         }
         if !self.reported
@@ -509,7 +510,8 @@ impl App {
         });
     }
 
-    /// The buttons that zoom the render, and the snap and grid toggles.
+    /// The buttons that zoom the render, the snap and grid toggles, and
+    /// the tools, with Done and Cancel while a path is being drawn.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("−").on_hover_text("zoom out").clicked() {
@@ -539,6 +541,27 @@ impl App {
                     .suffix(" px"),
             )
             .on_hover_text("the grid's spacing in canvas pixels");
+            ui.separator();
+            for t in Tool::ALL {
+                if ui
+                    .selectable_label(self.view.tool == t, t.label())
+                    .on_hover_text(t.hint())
+                    .clicked()
+                {
+                    self.view.tool = t;
+                    self.view.path.clear();
+                }
+            }
+            if self.view.tool.draws_path() && !self.view.path.is_empty() {
+                ui.separator();
+                if ui.button("Done").clicked() {
+                    self.finish_path();
+                }
+                if ui.button("Cancel").clicked() {
+                    self.view.tool = Tool::Select;
+                    self.view.path.clear();
+                }
+            }
         });
     }
 
@@ -676,11 +699,200 @@ impl App {
             }
         };
         self.notice = None;
-        if self.link.is_some() {
-            self.pasted = Some(paths);
-        } else if let Some(program) = &self.program {
-            self.selection = Selection::at(program, paths);
+        self.select_added(Added {
+            paths,
+            open_field: false,
+        });
+    }
+
+    /// Select the nodes `added` names now, or once the editor sends back
+    /// the text the edit with it makes.
+    fn select_added(&mut self, added: Added) {
+        match &self.link {
+            Some(_) => self.added = Some(added),
+            None => self.select(added),
         }
+    }
+
+    fn select(&mut self, added: Added) {
+        let Some(program) = &self.program else { return };
+        self.selection = Selection::at(program, added.paths);
+        if added.open_field
+            && let Some(&node) = self.selection.spans().first()
+        {
+            self.open_field(node);
+        }
+    }
+
+    /// Add the duplicate of the selected nodes that a copy and a paste
+    /// make, or name on the status line why not.
+    fn duplicate(&mut self) {
+        let nodes = self.selection.spans().to_vec();
+        if nodes.is_empty() {
+            return;
+        }
+        match self.on_source("duplicate", |text| edit::copy_text(text, &nodes)) {
+            Ok(text) => self.paste(&text),
+            Err(why) => self.notice = Some(why),
+        }
+    }
+
+    /// Canvas point `p` snapped as the view snaps a new node's corner.
+    fn snapped(&self, p: scene::Point) -> scene::Point {
+        match &self.scene {
+            Some(scene) => self.view.snap_point(scene, p, self.time).0,
+            None => p,
+        }
+    }
+
+    /// Where the source's 0 0 falls on the canvas.
+    fn origin(&self) -> scene::Point {
+        self.scene.as_ref().map_or(scene::Point::ZERO, |s| s.origin)
+    }
+
+    /// Take a click at canvas point `point` with the tool in use.
+    fn click(&mut self, point: scene::Point) {
+        match self.view.tool {
+            Tool::Select => self.go_to_object_at(point),
+            Tool::Box | Tool::Ellipse => self.add_box(point, None),
+            Tool::Text => {
+                let at = self.snapped(point) - self.origin();
+                let text = "text".to_string();
+                self.add_node(NewNode::Text { at, text }, true);
+            }
+            Tool::Line | Tool::Arrow => {
+                self.notice = Some("drag from one end to the other".to_string());
+            }
+            Tool::Polygon | Tool::Polyline => {
+                let p = self.snapped(point);
+                let close = (tool::CLOSE / self.view.zoom()) as f64;
+                let closed = self.view.tool == Tool::Polygon;
+                if tool::click_path(&mut self.view.path, p, close, closed) == Step::Done {
+                    self.finish_path();
+                }
+            }
+        }
+    }
+
+    /// Take a drag from canvas point `from` to `to` with the tool in use.
+    fn drawn(&mut self, from: scene::Point, to: scene::Point) {
+        match self.view.tool {
+            Tool::Box | Tool::Ellipse => self.add_box(from, Some(to)),
+            Tool::Line | Tool::Arrow => self.add_line(from, to),
+            Tool::Text | Tool::Polygon | Tool::Polyline => self.click(to),
+            Tool::Select => {}
+        }
+    }
+
+    /// Add a box, or an ellipse with that tool, from canvas point `from`
+    /// to `to`, or of the size a click gives with no `to`.
+    fn add_box(&mut self, from: scene::Point, to: Option<scene::Point>) {
+        let corner = self.snapped(from);
+        let (at, size) = match to {
+            None => (corner, tool::CLICKED_SIZE),
+            Some(to) => match tool::corners(corner, self.snapped(to)) {
+                Some(c) => c,
+                None => {
+                    self.notice = Some("a box needs a width and a height".to_string());
+                    return;
+                }
+            },
+        };
+        let at = at - self.origin();
+        let node = match self.view.tool {
+            Tool::Ellipse => NewNode::Ellipse { at, size },
+            _ => NewNode::Box { at, size },
+        };
+        self.add_node(node, false);
+    }
+
+    /// Add a line, or an arrow with that tool, from canvas point `from`
+    /// to `to`, each end on the thing there when it can name it.
+    fn add_line(&mut self, from: scene::Point, to: scene::Point) {
+        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+            return;
+        };
+        let end = |p| tool::end_at(program, scene, p, self.snapped(p), self.time);
+        let (from, to) = (end(from), end(to));
+        let edits = match &self.error {
+            Some(_) => Err("fix the source's error before you add a node".to_string()),
+            None => {
+                let arrow = self.view.tool == Tool::Arrow;
+                tool::line_edits(&self.text, program, from, to, scene.origin, arrow)
+            }
+        };
+        self.add(edits, false);
+    }
+
+    /// Add the polygon or polyline through the points placed so far, or
+    /// name on the status line why not.
+    fn finish_path(&mut self) {
+        let closed = self.view.tool == Tool::Polygon;
+        if !tool::enough(&self.view.path, closed) {
+            let fewest = if closed { 3 } else { 2 };
+            self.notice = Some(format!("place at least {fewest} points"));
+            return;
+        }
+        let origin = self.origin();
+        let points = self.view.path.iter().map(|&p| p - origin).collect();
+        let node = if closed {
+            NewNode::Polygon { points }
+        } else {
+            NewNode::Polyline { points }
+        };
+        self.add_node(node, false);
+    }
+
+    /// Add `node` to the canvas and select it, opening its text field
+    /// when `open_field`, or name on the status line why not.
+    fn add_node(&mut self, node: NewNode, open_field: bool) {
+        let edits = self.on_source("add a node", |text| edit::insert_edits(text, &node.text()?));
+        self.add(edits, open_field);
+    }
+
+    /// Make `edits`, which add a node at the end of the canvas, if the
+    /// source they make builds, then select the node, open its text field
+    /// when `open_field`, and go back to the Select tool. Otherwise name
+    /// on the status line why not.
+    fn add(&mut self, edits: Result<Vec<TextEdit>, String>, open_field: bool) {
+        let added = edits.and_then(|edits| {
+            self.check(&edits)?;
+            let program = self.program.as_ref().ok_or("no drawing to add to")?;
+            let path = tool::added_path(program);
+            self.write(&edits)?;
+            Ok(path)
+        });
+        match added {
+            Ok(path) => {
+                self.notice = None;
+                self.view.tool = Tool::Select;
+                self.view.path.clear();
+                self.select_added(Added {
+                    paths: vec![path],
+                    open_field,
+                });
+            }
+            Err(why) => self.notice = Some(why),
+        }
+    }
+
+    /// Whether the source with `edits` made parses and builds, and the
+    /// error for the status line when not.
+    fn check(&mut self, edits: &[TextEdit]) -> Result<(), String> {
+        if self.nudge.waiting() {
+            return Err("wait for the editor to take the last edit".to_string());
+        }
+        let text = edit::apply(&self.text, edits);
+
+        // `build` notes the files the source lists, and these are the
+        // files of a source not yet shown
+        let files = std::mem::take(&mut self.files);
+        let built = lang::parse(&text).and_then(|program| self.build(&program).map(|_| ()));
+        self.files = files;
+        built.map_err(|e| {
+            let (line, col) = e.line_col(&text);
+            format!("cannot add the node: {line}:{col}: {}", e.message)
+        })
     }
 
     /// The bar that plays, pauses and scrubs the scene's time.
@@ -849,7 +1061,20 @@ impl eframe::App for App {
                 self.pane = shown.rect.size();
                 self.hover = shown.hover;
                 if let Some(point) = shown.clicked {
-                    self.go_to_object_at(point);
+                    self.click(point);
+                }
+                if let Some((from, to)) = shown.created {
+                    self.drawn(from, to);
+                }
+                if let Some(node) = shown.right_clicked
+                    && let Some(program) = &self.program
+                {
+                    self.selection = Selection::of(program, &[node]);
+                }
+                match shown.chosen {
+                    Some(MenuItem::Delete) => self.delete(),
+                    Some(MenuItem::Duplicate) => self.duplicate(),
+                    None => {}
                 }
                 if let Some(node) = shown.double_clicked {
                     self.open_field(node);
@@ -863,6 +1088,14 @@ impl eframe::App for App {
                 self.edit_field(ui, shown.rect);
             });
     }
+}
+
+/// Nodes an edit adds, to select.
+struct Added {
+    /// Their places as [`edit::node_path`] gives them.
+    paths: Vec<Vec<usize>>,
+    /// Whether to open a field on the first to edit its text.
+    open_field: bool,
 }
 
 /// Draw the bar that scrubs over `0..=duration`, divided into

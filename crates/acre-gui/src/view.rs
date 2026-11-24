@@ -4,13 +4,14 @@ use acre::lang::Span;
 use acre::render;
 use acre::scene::{Animation, Point, Scene, Track};
 use eframe::egui::{
-    self, Color32, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, TextureHandle,
-    TextureOptions, Vec2, pos2,
+    self, Color32, PointerButton, Popup, Pos2, Rect, Sense, SetOpenCommand, Shape, Stroke,
+    StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
 };
 
 use crate::drag::{Drag, Release};
 use crate::selection;
-use crate::snap::{self, Bounds, Snapped};
+use crate::snap::{self, Bounds, Guide, Snapped};
+use crate::tool::{self, Tool};
 
 const MIN_ZOOM: f32 = 0.05;
 const MAX_ZOOM: f32 = 40.0;
@@ -52,6 +53,10 @@ pub struct View {
     pub grid: bool,
     /// The grid's spacing in canvas pixels.
     pub spacing: f64,
+    pub tool: Tool,
+    /// The points placed so far of the polygon or polyline being drawn,
+    /// in canvas pixels.
+    pub path: Vec<Point>,
 }
 
 /// What the person did in the pane this frame.
@@ -69,6 +74,20 @@ pub struct Shown {
     pub moved: Option<(Vec<Span>, Point)>,
     /// The selection box let go of this frame, in canvas pixels.
     pub boxed: Option<Bounds>,
+    /// Where a drag that draws a new node ran from and to, in canvas
+    /// pixels, unsnapped.
+    pub created: Option<(Point, Point)>,
+    /// The node that drew the object right-clicked.
+    pub right_clicked: Option<Span>,
+    /// What was chosen from the menu of a right-clicked object.
+    pub chosen: Option<MenuItem>,
+}
+
+/// An entry in the menu of a right-clicked object.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MenuItem {
+    Delete,
+    Duplicate,
 }
 
 /// The view the texture was drawn for.
@@ -116,6 +135,8 @@ impl View {
             snap: true,
             grid: false,
             spacing: 10.0,
+            tool: Tool::Select,
+            path: Vec::new(),
         }
     }
 
@@ -159,7 +180,9 @@ impl View {
     /// nodes are dragged, their objects are drawn where they are dragged
     /// to, snapped, and outlined in place of `marks`, with a guide for
     /// each snap. A drag on empty canvas draws a selection box. A
-    /// double-click on no object fits the canvas to the pane.
+    /// double-click on no object fits the canvas to the pane. With a tool
+    /// other than Select, a press draws a new node, outlined as it goes.
+    /// A right-click on an object opens its menu.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -177,6 +200,9 @@ impl View {
             double_clicked: None,
             moved: None,
             boxed: None,
+            created: None,
+            right_clicked: None,
+            chosen: None,
         };
         let Some(scene) = scene else {
             self.drag = None;
@@ -198,19 +224,19 @@ impl View {
             && response.contains_pointer()
             && let Some(at) = pointer
         {
-            let nodes = scene
-                .object_at(self.to_canvas(rect, at), t)
-                .map(|i| scene.objects[i].source)
-                .filter(|s| s.start < s.end)
-                .map_or(Vec::new(), |node| selection::dragged(selected, node));
-            self.drag = Some(Drag::new(nodes, at));
+            self.drag = Some(match self.tool {
+                Tool::Select => {
+                    let nodes = node_at(scene, self.to_canvas(rect, at), t)
+                        .map_or(Vec::new(), |node| selection::dragged(selected, node));
+                    Drag::new(nodes, at)
+                }
+                _ => Drag::create(at),
+            });
         }
+        self.context_menu(&response, scene, rect, t, &mut shown);
 
-        if response.double_clicked() {
-            let node = pointer
-                .and_then(|at| scene.object_at(self.to_canvas(rect, at), t))
-                .map(|i| scene.objects[i].source)
-                .filter(|s| s.start < s.end);
+        if response.double_clicked() && self.tool == Tool::Select {
+            let node = pointer.and_then(|at| node_at(scene, self.to_canvas(rect, at), t));
             match node {
                 Some(node) => shown.double_clicked = Some(node),
                 None => self.fit = true,
@@ -275,6 +301,9 @@ impl View {
                         Point::new(a.x.min(b.x), a.y.min(b.y)),
                         Point::new(a.x.max(b.x), a.y.max(b.y)),
                     ));
+                }
+                Release::Create(from, to) => {
+                    shown.created = Some((self.to_canvas(rect, from), self.to_canvas(rect, to)));
                 }
             }
         }
@@ -397,6 +426,8 @@ impl View {
             painter.rect_stroke(area, 0.0, Stroke::new(1.0, blue), StrokeKind::Inside);
         }
 
+        let hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
+        guides.extend(self.draw_preview(&painter, rect, scene, t, hover));
         for g in &guides {
             painter.line_segment(
                 [to_screen(g.from), to_screen(g.to)],
@@ -408,8 +439,117 @@ impl View {
             scene.objects[i].groups.pop();
         }
 
-        shown.hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
+        shown.hover = hover;
         shown
+    }
+
+    /// Open a menu with Delete and Duplicate on a right-click on an
+    /// object of `scene` at time `t` in the pane at `rect`, whose
+    /// response is `response`, and note on `shown` the node and the
+    /// entry chosen.
+    fn context_menu(
+        &self,
+        response: &egui::Response,
+        scene: &Scene,
+        rect: Rect,
+        t: f64,
+        shown: &mut Shown,
+    ) {
+        let open = if response.secondary_clicked() {
+            shown.right_clicked = response
+                .interact_pointer_pos()
+                .and_then(|at| node_at(scene, self.to_canvas(rect, at), t));
+            Some(SetOpenCommand::Bool(shown.right_clicked.is_some()))
+        } else if response.clicked() {
+            Some(SetOpenCommand::Bool(false))
+        } else {
+            None
+        };
+        Popup::context_menu(response).open_memory(open).show(|ui| {
+            for (item, label) in [
+                (MenuItem::Delete, "Delete"),
+                (MenuItem::Duplicate, "Duplicate"),
+            ] {
+                if ui.button(label).clicked() {
+                    shown.chosen = Some(item);
+                    ui.close();
+                }
+            }
+        });
+    }
+
+    /// Canvas point `p` snapped to the edges and centres of the objects
+    /// of `scene` at time `t` and to the grid, as a dragged object snaps,
+    /// or rounded to whole pixels when snapping is off, with a guide for
+    /// each snap.
+    pub fn snap_point(&self, scene: &Scene, p: Point, t: f64) -> (Point, Vec<Guide>) {
+        let p = Point::new(p.x.round(), p.y.round());
+        if !self.snap {
+            return (p, Vec::new());
+        }
+        let others: Vec<Bounds> = (0..scene.objects.len())
+            .filter_map(|i| scene.bounds(i, t))
+            .collect();
+        let reach = (snap::REACH / self.zoom) as f64;
+        let grid = self.grid.then_some(self.spacing);
+        let snapped = snap::snap((p, p), &others, Point::ZERO, reach, grid);
+        (p + snapped.by, snapped.guides)
+    }
+
+    /// Draw the outline of the node the tool is drawing, with the
+    /// pointer at canvas point `hover`, and give the guides of its snaps.
+    fn draw_preview(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        scene: &Scene,
+        t: f64,
+        hover: Option<Point>,
+    ) -> Vec<Guide> {
+        let stroke = Stroke::new(1.5, Color32::from_rgb(0x7a, 0xa2, 0xf7));
+        let to_screen = |p: Point| self.to_screen(rect, p);
+        let mut guides = Vec::new();
+        if let Some((from, to)) = self.drag.as_ref().and_then(Drag::creating) {
+            let (from, _) = self.snap_point(scene, self.to_canvas(rect, from), t);
+            let (to, snaps) = self.snap_point(scene, self.to_canvas(rect, to), t);
+            guides = snaps;
+            let (a, b) = (to_screen(from), to_screen(to));
+            match self.tool {
+                Tool::Box => {
+                    painter.rect_stroke(Rect::from_two_pos(a, b), 0.0, stroke, StrokeKind::Middle);
+                }
+                Tool::Ellipse => {
+                    let area = Rect::from_two_pos(a, b);
+                    painter.add(Shape::ellipse_stroke(
+                        area.center(),
+                        area.size() / 2.0,
+                        stroke,
+                    ));
+                }
+                Tool::Line => {
+                    painter.line_segment([a, b], stroke);
+                }
+                Tool::Arrow => {
+                    painter.arrow(a, b - a, stroke);
+                }
+                _ => {}
+            }
+        }
+        if self.tool.draws_path() && !self.path.is_empty() {
+            let mut points: Vec<Pos2> = self.path.iter().copied().map(to_screen).collect();
+            if let Some(hover) = hover {
+                let (at, snaps) = self.snap_point(scene, hover, t);
+                points.push(to_screen(at));
+                guides = snaps;
+            }
+            if self.tool == Tool::Polygon {
+                painter.circle_stroke(points[0], tool::CLOSE, stroke);
+                painter.add(Shape::closed_line(points, stroke));
+            } else {
+                painter.add(Shape::line(points, stroke));
+            }
+        }
+        guides
     }
 
     /// The screen point at canvas point `p` in a pane at `rect`.
@@ -467,6 +607,15 @@ impl View {
         let min = rect.min + self.origin + (-overdraw - drawn.origin) * scale;
         Rect::from_min_size(min, (drawn.pane + overdraw * 2.0) * scale)
     }
+}
+
+/// The node that drew the object of `scene` at canvas point `p` at time
+/// `t`, when a node did.
+fn node_at(scene: &Scene, p: Point, t: f64) -> Option<Span> {
+    scene
+        .object_at(p, t)
+        .map(|i| scene.objects[i].source)
+        .filter(|s| s.start < s.end)
 }
 
 /// The indices of the objects in `scene` that the nodes at `nodes` or

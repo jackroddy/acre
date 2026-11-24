@@ -10,6 +10,7 @@ mod playback;
 mod recent;
 mod selection;
 mod snap;
+mod tool;
 mod view;
 
 use std::path::PathBuf;
