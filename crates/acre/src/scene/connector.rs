@@ -104,7 +104,7 @@ pub struct Connector {
 pub enum End {
     Point(Point),
     Box(Shape),
-    /// The middle of a side of a box or one of its corners, and the
+    /// A point on a side of a box or one of its corners, and the
     /// direction that points out of the box there, diagonal at a corner.
     Side {
         at: Point,

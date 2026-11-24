@@ -43,9 +43,29 @@ const fn prop(name: &'static str, takes: &'static str, about: &'static str) -> P
 
 const AT: Property = prop(
     "at",
-    "X Y | NAME [DX DY] | ROW N [DX DY]",
-    "the top-left corner, in the group's coordinates or from a named thing's corner; \
+    "X Y | NAME [SIDE F] [DX DY] | ROW N [SIDE F] [DX DY] | MATRIX R C SIDE F [DX DY]",
+    "where `place` puts the node: a point in the group's coordinates, or from a named thing's \
+     top-left corner or the point F of the way along its SIDE, left to right or top to bottom; \
      without it, the group's origin, or the node's slot in a stack or grid",
+);
+const AT_CORNER: Property = prop(
+    "at",
+    "X Y | NAME [SIDE F] [DX DY] | ROW N [SIDE F] [DX DY] | MATRIX R C SIDE F [DX DY]",
+    "the top-left corner, in the group's coordinates, or from a named thing's top-left corner \
+     or the point F of the way along its SIDE, left to right or top to bottom; \
+     without it, the group's origin, or the node's slot in a stack or grid",
+);
+const PLACES: &str =
+    "center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right";
+const PLACE: Property = prop(
+    "place",
+    PLACES,
+    "the point of its box that `at` puts down; the default is top-left",
+);
+const TEXT_PLACE: Property = prop(
+    "place",
+    PLACES,
+    "the point of its box that `at` puts down; the default is the top edge where `align` says",
 );
 const FILL: Property = prop("fill", "COLOR | none", "the inside color");
 const STROKE: Property = prop("stroke", "COLOR | none", "the outline color");
@@ -67,12 +87,12 @@ const LABEL: Property = prop("label", "\"TEXT\"", "text beside it, with markup")
 const SIDE: Property = prop("side", "top | bottom | left | right", "which way it faces");
 const FROM: Property = prop(
     "from",
-    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER] | MATRIX R C [SIDE | CORNER]",
-    "where it starts: a point, or the edge of a named thing; a SIDE is top, bottom, left or right and puts it at that side's middle, and a CORNER is top-left, top-right, bottom-left or bottom-right",
+    "X Y | NAME [SIDE [F] | CORNER] | ROW N [SIDE [F] | CORNER] | MATRIX R C [SIDE [F] | CORNER]",
+    "where it starts: a point, or the edge of a named thing; a SIDE is top, bottom, left or right and puts it at that side's middle, or with F at the point F of the way along it, left to right or top to bottom; a CORNER is top-left, top-right, bottom-left or bottom-right",
 );
 const TO: Property = prop(
     "to",
-    "X Y | NAME [SIDE | CORNER] | ROW N [SIDE | CORNER] | MATRIX R C [SIDE | CORNER]",
+    "X Y | NAME [SIDE [F] | CORNER] | ROW N [SIDE [F] | CORNER] | MATRIX R C [SIDE [F] | CORNER]",
     "where it ends",
 );
 const STYLE: Property = prop("style", "NAME...", "the styles whose properties it takes");
@@ -90,6 +110,7 @@ const POINTS: Property = prop(
 
 const SHAPE: &[Property] = &[
     AT,
+    PLACE,
     prop(
         "size",
         "W H",
@@ -263,6 +284,7 @@ pub const NODES: &[NodeKind] = &[
         about: "cells side by side on a grid of equal units, or sharing a width by weight",
         properties: &[
             AT,
+            PLACE,
             prop(
                 "unit",
                 "W H",
@@ -321,6 +343,7 @@ pub const NODES: &[NodeKind] = &[
         about: "a grid of equal cells, addressed by row and column from 0 as `NAME R C`",
         properties: &[
             AT,
+            PLACE,
             prop("rows", "N", "how many rows"),
             prop("columns", "N", "how many columns"),
             prop("unit", "W H", "the width and height of one cell"),
@@ -433,6 +456,7 @@ pub const NODES: &[NodeKind] = &[
         about: "text placed by its top edge",
         properties: &[
             AT,
+            TEXT_PLACE,
             prop("text", "\"TEXT\"", "the text, with markup"),
             prop("size", "N", "the size in pixels"),
             prop("color", "COLOR", "the color"),
@@ -469,8 +493,8 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "at",
-                "X Y | NAME [SIDE] | ROW N [SIDE]",
-                "the center: a point or the center of a named thing; with a side, the circle sits outside that side, touching it",
+                "X Y | NAME [SIDE [F]] | ROW N [SIDE [F]]",
+                "the center: a point or the center of a named thing; with a side, the circle sits outside the side's middle, or the point F of the way along it, touching it",
             ),
             prop("number", "N", "the number in the circle"),
             prop("diameter", "N", "the width of the circle, default 20"),
@@ -488,6 +512,7 @@ pub const NODES: &[NodeKind] = &[
         about: "a formula in LaTeX math, set in display style and placed by its top edge",
         properties: &[
             AT,
+            TEXT_PLACE,
             prop(
                 "text",
                 "\"\"\"FORMULA\"\"\"",
@@ -509,7 +534,7 @@ pub const NODES: &[NodeKind] = &[
         name: "table",
         about: "rows of strings in aligned columns",
         properties: &[
-            AT,
+            AT_CORNER,
             prop("columns", "X...", "the x of each column"),
             prop(
                 "align",
@@ -560,7 +585,7 @@ pub const NODES: &[NodeKind] = &[
         name: "ruler",
         about: "a scale of equal units with numbers",
         properties: &[
-            AT,
+            AT_CORNER,
             prop("unit", "N", "the length of one unit"),
             prop("count", "N", "how many units"),
             prop("first", "N", "the number over the first unit"),
@@ -585,7 +610,11 @@ pub const NODES: &[NodeKind] = &[
         name: "group",
         about: "nodes moved together by `at`",
         properties: &[
-            prop("at", "X Y | NAME [DX DY]", "where the group's origin sits"),
+            prop(
+                "at",
+                "X Y | NAME [SIDE F] [DX DY]",
+                "where the group's origin sits",
+            ),
             ANCHOR,
         ],
         children: DRAWN,
@@ -596,7 +625,7 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "at",
-                "X Y | NAME [DX DY]",
+                "X Y | NAME [SIDE F] [DX DY]",
                 "the top-left corner of the frame, or of the heading when there is no frame",
             ),
             prop("title", "\"TEXT\"", "the heading, with markup"),
@@ -637,7 +666,7 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "at",
-                "X Y | NAME [DX DY]",
+                "X Y | NAME [SIDE F] [DX DY]",
                 "where the first child's slot starts",
             ),
             prop("direction", "down | right", "which way the children go"),
@@ -658,7 +687,7 @@ pub const NODES: &[NodeKind] = &[
         properties: &[
             prop(
                 "at",
-                "X Y | NAME [DX DY]",
+                "X Y | NAME [SIDE F] [DX DY]",
                 "the top-left corner of the first cell",
             ),
             prop("columns", "N", "how many cells across"),
@@ -678,6 +707,7 @@ pub const NODES: &[NodeKind] = &[
         about: "source code, highlighted, on a background; lines are named from 1",
         properties: &[
             AT,
+            PLACE,
             prop(
                 "lang",
                 "rust | python | acre | text",

@@ -955,8 +955,9 @@ fn group_at(node: &Node, names: &Names, offset: Point) -> Result<Point, Error> {
 }
 
 /// The point an `at` names: two numbers from the origin of the group it
-/// sits in, or a shape, row, row cell or matrix's top-left corner and two
-/// optional numbers from there.
+/// sits in, or a thing's top-left corner or the point F of the way along
+/// one of its sides, and two optional numbers from there. The thing is a
+/// shape, a row, a row's cell, a matrix, or with a side a matrix's cell.
 fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
     if let [first, ..] = p.values.as_slice()
         && let ValueKind::Number(_) = first.kind
@@ -964,13 +965,7 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
         let [x, y] = p.numbers::<2>()?;
         return Ok(offset + Point::new(x, y));
     }
-    // a row's name and one number is a cell, so with three values the
-    // two numbers are the offset from the whole row
-    let named = match p.values.len() {
-        3 => &p.values[..1],
-        4 => &p.values[..2],
-        _ => &p.values[..],
-    };
+    let named = at_named(&p.values);
     let (thing, cell, left) = target(p, named, names, 0)?;
     if let (Some(_), [v, ..]) = (cell, left)
         && let ValueKind::Word(name) = &p.values[0].kind
@@ -978,19 +973,115 @@ fn at(p: &Property, names: &Names, offset: Point) -> Result<Point, Error> {
     {
         return Err(Error::new(
             v.span,
-            "`at` takes a matrix's name and two optional numbers",
+            "`at` takes a matrix's name and two optional numbers, or a cell, a side and how far along it",
         ));
     }
-    match &p.values[named.len()..] {
-        [] => Ok(thing.origin),
+    let (point, rest) = match &p.values[named.len()..] {
+        [side, f, rest @ ..] if matches!(side.kind, ValueKind::Word(_)) => {
+            (along_side(&thing, side, f)?, rest)
+        }
+        [side] if matches!(side.kind, ValueKind::Word(_)) => {
+            return Err(Error::new(
+                side.span,
+                "a side in `at` takes how far along it, from 0 to 1",
+            ));
+        }
+        rest => (thing.origin, rest),
+    };
+    match rest {
+        [] => Ok(point),
         [dx, dy] => match (&dx.kind, &dy.kind) {
-            (ValueKind::Number(dx), ValueKind::Number(dy)) => {
-                Ok(thing.origin + Point::new(*dx, *dy))
-            }
+            (ValueKind::Number(dx), ValueKind::Number(dy)) => Ok(point + Point::new(*dx, *dy)),
             _ => Err(p.expected("a name and two numbers")),
         },
         _ => Err(p.expected("two numbers, or a name and two optional numbers")),
     }
+}
+
+/// The leading values of an `at` that name a thing: those before a side,
+/// or without one, those before the last two numbers.
+fn at_named(values: &[Value]) -> &[Value] {
+    if let Some(k) = values
+        .iter()
+        .skip(1)
+        .position(|v| matches!(v.kind, ValueKind::Word(_)))
+    {
+        return &values[..k + 1];
+    }
+    // a row's name and one number is a cell, so with three values the
+    // two numbers are the offset from the whole row
+    match values.len() {
+        3 => &values[..1],
+        4 => &values[..2],
+        _ => values,
+    }
+}
+
+/// The point F of the way along side `side` of `thing`, left to right
+/// on the top and bottom and top to bottom on the left and right. On an
+/// ellipse the point lies on the outline.
+fn along_side(thing: &Shape, side: &Value, f: &Value) -> Result<Point, Error> {
+    let side = match &side.kind {
+        ValueKind::Word(w) => side_named(w)
+            .ok_or_else(|| Error::new(side.span, "a side is top, bottom, left or right"))?,
+        _ => return Err(Error::new(side.span, "expected a side")),
+    };
+    let f = match f.kind {
+        ValueKind::Number(n) if (0.0..=1.0).contains(&n) => n,
+        _ => {
+            return Err(Error::new(
+                f.span,
+                "how far along a side is a number from 0 to 1",
+            ));
+        }
+    };
+    let out = side.outward();
+    let half = thing.size * 0.5;
+    let t = 2.0 * f - 1.0;
+    let across = match side {
+        Side::Top | Side::Bottom => Point::new(t * half.x, 0.0),
+        Side::Left | Side::Right => Point::new(0.0, t * half.y),
+    };
+    // t is the point's distance from the side's middle in half
+    // sides; on an ellipse x^2/a^2 + y^2/b^2 = 1, so the outline
+    // there is sqrt(1 - t^2) of the half depth from the center
+    let depth = if thing.oval {
+        (1.0 - t * t).sqrt()
+    } else {
+        1.0
+    };
+    Ok(thing.center() + across + Point::new(out.x * half.x, out.y * half.y) * depth)
+}
+
+/// How far a node of `size` moves so that the point its `place` names
+/// lands where the point `default` names sat. `default` is a fraction
+/// of the width and height from the top-left corner.
+fn placed(props: &Props, size: Point, default: Point) -> Result<Point, Error> {
+    let Some(p) = props.get("place") else {
+        return Ok(Point::ZERO);
+    };
+    let (x, y) = match p.word()? {
+        "top-left" => (0.0, 0.0),
+        "top" => (0.5, 0.0),
+        "top-right" => (1.0, 0.0),
+        "left" => (0.0, 0.5),
+        "center" => (0.5, 0.5),
+        "right" => (1.0, 0.5),
+        "bottom-left" => (0.0, 1.0),
+        "bottom" => (0.5, 1.0),
+        "bottom-right" => (1.0, 1.0),
+        _ => {
+            return Err(Error::new(
+                p.span,
+                "`place` is center, top, bottom, left, right, top-left, top-right, \
+                 bottom-left or bottom-right",
+            ));
+        }
+    };
+    Ok(Point::new(
+        size.x * (default.x - x),
+        size.y * (default.y - y),
+    ))
 }
 
 /// The property names node kind `kind` takes.
@@ -1179,7 +1270,7 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
     };
 
     Ok(Shape {
-        origin,
+        origin: origin + placed(&props, size, Point::ZERO)?,
         size,
         oval: node.kind.text == "ellipse",
         radius: props.number_or("radius", 0.0)?,
@@ -1429,7 +1520,7 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     if let Some((width, weights, p)) = weighted {
         share(&mut cells, width, &weights, p)?;
     }
-    Ok(Row {
+    let mut row = Row {
         origin,
         height: super::row::height(unit_h, &cells),
         noted: cells.iter().any(|c| c.note.is_some()),
@@ -1437,7 +1528,10 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
         radius: props.number_or("radius", 0.0)?,
         cells,
         follow,
-    })
+    };
+    let size = Point::new(row.width(), row.height);
+    row.origin = row.origin + placed(&props, size, Point::ZERO)?;
+    Ok(row)
 }
 
 /// The weights `weights` lists as `N...`, or takes from a table as
@@ -1489,18 +1583,11 @@ fn share(cells: &mut [RowCell], width: f64, weights: &[f64], p: &Property) -> Re
 /// The row cell `p`, an `at`, names, as in `at r 3` or `at r 3 0 -40`,
 /// which [`at`] has checked.
 fn cell_named(p: &Property, names: &Names) -> Option<Target> {
-    let [name, index, ..] = p.values.as_slice() else {
-        return None;
-    };
-    let (ValueKind::Word(word), ValueKind::Number(n)) = (&name.kind, &index.kind) else {
-        return None;
-    };
-    if !names.rows.contains_key(word.as_str()) || !matches!(p.values.len(), 2 | 4) {
-        return None;
-    }
+    let named = at_named(&p.values);
+    let (_, cell, _) = target(p, named, names, 0).ok()?;
     Some(Target {
-        source: names.sources[word.as_str()],
-        cell: Some(*n as usize),
+        source: names.source_of(&named[0]),
+        cell: Some(cell?),
     })
 }
 
@@ -1614,8 +1701,9 @@ fn matrix(node: &Node, names: &Names, offset: Point) -> Result<Matrix, Error> {
             label.set_color(color);
         }
     }
+    let size = Point::new(columns as f64 * unit_w, rows as f64 * unit_h);
     Ok(Matrix {
-        origin,
+        origin: origin + placed(&props, size, Point::ZERO)?,
         rows,
         columns,
         unit: Point::new(unit_w, unit_h),
@@ -1824,6 +1912,7 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
         }
     }
     let rotate = props.number_or("rotate", 0.0)?;
+    let start = origin;
     let mut origin = origin;
     let mut badge = None;
     if let Some(p) = props.get("number") {
@@ -1840,6 +1929,14 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
             *width = (*width - indent).max(0.0);
         }
     }
+    // the box runs from the badge's left to the text's right
+    let indent = origin.x - start.x;
+    let size = label.size() + Point::new(indent, 0.0);
+    let shift = placed(&props, size, Point::new(along(align), 0.0))?;
+    origin = origin + shift;
+    if let Some(b) = &mut badge {
+        b.origin = b.origin + shift;
+    }
     Ok((
         badge,
         Text {
@@ -1849,6 +1946,16 @@ fn text(node: &Node, names: &Names, offset: Point) -> Result<(Option<Shape>, Tex
             rotate,
         },
     ))
+}
+
+/// How far along its width a text sits at its origin when aligned by
+/// `align`.
+fn along(align: HAlign) -> f64 {
+    match align {
+        HAlign::Left => 0.0,
+        HAlign::Center => 0.5,
+        HAlign::Right => 1.0,
+    }
 }
 
 /// Set `label` to stretch its lines to its width, as `p` asks.
@@ -1871,16 +1978,11 @@ fn marker(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
         End::Box(s) => s.center(),
     };
     // a side puts the circle outside it, touching
-    let outward = match at.values.last().map(|v| &v.kind) {
-        Some(ValueKind::Word(w)) => match w.as_str() {
-            "top" => Point::new(0.0, -1.0),
-            "bottom" => Point::new(0.0, 1.0),
-            "left" => Point::new(-1.0, 0.0),
-            "right" => Point::new(1.0, 0.0),
-            _ => Point::ZERO,
-        },
-        _ => Point::ZERO,
-    };
+    let side = at.values.iter().skip(1).find_map(|v| match &v.kind {
+        ValueKind::Word(w) => side_named(w),
+        _ => None,
+    });
+    let outward = side.map_or(Point::ZERO, Side::outward);
     center = center + outward * (badge.diameter / 2.0);
     let number = props.require("number")?.count()?;
     Ok(badge.shape(number, center))
@@ -1969,16 +2071,19 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
         color: props.color_or("color", Color::BLACK)?,
         bullet: false,
     };
+    let label = Label {
+        runs: vec![run],
+        size: props.number_or("size", TEXT_SIZE)?,
+        width: None,
+        justify: false,
+        fonts: names.fonts.clone(),
+    };
+    let align = props.align()?;
+    let shift = placed(&props, label.size(), Point::new(along(align), 0.0))?;
     Ok(Text {
-        origin,
-        label: Label {
-            runs: vec![run],
-            size: props.number_or("size", TEXT_SIZE)?,
-            width: None,
-            justify: false,
-            fonts: names.fonts.clone(),
-        },
-        align: props.align()?,
+        origin: origin + shift,
+        label,
+        align,
         rotate: 0.0,
     })
 }
@@ -2137,7 +2242,7 @@ fn code(node: &Node, names: &Names, offset: Point) -> Result<Code, Error> {
             }
         },
     };
-    Ok(Code {
+    let mut code = Code {
         origin,
         lines,
         size: props.number_or("size", 14.0)?,
@@ -2152,7 +2257,9 @@ fn code(node: &Node, names: &Names, offset: Point) -> Result<Code, Error> {
         emphasize,
         emphasis: color("emphasis", hex(0xfff3b0))?,
         fonts: names.fonts.clone(),
-    })
+    };
+    code.origin = code.origin + placed(&props, code.extent(), Point::ZERO)?;
+    Ok(code)
 }
 
 fn brace(node: &Node, names: &Names, offset: Point) -> Result<Brace, Error> {
@@ -2240,8 +2347,10 @@ fn ruler(node: &Node, names: &Names, offset: Point) -> Result<Ruler, Error> {
 
 /// The end a connector's `from` or `to` names, and the thing it names.
 /// It is two numbers, a shape's name, a row's name and a cell's index,
-/// or a matrix's name and a cell's row and column. A side or a corner after a name puts the end at the middle of
-/// that side or at that corner, facing out of it.
+/// or a matrix's name and a cell's row and column. A side or a corner
+/// after a name puts the end at the middle of that side or at that
+/// corner, facing out of it, and a side and a number F puts it F of the
+/// way along that side.
 fn end(
     p: &Property,
     names: &Names,
@@ -2291,7 +2400,14 @@ fn end(
             }
             _ => return Err(Error::new(v.span, "expected a side or a corner")),
         },
-        [_, extra, ..] => return Err(Error::new(extra.span, "too many values")),
+        [side, f] => End::Side {
+            at: along_side(&thing, side, f)?,
+            out: match &side.kind {
+                ValueKind::Word(w) => side_named(w).map_or(Point::ZERO, Side::outward),
+                _ => Point::ZERO,
+            },
+        },
+        [_, _, extra, ..] => return Err(Error::new(extra.span, "too many values")),
     };
     Ok((end, Some(source)))
 }
@@ -2512,12 +2628,16 @@ fn target<'v>(
 }
 
 fn side(p: &Property) -> Result<Side, Error> {
-    match p.word()? {
-        "top" => Ok(Side::Top),
-        "bottom" => Ok(Side::Bottom),
-        "left" => Ok(Side::Left),
-        "right" => Ok(Side::Right),
-        _ => Err(Error::new(p.span, "a side is top, bottom, left or right")),
+    side_named(p.word()?).ok_or_else(|| Error::new(p.span, "a side is top, bottom, left or right"))
+}
+
+fn side_named(word: &str) -> Option<Side> {
+    match word {
+        "top" => Some(Side::Top),
+        "bottom" => Some(Side::Bottom),
+        "left" => Some(Side::Left),
+        "right" => Some(Side::Right),
+        _ => None,
     }
 }
 
@@ -2872,7 +2992,7 @@ mod tests {
             (
                 2,
                 17,
-                "`box` has no property `colour`; it takes at, size, fill, stroke, \
+                "`box` has no property `colour`; it takes at, place, size, fill, stroke, \
                  stroke-width, dash, radius, text, text-size, text-color, font, width, \
                  padding, text-align, anchor, style"
                     .into()
@@ -4378,7 +4498,7 @@ mod tests {
             )
             .unwrap_err()
             .2,
-            "`at` takes a matrix's name and two optional numbers"
+            "`at` takes a matrix's name and two optional numbers, or a cell, a side and how far along it"
         );
     }
 
@@ -4392,5 +4512,101 @@ mod tests {
         assert_eq!(s.object_at(Point::new(150.0, 120.0), 0.0), Some(0));
         assert_eq!(s.object_at(Point::new(110.0, 96.0), 0.0), Some(0));
         assert_eq!(s.object_at(Point::new(150.0, 150.0), 0.0), None);
+    }
+
+    #[test]
+    fn at_may_name_a_point_along_a_side_and_place_puts_a_node_by_its_own_point() {
+        let s = scene(
+            r#"canvas { size 500 300;
+                box bar { at 0 0; size 400 20; }
+                row strip { at bar bottom 0.375 0 30; place top; unit 24 24; chars "ACGN"; }
+                box b { at bar right 0.5; place left; size 10 10; }
+                matrix m { at 0 100; rows 2; columns 3; unit 20 10; }
+                box c { at m 1 2 bottom 0.5; place top; size 10 10; }
+                box d { at strip 1 left 1 -5 0; place bottom-right; size 10 10; } }"#,
+        )
+        .unwrap();
+        let origin = |k: usize| match &s.objects[k].kind {
+            Kind::Shape(shape) => shape.origin,
+            Kind::Row(row) => row.origin,
+            other => panic!("expected a box or a row, got {other:?}"),
+        };
+        // 0.375 of 400 is 150, less half the row's 96
+        assert_eq!(origin(1), Point::new(102.0, 50.0));
+        assert_eq!(origin(2), Point::new(400.0, 5.0));
+        assert_eq!(origin(4), Point::new(45.0, 120.0));
+        assert_eq!(origin(5), Point::new(111.0, 64.0));
+    }
+
+    #[test]
+    fn a_connector_end_may_sit_along_a_side() {
+        let s = scene(
+            "canvas { size 300 200;
+                box a { at 0 0; size 100 40; }
+                ellipse e { at 200 100; size 100 40; }
+                arrow { from a bottom 0.25; to e top 0.25; } }",
+        )
+        .unwrap();
+        let Kind::Connector(c) = &s.objects[2].kind else {
+            panic!("expected an arrow");
+        };
+        assert_eq!(c.from, Point::new(25.0, 40.0));
+        assert_eq!(c.from_dir, Some(Point::new(0.0, 1.0)));
+        // a quarter along an ellipse's top is half its half width from
+        // the middle, where the outline is sqrt(3/4) of the half height
+        // above the center
+        assert_eq!(c.to, Point::new(225.0, 120.0 - 20.0 * 0.75f64.sqrt()));
+        assert_eq!(c.to_dir, Some(Point::new(0.0, -1.0)));
+    }
+
+    #[test]
+    fn place_on_text_moves_its_box_and_align_alone_keeps_it_where_it_was() {
+        let s = scene(
+            r#"canvas { size 300 300;
+                text { at 100 100; text "word"; align center; }
+                text { at 100 100; text "word"; align center; place center; }
+                text { at 100 100; text "word"; place bottom-right; } }"#,
+        )
+        .unwrap();
+        let text = |k: usize| match &s.objects[k].kind {
+            Kind::Text(t) => t.clone(),
+            other => panic!("expected text, got {other:?}"),
+        };
+        let size = text(0).label.size();
+        assert_eq!(text(0).origin, Point::new(100.0, 100.0));
+        assert_eq!(text(1).origin, Point::new(100.0, 100.0 - size.y / 2.0));
+        assert_eq!(text(2).origin, Point::new(100.0, 100.0) - size);
+    }
+
+    #[test]
+    fn a_side_in_at_needs_how_far_along_it_from_0_to_1() {
+        let src = |at: &str| {
+            format!(
+                "canvas {{ size 10 10;\n box a {{ at 0 0; size 5 5; }}\n box {{ at {at}; size 1 1; }} }}"
+            )
+        };
+        assert_eq!(
+            scene(&src("a top")).unwrap_err(),
+            (
+                3,
+                13,
+                "a side in `at` takes how far along it, from 0 to 1".into()
+            )
+        );
+        assert_eq!(
+            scene(&src("a top 2")).unwrap_err(),
+            (3, 17, "how far along a side is a number from 0 to 1".into())
+        );
+        assert_eq!(
+            scene(&src("a middle 0.5")).unwrap_err(),
+            (3, 13, "a side is top, bottom, left or right".into())
+        );
+        assert_eq!(
+            scene("canvas { size 10 10;\n box { size 1 1; place middle; } }")
+                .unwrap_err()
+                .2,
+            "`place` is center, top, bottom, left, right, top-left, top-right, \
+             bottom-left or bottom-right"
+        );
     }
 }

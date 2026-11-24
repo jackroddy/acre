@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `at NAME SIDE F` puts a node at the point F of the way along a side of the
+  thing NAME names. F runs from 0 to 1, left to right on the top and bottom
+  and top to bottom on the left and right. Two numbers after F move the point.
+  A row's cell takes `ROW N SIDE F`. A matrix's cell takes `MATRIX R C SIDE F`,
+  which `at` did not take before. `from` and `to` take `SIDE F` as well, and
+  so does a `marker`'s `at`. On an ellipse the point lies on the outline.
+- `place` on a box, ellipse, row, matrix, code, text or math names the point
+  of its own box that `at` puts down. It takes `center`, a side or a corner.
+  Without `place`, a node sits by its top-left corner as before. Text and
+  math sit by the point of their top edge that `align` names, as before.
+  `anchor` still names the point a timeline scales about.
 - `repeat INDEX FIRST LAST { NODE... }` draws its nodes once for each whole
   number from FIRST to LAST, both included. In each copy, INDEX stands for
   that number wherever a `let` name can, inside `( )` as well. A node named
