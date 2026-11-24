@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T22:05:17.207492447Z",
-  "updated_at": "2026-11-24T22:59:23.647071218Z",
+  "updated_at": "2026-11-24T23:12:30.25155752Z",
   "closed_at": "2026-11-24T22:59:23.647071218Z",
   "close_reason": "Landed in 3cf6d44. `scene::edit::reorder_edits` moves a stack or grid child before a sibling or to the end, carrying its own lines, its trailing comment and the comment lines directly above it. `scene::edit::siblings` gives the children and their `Layout`. In acre-gui, `reorder::slot` picks the place, `Drag::reorder` and `View::aim_reorder` drive the drag, and `App::reorder` writes the edits and keeps the child selected. A drag of several nodes that includes a stack child is refused.",
   "resolution": "done",
-  "notes": [],
+  "notes": [
+    {
+      "id": "7f92bf6a",
+      "at": "2026-11-24T23:12:30.25155672Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack tried the reorder by hand over the neovim link on 2026-11-24, on a four-box stack with a comment above the last child, and it worked.",
+      "commit": "3cf6d44",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "8a9536b",
