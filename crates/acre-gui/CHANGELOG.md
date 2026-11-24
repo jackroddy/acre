@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-24
+
 ### Added
 
 - The `acre-gui` viewer. It renders a drawing and draws it again when the
@@ -192,3 +194,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   button is released. The × beside a node's own value takes it away. For
   a refused change acre-gui writes nothing, and the status line gives the
   reason.
+
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-gui-v0.1.0...HEAD
+[0.1.0]: https://github.com/jackroddy/acre/releases/tag/acre-gui-v0.1.0

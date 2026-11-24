@@ -13,6 +13,6 @@ name = "acre"
 path = "src/main.rs"
 
 [dependencies]
-acre = { path = "../acre", version = "0.1.0" }
+acre = { path = "../acre", version = "0.2.0" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

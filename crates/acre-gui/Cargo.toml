@@ -9,7 +9,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-acre = { path = "../acre", version = "0.1.0" }
+acre = { path = "../acre", version = "0.2.0" }
 clap = { version = "4", features = ["derive"] }
 eframe = "0.37"
 rfd = "0.18"

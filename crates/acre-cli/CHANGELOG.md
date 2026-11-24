@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-24
+
 ### Added
 
 - The `acre` command, moved here from the `acre` crate. Its 0.1.0 release
@@ -43,3 +45,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `acre reference [KIND]` lists every node kind, or one, with each property
   it takes, the values the property takes, and what it does.
   `acre reference timeline` lists the timeline's actions.
+
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-cli-v0.1.0...HEAD
+[0.1.0]: https://github.com/jackroddy/acre/releases/tag/acre-cli-v0.1.0
