@@ -2,6 +2,7 @@
 //! its changes, or renders what an editor sends it over stdin.
 
 mod app;
+mod arrange;
 mod drag;
 mod field;
 mod handle;

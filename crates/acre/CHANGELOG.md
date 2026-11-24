@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::arrange_edits` works out the edits that move each of
+  several nodes by an offset of its own, as one list of edits. An `at`
+  that names another arranged node, or a thing inside one, gets its `DX
+  DY` changed by the difference between the two offsets. A node inside
+  another arranged node moves with it. It refuses what `move_edits`
+  refuses. It also refuses an end, a marker or a brace that names a thing
+  arranged by a different offset from its own node, since the node would
+  change shape.
 - `scene::edit::resize_edits` works out the edits that resize a box or an
   ellipse from one box to another, given by top-left and bottom-right
   corners. It writes the new `size`, or adds one to a node its text sizes.

@@ -12,6 +12,7 @@ use eframe::egui::{
     ViewportCommand,
 };
 
+use crate::arrange::{self, Arrange};
 use crate::field::{self, Field};
 use crate::handle::{self, Reshape};
 use crate::link::{Incoming, Link, Outgoing, Replace};
@@ -20,6 +21,7 @@ use crate::playback::{self, Playback};
 use crate::properties::Properties;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
+use crate::snap;
 use crate::tool::{self, Step, Tool};
 use crate::view::{MenuItem, View};
 
@@ -354,6 +356,38 @@ impl App {
         self.notice = written.err();
     }
 
+    /// Line up or space out the selected nodes as `how` says, by the
+    /// boxes of what they draw at the time shown, or name on the status
+    /// line why not. A node inside another selected node moves with it.
+    fn arrange(&mut self, how: Arrange) {
+        let Some(scene) = &self.scene else { return };
+        let drawn: Vec<(lang::Span, snap::Bounds)> = arrange::outermost(self.selection.spans())
+            .into_iter()
+            .filter_map(|node| Some((node, arrange::bounds(scene, node, self.time)?)))
+            .collect();
+        let boxes: Vec<snap::Bounds> = drawn.iter().map(|&(_, b)| b).collect();
+        let moves: Vec<(lang::Span, f64, f64)> = drawn
+            .iter()
+            .zip(arrange::offsets(how, &boxes))
+            .filter(|&(_, by)| by != scene::Point::ZERO)
+            .map(|(&(node, _), by)| (node, by.x, by.y))
+            .collect();
+        if moves.is_empty() {
+            self.notice = None;
+            return;
+        }
+        let written = self
+            .on_source(how.verb(), |text| edit::arrange_edits(text, &moves))
+            .and_then(|edits| {
+                if edits.is_empty() {
+                    Ok(())
+                } else {
+                    self.write(&edits)
+                }
+            });
+        self.notice = written.err();
+    }
+
     /// Ask the editor to make `edits`, or make them in the file and show
     /// it again.
     fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
@@ -538,7 +572,9 @@ impl App {
     }
 
     /// The buttons that zoom the render, the snap and grid toggles, and
-    /// the tools, with Done and Cancel while a path is being drawn.
+    /// the tools, with Done and Cancel while a path is being drawn, and
+    /// the buttons that align two or more selected nodes and space out
+    /// three or more.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("−").on_hover_text("zoom out").clicked() {
@@ -587,6 +623,16 @@ impl App {
                 if ui.button("Cancel").clicked() {
                     self.view.tool = Tool::Select;
                     self.view.path.clear();
+                }
+            }
+            let selected = arrange::outermost(self.selection.spans()).len();
+            if selected >= 2 {
+                ui.separator();
+                let space: &[Arrange] = if selected >= 3 { &Arrange::SPACE } else { &[] };
+                for &how in Arrange::ALIGN.iter().chain(space) {
+                    if ui.button(how.label()).on_hover_text(how.hint()).clicked() {
+                        self.arrange(how);
+                    }
                 }
             }
         });

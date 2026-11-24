@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use super::{Mover, TextEdit, apply, locate, number, open_brace, places};
+use super::{Moved, Mover, TextEdit, apply, locate, number, open_brace, places};
 use crate::lang::{self, Error, Node, Program, Span, Value, ValueKind};
 use crate::scene::Point;
 use crate::scene::build;
@@ -256,7 +256,14 @@ pub fn paste_edits(
     let pasted = nodes_in(text)?;
 
     let (renamed, names) = renamed(&program, &pasted, text);
-    let moved: Vec<(&str, bool)> = names.iter().map(|(n, r)| (n.as_str(), *r)).collect();
+    let moved: Vec<Moved> = names
+        .iter()
+        .map(|(name, repeated)| Moved {
+            name,
+            repeated: *repeated,
+            by: [dx, dy],
+        })
+        .collect();
 
     let insert = insertion(source, canvas, &renamed);
     let start = insert.span.start;

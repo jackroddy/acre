@@ -16,6 +16,15 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- With two or more nodes selected, the toolbar shows Left, Centre, Right,
+  Top, Middle and Bottom. Each lines up the selected nodes on that edge or
+  centre of the box around them all. With three or more, Space across and
+  Space down sort the nodes by their left or top edge. The first and last
+  stay put, and the others move so the gaps between neighbours are equal.
+  Each node's box holds everything it draws at the time shown. A node
+  inside another selected node moves with it. The offsets are written with
+  up to two decimals, as for a snapped drag, and go out as one edit. A
+  node a stack or grid places is refused, as for a drag.
 - One selected box or ellipse shows eight handles, at its corners and the
   middles of its sides. A drag on a handle draws the new outline and
   resizes the node on release. The dragged edges snap to the edges and

@@ -3,6 +3,8 @@
 //!
 //! A viewer that drags objects asks [`move_edits`] for the changes to
 //! the numbers that place their nodes, and [`apply`] makes them.
+//! [`arrange_edits`] moves each node by an offset of its own, as one
+//! that aligns or spaces them needs.
 //! [`resize_edits`] resizes a box or an ellipse, and [`vertex_edits`]
 //! moves one vertex of a polygon or a polyline.
 //! One that edits an object's text reads it with [`text_of`] and asks
@@ -77,34 +79,61 @@ pub fn apply(source: &str, edits: &[TextEdit]) -> String {
 /// with it. An end, a marker or a brace on a thing that stays put is
 /// refused. The error is the first such node's and says why.
 pub fn move_edits(source: &str, nodes: &[Span], dx: f64, dy: f64) -> Result<Vec<TextEdit>, Error> {
+    let moves: Vec<(Span, f64, f64)> = nodes.iter().map(|&span| (span, dx, dy)).collect();
+    arrange_edits(source, &moves)
+}
+
+/// The edits to `source` that move each node whose span is in `moves`
+/// by its own offset, `dx` pixels across and `dy` down, in source order,
+/// as [`move_edits`] moves one node.
+///
+/// A node inside another of `moves` moves with it and takes no edits of
+/// its own. An `at` that names another node of `moves`, or a thing
+/// inside one, follows it, so its `DX DY` change by the difference
+/// between the two offsets. An end, a marker's `at` or a brace's `over` that
+/// names such a thing follows it and takes no edit.
+///
+/// # Errors
+///
+/// As [`move_edits`]. Also if an end, a marker or a brace follows a thing
+/// that moves by another offset than its own node, which would change
+/// the node's shape.
+pub fn arrange_edits(source: &str, moves: &[(Span, f64, f64)]) -> Result<Vec<TextEdit>, Error> {
     let program = lang::parse(source)?;
-    let mut found = nodes
-        .iter()
-        .map(|&span| locate(&program, span))
-        .collect::<Result<Vec<_>, _>>()?;
-    found.sort_by_key(|(_, path)| path[path.len() - 1].span.start);
-    let mut outer: Vec<(&Node, Vec<&Node>)> = Vec::new();
-    for (canvas, path) in found {
+    let mut found = Vec::new();
+    for &(span, dx, dy) in moves {
+        let (canvas, path) = locate(&program, span)?;
+        found.push((canvas, path, [dx, dy]));
+    }
+    found.sort_by_key(|(_, path, _)| path[path.len() - 1].span.start);
+    let mut outer: Vec<(&Node, Vec<&Node>, [f64; 2])> = Vec::new();
+    for (canvas, path, by) in found {
         let start = path[path.len() - 1].span.start;
         if outer
             .last()
-            .is_none_or(|(_, o)| o[o.len() - 1].span.end <= start)
+            .is_none_or(|(_, o, _)| o[o.len() - 1].span.end <= start)
         {
-            outer.push((canvas, path));
+            outer.push((canvas, path, by));
         }
     }
     let mut moved = Vec::new();
-    for (_, path) in &outer {
-        nodes::defined(path[path.len() - 1], false, &mut moved);
+    for (_, path, by) in &outer {
+        let mut names = Vec::new();
+        nodes::defined(path[path.len() - 1], false, &mut names);
+        moved.extend(names.into_iter().map(|(name, repeated)| Moved {
+            name,
+            repeated,
+            by: *by,
+        }));
     }
     let mut edits = Vec::new();
-    for (canvas, path) in &outer {
+    for (canvas, path, by) in &outer {
         let (target, around) = path.split_last().expect("`locate` gives the node it finds");
         let mover = Mover {
             source,
             canvas,
             target,
-            by: [dx, dy],
+            by: *by,
             moved: &moved,
             paste: false,
         };
@@ -429,21 +458,30 @@ struct NodeText<'a> {
 /// What [`move_edits`] reads for one moved node, [`paste_edits`] for
 /// one pasted node, or [`text_of`] and [`text_edits`] for their node.
 /// `by` is 0 for the text.
+#[derive(Clone, Copy)]
 struct Mover<'a> {
     source: &'a str,
     canvas: &'a Node,
     target: &'a Node,
     by: [f64; 2],
-    /// The names given in the nodes moved or pasted together, each with
-    /// whether a `repeat` copies it.
+    /// The names given in the nodes moved or pasted together.
     //
     // an end, a marker or a brace on one of these things follows it, and
     // so does an `at`: those take no edit where a move of the node alone
     // refuses them or adds the offset
-    moved: &'a [(&'a str, bool)],
+    moved: &'a [Moved<'a>],
     /// Whether the node is pasted, so that an end, a marker or a brace
     /// on any thing follows it.
     paste: bool,
+}
+
+/// A name given in a node that moves or is pasted with others.
+struct Moved<'a> {
+    name: &'a str,
+    /// Whether a `repeat` copies it.
+    repeated: bool,
+    /// The offset of the node that gives it.
+    by: [f64; 2],
 }
 
 impl Mover<'_> {
@@ -456,9 +494,12 @@ impl Mover<'_> {
             "marker" => self.marker()?,
             "line" | "arrow" | "sweep" | "brace" => {
                 if let Some(p) = own(self.target, "over") {
-                    let follows = p.values.iter().all(|v| {
-                        !matches!(v.kind, ValueKind::Word(_)) || self.follows(Some(v), false)
-                    });
+                    let mut follows = true;
+                    for v in &p.values {
+                        if matches!(v.kind, ValueKind::Word(_)) {
+                            follows &= self.follows(p, Some(v))?;
+                        }
+                    }
                     return Ok(follows.then(Vec::new));
                 }
                 let mut edits = self.end("from")?;
@@ -472,21 +513,43 @@ impl Mover<'_> {
         Ok(Some(edits))
     }
 
-    /// Whether `value` names a thing the node follows: one in `moved`,
-    /// or in a paste any thing unless `moved_only`.
-    fn follows(&self, value: Option<&Value>, moved_only: bool) -> bool {
+    /// The offset of the thing `value` names when the node follows it:
+    /// one in `moved`, or in a paste any thing unless `moved_only`.
+    fn followed(&self, value: Option<&Value>, moved_only: bool) -> Option<[f64; 2]> {
         let Some(Value {
             kind: ValueKind::Word(w),
             ..
         }) = value
         else {
-            return false;
+            return None;
         };
-        self.paste && !moved_only
-            || self
-                .moved
-                .iter()
-                .any(|&(name, repeated)| w == name || repeated && nodes::digits_after(w, name))
+        let named = self
+            .moved
+            .iter()
+            .find(|m| w == m.name || m.repeated && nodes::digits_after(w, m.name));
+        match named {
+            Some(m) => Some(m.by),
+            None => (self.paste && !moved_only).then_some(self.by),
+        }
+    }
+
+    /// Whether the end, marker's `at` or brace's `over` `p` follows the
+    /// thing its `value` names, or an error when that thing moves by
+    /// another offset than the node.
+    fn follows(&self, p: &Property, value: Option<&Value>) -> Result<bool, Error> {
+        match self.followed(value, false) {
+            None => Ok(false),
+            Some(by) if same_offset(by, self.by) => Ok(true),
+            Some(_) => Err(Error::new(
+                p.span,
+                format!(
+                    "`{}` follows `{}`, which moves by another offset than this {}, so the {2} would change shape; leave one of them out",
+                    p.key.text,
+                    value.map_or("", |v| &self.source[v.span.start..v.span.end]),
+                    self.target.kind.text,
+                ),
+            )),
+        }
     }
 
     /// An error unless the node's place is its own to set: not a copy
@@ -673,9 +736,25 @@ impl Mover<'_> {
             return Ok(self.new_at().into_iter().collect());
         };
         self.literal(p)?;
-        if self.follows(p.values.first(), true) {
-            return Ok(Vec::new());
+        if let Some(by) = self.followed(p.values.first(), true) {
+            if same_offset(by, self.by) {
+                return Ok(Vec::new());
+            }
+
+            // the named thing moves by its own offset, so the node's
+            // `DX DY` make up the rest
+            let rest = Mover {
+                by: [self.by[0] - by[0], self.by[1] - by[1]],
+                ..*self
+            };
+            return rest.shift_at(p);
         }
+        self.shift_at(p)
+    }
+
+    /// The edits that add the offset to the node's `at` `p`: to its X
+    /// and Y, or to its DX and DY after a named thing.
+    fn shift_at(&self, p: &Property) -> Result<Vec<TextEdit>, Error> {
         if let [first, ..] = p.values.as_slice()
             && let ValueKind::Number(_) = first.kind
         {
@@ -707,7 +786,7 @@ impl Mover<'_> {
             return Ok(Vec::new());
         };
         self.literal(p)?;
-        if self.follows(p.values.first(), false) {
+        if self.follows(p, p.values.first())? {
             return Ok(Vec::new());
         }
         match p.values.first() {
@@ -733,7 +812,7 @@ impl Mover<'_> {
 
     fn end_point(&self, p: &Property) -> Result<Vec<TextEdit>, Error> {
         self.literal(p)?;
-        if self.follows(p.values.first(), false) {
+        if self.follows(p, p.values.first())? {
             return Ok(Vec::new());
         }
         if let Some(Value {
@@ -955,6 +1034,12 @@ fn open_brace(source: &str, node: &Node) -> usize {
             _ => i += 1,
         }
     }
+}
+
+/// Whether offsets `a` and `b` are the same once rounded to two
+/// decimals, as edits write them.
+fn same_offset(a: [f64; 2], b: [f64; 2]) -> bool {
+    (0..2).all(|axis| ((a[axis] - b[axis]) * 100.0).round() == 0.0)
 }
 
 /// The fewest decimals, up to two, that write `n` rounded to two.
@@ -1546,6 +1631,110 @@ mod tests {
         let err = move_edits(src, &[Span { start: 3, end: 9 }], 1.0, 1.0).unwrap_err();
         assert!(err.message.contains("no node"), "{}", err.message);
         assert!(move_edits("canvas {", &[Span::default()], 1.0, 1.0).is_err());
+    }
+
+    /// `src` in acre's layout, with each node that starts with the first
+    /// of a triple moved by the other two, after checking that every
+    /// object moved by exactly the offset of the outermost node that
+    /// drew it.
+    fn arranged(src: &str, moves: &[(&str, f64, f64)]) -> String {
+        let src = format(src).unwrap();
+        let moves: Vec<(Span, f64, f64)> = moves
+            .iter()
+            .map(|&(n, dx, dy)| (span_of(&src, n), dx, dy))
+            .collect();
+        let before = scene(&src);
+        let out = apply(&src, &arrange_edits(&src, &moves).unwrap());
+        assert_eq!(format(&out).unwrap(), out);
+        let after = scene(&out);
+        for (k, o) in before.objects.iter().enumerate() {
+            let inside =
+                |(s, _, _): &&(Span, f64, f64)| s.start <= o.source.start && o.source.end <= s.end;
+            let outermost = moves
+                .iter()
+                .filter(inside)
+                .max_by_key(|(s, _, _)| s.end - s.start);
+            let Some(&(_, dx, dy)) = outermost else {
+                continue;
+            };
+            let (min0, max0) = before.bounds(k, 0.0).unwrap();
+            let (min1, max1) = after.bounds(k, 0.0).unwrap();
+            for (a, b) in [(min0, min1), (max0, max1)] {
+                assert!((b.x - a.x - dx).abs() < 1e-9, "{a:?} to {b:?} in\n{out}");
+                assert!((b.y - a.y - dy).abs() < 1e-9, "{a:?} to {b:?} in\n{out}");
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn each_arranged_node_moves_by_its_own_offset() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box b { at 100 50; size 20 20; } arrow k { from a; to b; } }";
+        let out = arranged(src, &[("box a", 5.0, 0.0), ("box b", 0.0, -7.5)]);
+        assert!(
+            out.contains("at 15 10;") && out.contains("at 100 42.5;"),
+            "{out}"
+        );
+        assert!(out.contains("from a;") && out.contains("to b;"), "{out}");
+    }
+
+    #[test]
+    fn an_at_on_an_arranged_thing_takes_the_difference_of_the_offsets() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box b { at a 10 0; size 20 20; } box c { at a right 0.5; size 20 20; } }";
+        let out = arranged(
+            src,
+            &[
+                ("box a", 5.0, 3.0),
+                ("box b", 20.0, -2.0),
+                ("box c", 5.0, 3.0),
+            ],
+        );
+        assert!(
+            out.contains("at 15 13;") && out.contains("at a 25 -5;"),
+            "{out}"
+        );
+        assert!(out.contains("at a right 0.5;"), "{out}");
+        let out = arranged(src, &[("box a", 5.0, 3.0), ("box c", 0.0, 3.0)]);
+        assert!(out.contains("at a right 0.5 -5 0;"), "{out}");
+    }
+
+    #[test]
+    fn an_at_on_a_thing_inside_another_arranged_node_takes_the_difference() {
+        let src = "canvas { size 300 200; group g { at 100 100; box c { at 0 0; size 20 20; } } \
+                   box d { at c 40 0; size 20 20; } }";
+        let out = arranged(src, &[("group g", 5.0, 0.0), ("box d", 0.0, 10.0)]);
+        assert!(
+            out.contains("at 105 100;") && out.contains("at c 35 10;"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_end_on_a_thing_arranged_by_another_offset_is_refused() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   arrow k { from a; to 200 100; } }";
+        let (a, k) = (span_of(src, "box a"), span_of(src, "arrow k"));
+        let e = arrange_edits(src, &[(a, 5.0, 0.0), (k, 0.0, 5.0)]).unwrap_err();
+        assert!(
+            e.message
+                .contains("`from` follows `a`, which moves by another offset"),
+            "{}",
+            e.message
+        );
+        let out = arranged(src, &[("box a", 5.0, 0.0), ("arrow k", 5.0, 0.0)]);
+        assert!(out.contains("to 205 100;"), "{out}");
+    }
+
+    #[test]
+    fn a_node_inside_another_arranged_node_moves_with_it() {
+        let src = "canvas { size 300 200; group g { at 100 100; box c { at 0 0; size 20 20; } } }";
+        let out = arranged(src, &[("box c", 50.0, 50.0), ("group g", 5.0, 0.0)]);
+        assert!(
+            out.contains("at 105 100;") && out.contains("at 0 0;"),
+            "{out}"
+        );
     }
 
     #[test]
