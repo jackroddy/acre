@@ -113,11 +113,11 @@ impl App {
             Ok(text) => {
                 self.path = Some(path.to_path_buf());
                 self.modified = modified(path);
-                self.notice = self.recent.touch(path).err();
                 let now = Instant::now();
                 self.playback.pause(now);
                 self.playback.seek(now, 0.0);
                 self.show(text);
+                self.notice = self.recent.touch(path).err();
             }
             Err(e) => self.notice = Some(format!("cannot open {}: {e}", path.display())),
         }
@@ -133,6 +133,7 @@ impl App {
                 self.playback
                     .set_duration(Instant::now(), scene.canvas.duration);
                 self.error = None;
+                self.notice = None;
                 let missing = scene.missing_glyphs();
                 if missing != self.missing {
                     for c in &missing {
@@ -526,6 +527,8 @@ impl App {
                     Color32::from_rgb(0xf7, 0x76, 0x8e),
                     format!("{line}:{col}: {}", e.message),
                 );
+            } else if let Some(notice) = &self.notice {
+                ui.label(notice);
             } else if let Some(&c) = self.missing.first() {
                 let more = match self.missing.len() - 1 {
                     0 => String::new(),
@@ -535,8 +538,6 @@ impl App {
                     Color32::from_rgb(0xe0, 0xaf, 0x68),
                     format!("{}{more}", missing_glyph(c)),
                 );
-            } else if let Some(notice) = &self.notice {
-                ui.label(notice);
             }
         });
     }

@@ -68,6 +68,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Fixed
 
+- A missing-glyph warning no longer hides the status line's notices. A
+  notice set after the last build, such as the reason a drag was refused,
+  now shows ahead of the warning. A new build clears the notice. A source
+  error still shows first.
+
 - The viewer no longer crashes in a very wide window. It draws a margin past
   each edge of the pane, so its texture was 1.5 times the pane's size. egui
   creates the GPU device with a limit of 8192 pixels on a side for a texture.
