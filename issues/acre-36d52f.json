@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-23T19:55:32.907294934Z",
-  "updated_at": "2026-11-24T06:36:24.404243535Z",
+  "updated_at": "2026-11-24T06:36:40.924274673Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "8546015d",
+      "at": "2026-11-24T06:36:40.924274113Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Decided on 2026-11-23: layout measures a node once, at the widest text the timeline gives it, so boxes sized to text and stacks do not reflow over time.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "023610e",
