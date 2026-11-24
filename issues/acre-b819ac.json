@@ -3,26 +3,29 @@
   "title": "Markup sets text between single asterisks in italic",
   "body": "scene/markup.rs reads `code`, `**bold**`, `{color}` and `$math$` and `- ` bullets, and has no italic mark, though sans-italic exists. Jack accepted `*x*`, as in markdown. Italic mono does not exist, so a code span inside italics stays upright.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-9c9aee",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T07:48:11.979008479Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:36:24.376580486Z",
-  "updated_at": "2026-11-24T07:33:11.979008479Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:36:40.670437062Z",
+  "closed_at": "2026-11-24T07:36:40.670437062Z",
+  "close_reason": "Landed in 6e5ed79. `lang::italic_mark` decides which single `*` is an italic mark, and both `scene::markup::runs` and `lang::highlight` call it. The rule and the faces are recorded on acre-4518a5. Every figure and example renders byte for byte as before.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "6faae32",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "6e5ed79",
+      "branch": "dev"
+    }
   }
 }
