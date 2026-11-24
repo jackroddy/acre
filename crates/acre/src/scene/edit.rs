@@ -2,6 +2,8 @@
 //!
 //! A viewer that drags an object asks [`move_edits`] for the changes to
 //! the numbers that place the object's node, and [`apply`] makes them.
+//! [`node_path`] and [`node_span`] find a node again after an edit
+//! shifts its span.
 
 use super::build::at_named;
 use crate::lang::{self, Error, Node, Property, Span, Value, ValueKind};
@@ -100,6 +102,34 @@ pub fn move_edits(source: &str, node: Span, dx: f64, dy: f64) -> Result<Vec<Text
     edits.retain(|e| source[e.span.start..e.span.end] != e.text);
     edits.sort_by_key(|e| e.span.start);
     Ok(edits)
+}
+
+/// The place in `program` of the node whose span is `span`: its index
+/// among the top nodes, then among each parent's children in turn.
+pub fn node_path(program: &lang::Program, span: Span) -> Option<Vec<usize>> {
+    let mut path = Vec::new();
+    let mut nodes = &program.nodes[..];
+    loop {
+        let i = nodes
+            .iter()
+            .position(|n| n.span.start <= span.start && span.end <= n.span.end)?;
+        path.push(i);
+        if nodes[i].span == span {
+            return Some(path);
+        }
+        nodes = &nodes[i].children;
+    }
+}
+
+/// The span of the node at `path` in `program`, as [`node_path`] gives
+/// it, or `None` when no node is there.
+pub fn node_span(program: &lang::Program, path: &[usize]) -> Option<Span> {
+    let (&last, around) = path.split_last()?;
+    let mut nodes = &program.nodes[..];
+    for &i in around {
+        nodes = &nodes.get(i)?.children;
+    }
+    Some(nodes.get(last)?.span)
 }
 
 /// Push onto `path` the node in `nodes` whose span is `span` and the
@@ -880,5 +910,39 @@ mod tests {
         let err = move_edits(src, Span { start: 3, end: 9 }, 1.0, 1.0).unwrap_err();
         assert!(err.message.contains("no node"), "{}", err.message);
         assert!(move_edits("canvas {", Span::default(), 1.0, 1.0).is_err());
+    }
+
+    #[test]
+    fn a_node_path_counts_siblings_down_from_the_top() {
+        let src = "canvas { size 300 200; box a { at 10 10; } group { box b { at 0 0; } box c { at 5 5; } } }";
+        let program = parse(src).unwrap();
+        let c = span_of(src, "box c");
+        assert_eq!(node_path(&program, c), Some(vec![0, 1, 1]));
+        assert_eq!(node_span(&program, &[0, 1, 1]), Some(c));
+        assert_eq!(node_path(&program, program.nodes[0].span), Some(vec![0]));
+    }
+
+    #[test]
+    fn a_node_path_finds_the_node_again_after_a_move_shifts_its_span() {
+        let src =
+            format("canvas { size 300 200; box a { size 20 20; } group { box b { at 0 0; } } }")
+                .unwrap();
+        let b = span_of(&src, "box b");
+        let path = node_path(&parse(&src).unwrap(), b).unwrap();
+        let edits = move_edits(&src, span_of(&src, "box a"), 5.0, 5.0).unwrap();
+        let out = apply(&src, &edits);
+        let moved = node_span(&parse(&out).unwrap(), &path).unwrap();
+        assert_ne!(moved, b);
+        assert_eq!(moved, span_of(&out, "box b"));
+    }
+
+    #[test]
+    fn a_span_or_path_with_no_node_has_no_answer() {
+        let src = "canvas { size 300 200; box a { at 10 10; } }";
+        let program = parse(src).unwrap();
+        assert_eq!(node_path(&program, Span { start: 3, end: 9 }), None);
+        assert_eq!(node_span(&program, &[0, 1]), None);
+        assert_eq!(node_span(&program, &[1]), None);
+        assert_eq!(node_span(&program, &[]), None);
     }
 }

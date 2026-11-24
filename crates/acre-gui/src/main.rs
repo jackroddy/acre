@@ -6,6 +6,7 @@ mod drag;
 mod link;
 mod playback;
 mod recent;
+mod selection;
 mod view;
 
 use std::path::PathBuf;

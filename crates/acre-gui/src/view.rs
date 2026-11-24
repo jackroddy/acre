@@ -138,9 +138,10 @@ impl View {
 
     /// Lay the pane out in `ui`, take the person's zoom, pan and drag,
     /// and draw `scene`, whose version is `version`, at time `t`, with an
-    /// outline around each box in `marks`, given in canvas pixels. While
-    /// a node is dragged, its objects are drawn where it is dragged to
-    /// and outlined instead.
+    /// outline around each box in `marks`, given in canvas pixels, and
+    /// another around each object the node at `selected` draws. While a
+    /// node is dragged, its objects are drawn where it is dragged to and
+    /// outlined in place of `marks`.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -148,6 +149,7 @@ impl View {
         version: u64,
         t: f64,
         marks: &[(Point, Point)],
+        selected: Option<Span>,
     ) -> Shown {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         let mut shown = Shown {
@@ -238,10 +240,7 @@ impl View {
         let preview = self.drag.as_ref().and_then(Drag::moving).or(self.held);
         let lifted: Vec<usize> = match preview {
             Some((node, by)) => {
-                let inside = |s: Span| node.start <= s.start && s.end <= node.end;
-                let lifted: Vec<usize> = (0..scene.objects.len())
-                    .filter(|&i| inside(scene.objects[i].source))
-                    .collect();
+                let lifted = drawn_by(scene, node);
 
                 // the last group is applied last, so an extra one moves
                 // the objects by `by` on the canvas whatever their own
@@ -314,6 +313,21 @@ impl View {
             );
         }
 
+        // after the lift, so a dragged selection is outlined where it is
+        // drawn, and wider than a mark, so both show on one object
+        for i in selected.map_or(Vec::new(), |node| drawn_by(scene, node)) {
+            let Some((min, max)) = scene.bounds(i, t) else {
+                continue;
+            };
+            let mark = Rect::from_min_max(to_screen(min), to_screen(max)).expand(7.0);
+            painter.rect_stroke(
+                mark,
+                4.0,
+                Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
+                StrokeKind::Outside,
+            );
+        }
+
         for &i in &lifted {
             scene.objects[i].groups.pop();
         }
@@ -372,6 +386,15 @@ impl View {
         let min = rect.min + self.origin + (-overdraw - drawn.origin) * scale;
         Rect::from_min_size(min, (drawn.pane + overdraw * 2.0) * scale)
     }
+}
+
+/// The indices of the objects in `scene` that the node at `node` or a
+/// node inside it drew.
+fn drawn_by(scene: &Scene, node: Span) -> Vec<usize> {
+    let inside = |s: Span| node.start <= s.start && s.end <= node.end;
+    (0..scene.objects.len())
+        .filter(|&i| inside(scene.objects[i].source))
+        .collect()
 }
 
 #[cfg(test)]

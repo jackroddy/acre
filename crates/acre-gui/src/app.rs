@@ -14,6 +14,7 @@ use eframe::egui::{
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
+use crate::selection::Selection;
 use crate::view::View;
 
 /// How often an open file is checked for a change on disk.
@@ -40,6 +41,10 @@ pub struct App {
     error: Option<lang::Error>,
     /// The last scene that built, kept while the source has an error.
     scene: Option<Scene>,
+    /// The program `scene` was built from.
+    program: Option<lang::Program>,
+    /// The node clicked or dragged last, outlined until a click elsewhere.
+    selection: Option<Selection>,
     /// Counts the scenes built, so the view draws again on a new one.
     version: u64,
     /// Whether the editor heard about the current error, or that there
@@ -79,6 +84,8 @@ impl App {
             tick: 0,
             error: None,
             scene: None,
+            program: None,
+            selection: None,
             version: 0,
             reported: false,
             view: View::new(),
@@ -116,6 +123,7 @@ impl App {
                 let now = Instant::now();
                 self.playback.pause(now);
                 self.playback.seek(now, 0.0);
+                self.selection = None;
                 self.show(text);
                 self.notice = self.recent.touch(path).err();
             }
@@ -128,8 +136,10 @@ impl App {
     fn show(&mut self, text: String) {
         self.view.end_move();
         self.text = text;
-        match lang::parse(&self.text).and_then(|program| self.build(&program)) {
-            Ok(scene) => {
+        let built = lang::parse(&self.text)
+            .and_then(|program| self.build(&program).map(|scene| (program, scene)));
+        match built {
+            Ok((program, scene)) => {
                 self.playback
                     .set_duration(Instant::now(), scene.canvas.duration);
                 self.error = None;
@@ -141,7 +151,9 @@ impl App {
                     }
                     self.missing = missing;
                 }
+                self.selection = self.selection.take().and_then(|s| s.follow(&program));
                 self.scene = Some(scene);
+                self.program = Some(program);
                 self.version += 1;
             }
             Err(e) => self.error = Some(e),
@@ -223,7 +235,11 @@ impl App {
             // the editor sends its text after an edit it makes or
             // drops alike, so a drag it dropped snaps back here
             self.view.end_move();
-            self.path = path.map(PathBuf::from);
+            let path = path.map(PathBuf::from);
+            if path != self.path {
+                self.selection = None;
+            }
+            self.path = path;
 
             // an undo can bring back the text already shown under a
             // new tick, and an edit must carry the new one
@@ -261,6 +277,8 @@ impl App {
     /// refusal snaps the node back and names the reason on the status
     /// line.
     fn move_node(&mut self, node: lang::Span, by: scene::Point) {
+        self.selection = self.program.as_ref().and_then(|p| Selection::of(p, node));
+
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
         let edits = match &self.error {
@@ -325,14 +343,20 @@ impl App {
             .collect()
     }
 
-    /// Point the editor at the node that drew the object at canvas
-    /// `point`, or name the node's line when there is no editor.
+    /// Select the node that drew the object at canvas `point`, and point
+    /// the editor at it, or name its line when there is no editor. A
+    /// point on no object ends the selection.
     fn go_to_object_at(&mut self, point: scene::Point) {
-        let Some(scene) = &self.scene else { return };
-        let Some(index) = scene.object_at(point, self.time) else {
+        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
             return;
         };
-        let offset = scene.objects[index].source.start;
+        let Some(index) = scene.object_at(point, self.time) else {
+            self.selection = None;
+            return;
+        };
+        let source = scene.objects[index].source;
+        self.selection = Selection::of(program, source);
+        let offset = source.start;
         match &self.link {
             Some(link) => {
                 link.send(&Outgoing::Goto { offset });
@@ -585,9 +609,15 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let marks = self.marks();
-                let shown =
-                    self.view
-                        .show(ui, self.scene.as_mut(), self.version, self.time, &marks);
+                let selected = self.selection.as_ref().map(Selection::span);
+                let shown = self.view.show(
+                    ui,
+                    self.scene.as_mut(),
+                    self.version,
+                    self.time,
+                    &marks,
+                    selected,
+                );
                 self.pane = shown.pane;
                 self.hover = shown.hover;
                 if let Some(point) = shown.clicked {

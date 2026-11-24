@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::node_path` gives a node's place in a `Program`: its index
+  among its siblings, and the index of each node around it.
+  `scene::edit::node_span` gives the span of the node at such a path. With
+  the two, a viewer finds a node again after an edit shifts its span.
 - A row takes `cells DATA COL`, one cell per row of a data column. A table
   takes `row DATA COL...`, one table row per row of the data file, with the
   cell of each column COL in turn. A table may mix these with `row

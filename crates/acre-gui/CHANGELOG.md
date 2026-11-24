@@ -9,6 +9,13 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A click on an object selects the node that drew it. The viewer outlines
+  the node's objects in blue at their bounds at the time shown. The blue
+  outline sits outside the orange one that follows the editor's cursor.
+  The selection lasts until a click on empty canvas or on another object.
+  A drag selects the node it moves. After an edit, the selection stays on
+  the node at the same place in the source tree. The selection ends when
+  the viewer opens another file.
 - A drag with the primary button that starts on an object moves the object.
   While the pointer moves, the viewer draws the object at the pointer's
   offset with an outline. On release the viewer works out the source edits
