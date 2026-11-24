@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:32:43.608289243Z",
+  "updated_at": "2026-11-24T07:36:40.660032508Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -317,6 +317,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Provisional syntax from acre-42bcb1: a child of a `stack` takes `space always | shown`, with `always` the default. `space shown` lays the child out in its slot as usual, but until the timeline first shows it with `show` or `fade NAME in`, the children after it draw back by its size and the stack's gap. As that action starts, they jump to their slots. The property lives on the child because Jack chose to have a node opt out of layout until it shows, over a stack that reflows over time. The word `space` and the value `shown` are the plainest form found and are open to change.",
       "commit": "03ebbdd",
+      "branch": "dev"
+    },
+    {
+      "id": "679fd814",
+      "at": "2026-11-24T07:36:40.660030418Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Italic markup, provisional: text between single asterisks, `*x*`, is set in italic sans (acre-b819ac, commit 6e5ed79). An opening `*` must start a word and a closing `*` must end one, and an opening `*` with no closing one after it is the character. So `2 * 3`, `a*b`, `2*3*4` and `x*` stay as written. A `*` in a code span is the character. acre has no italic mono or bold italic face, so code inside italic stays upright and italic inside bold stays bold. `\\*` writes an asterisk. `**` still toggles bold, so `***x***` is bold. `lang::italic_mark` holds the rule for both the markup and the editor highlighting.",
+      "commit": "6e5ed79",
       "branch": "dev"
     }
   ],
