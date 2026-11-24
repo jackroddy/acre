@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.514880655Z",
-  "updated_at": "2026-11-24T06:36:24.43103555Z",
+  "updated_at": "2026-11-24T06:36:40.864318566Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "5b01cff5",
+      "at": "2026-11-24T06:36:40.864317906Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack accepted these on 2026-11-23, provisionally until the syntax rework. Any node may keep values before `{`, as timed nodes do, so `repeat i 0 3 { ... }` parses and the parser still gives the values no meaning. A copy picks the i-th of a list as `(tints i)` inside parentheses. A named child gets the index added to its name, so `b` becomes `b0`, `b1` and so on. The `repeat N` property on lines stays as it is.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "58993b6",
