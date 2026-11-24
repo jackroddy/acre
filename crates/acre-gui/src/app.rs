@@ -52,8 +52,8 @@ pub struct App {
     scene: Option<Scene>,
     /// The program `scene` was built from.
     program: Option<lang::Program>,
-    /// The nodes clicked, dragged or boxed last, outlined until a click
-    /// elsewhere.
+    /// The nodes clicked, dragged or boxed last, or under the editor's
+    /// cursor, outlined until a click elsewhere.
     selection: Selection,
     /// The field open over an object to edit its text.
     field: Option<Field>,
@@ -76,8 +76,6 @@ pub struct App {
     time: f64,
     /// The render pane's size at the last frame.
     pane: Vec2,
-    /// The editor's cursor, as a byte offset into the source.
-    cursor: Option<usize>,
     /// The canvas point under the pointer.
     hover: Option<scene::Point>,
     /// The latest message that is not a source error.
@@ -115,7 +113,6 @@ impl App {
             sections_open: true,
             time: 0.0,
             pane: Vec2::ZERO,
-            cursor: None,
             hover: None,
             notice: None,
             missing: Vec::new(),
@@ -244,11 +241,12 @@ impl App {
     fn talk(&mut self) -> bool {
         let Some(link) = &self.link else { return true };
         let mut newest = None;
+        let mut cursor = None;
         let mut open = true;
         for message in link.received() {
             match message {
                 Some(Incoming::Text { text, path, tick }) => newest = Some((text, path, tick)),
-                Some(Incoming::Cursor { offset }) => self.cursor = Some(offset),
+                Some(Incoming::Cursor { offset }) => cursor = Some(offset),
                 None => open = false,
             }
         }
@@ -279,6 +277,15 @@ impl App {
             if let Some(added) = self.added.take() {
                 self.select(added);
             }
+        }
+
+        // after the text, so the offset is read against the newest
+        // source shown
+        if let Some(offset) = cursor
+            && let (Some(scene), Some(program)) = (&self.scene, &self.program)
+        {
+            let drawn: Vec<lang::Span> = scene.objects.iter().map(|o| o.source).collect();
+            self.selection = std::mem::take(&mut self.selection).at_cursor(program, &drawn, offset);
         }
         if !self.reported
             && let Some(link) = &self.link
@@ -554,30 +561,6 @@ impl App {
         self.selection = Selection::of(program, &spans);
     }
 
-    /// The boxes of the objects the node under the editor's cursor drew.
-    /// The innermost node holding the cursor wins, so a cursor inside a
-    /// group's child marks that child.
-    fn marks(&self) -> Vec<(scene::Point, scene::Point)> {
-        let (Some(scene), Some(cursor)) = (&self.scene, self.cursor) else {
-            return Vec::new();
-        };
-        let holds =
-            |span: &lang::Span| span.start < span.end && span.start <= cursor && cursor <= span.end;
-        let Some(innermost) = scene
-            .objects
-            .iter()
-            .map(|o| o.source)
-            .filter(holds)
-            .min_by_key(|s| s.end - s.start)
-        else {
-            return Vec::new();
-        };
-        (0..scene.objects.len())
-            .filter(|&i| scene.objects[i].source == innermost)
-            .filter_map(|i| scene.bounds(i, self.time))
-            .collect()
-    }
-
     /// Select the node that drew the object at canvas `point`, and point
     /// the editor at it, or name its line when there is no editor. A
     /// point on no object ends the selection.
@@ -585,18 +568,12 @@ impl App {
         let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
             return;
         };
-        let Some(index) = scene.object_at(point, self.time) else {
-            self.selection = Selection::default();
+        self.selection = Selection::clicked(program, scene, self.time, point);
+        let Some(offset) = self.selection.spans().first().map(|s| s.start) else {
             return;
         };
-        let source = scene.objects[index].source;
-        self.selection = Selection::of(program, &[source]);
-        let offset = source.start;
         match &self.link {
-            Some(link) => {
-                link.send(&Outgoing::Goto { offset });
-                self.cursor = Some(offset);
-            }
+            Some(link) => link.send(&Outgoing::Goto { offset }),
             None => {
                 let line = self.text[..offset.min(self.text.len())]
                     .matches('\n')
@@ -1244,7 +1221,7 @@ impl eframe::App for App {
                 self.sections(ui)
             });
         }
-        if !self.selection.spans().is_empty() {
+        if !self.selection.spans().is_empty() && self.selection.made_in_viewer() {
             self.write_property(ui.ctx());
             side_panel(ui, "properties", pane, Align2::RIGHT_TOP, |ui| {
                 self.properties(ui)
@@ -1256,7 +1233,6 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
-                let marks = self.marks();
                 self.view.target = match (&self.program, &self.scene) {
                     (Some(program), Some(scene)) => {
                         handle::target(program, scene, self.selection.spans())
@@ -1276,7 +1252,6 @@ impl eframe::App for App {
                     self.scene.as_mut(),
                     self.version,
                     self.time,
-                    &marks,
                     self.selection.spans(),
                 );
                 self.pane = shown.rect.size();

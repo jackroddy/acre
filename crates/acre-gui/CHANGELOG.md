@@ -27,6 +27,16 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   position of the drawing as they were, and the part of the drawing under
   an open panel is hidden. A click, drag or scroll over a panel goes to the
   panel. The panels no longer resize by dragging their edge.
+- The editor's cursor selects a node, as a click does, in place of the
+  orange outline it drew. The node selected is the innermost one below the
+  canvas that holds the cursor and draws something. A node holds the
+  cursor from the first letter of its kind to its closing brace. The
+  cursor between nodes or on the canvas's own lines clears the selection.
+  The cursor inside a node already selected leaves the selection as it is.
+  A click's goto therefore keeps the clicked node selected, and a cursor
+  in one node of a box selection keeps the whole box. The properties
+  panel opens only for a selection made in the viewer by a click, a box or
+  a new node. A selection the cursor made leaves it closed.
 
 ## [0.1.0] - 2026-11-24
 

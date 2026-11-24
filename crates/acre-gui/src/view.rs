@@ -203,11 +203,9 @@ impl View {
 
     /// Lay the pane out in `ui`, take the person's zoom, pan and drag,
     /// and draw `scene`, whose version is `version`, at time `t`, with an
-    /// outline around each box in `marks`, given in canvas pixels, and
-    /// another around each object the nodes at `selected` draw. While
+    /// outline around each object the nodes at `selected` draw. While
     /// nodes are dragged, their objects are drawn where they are dragged
-    /// to, snapped, and outlined in place of `marks`, with a guide for
-    /// each snap. A drag that reorders a child of a stack or grid outlines
+    /// to, snapped, and outlined, with a guide for each snap. A drag that reorders a child of a stack or grid outlines
     /// it at the pointer and marks the place it would land. A drag on
     /// empty canvas draws a selection box. A
     /// double-click on no object fits the canvas to the pane. With a tool
@@ -223,7 +221,6 @@ impl View {
         scene: Option<&mut Scene>,
         version: u64,
         t: f64,
-        marks: &[(Point, Point)],
         selected: &[Span],
     ) -> Shown {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -453,14 +450,7 @@ impl View {
                 painter.line_segment(ends.map(to_screen), stroke);
             }
         }
-        let lifted_marks: Vec<(Point, Point)>;
-        let marks = if wanted.preview.is_some() {
-            lifted_marks = lifted.iter().filter_map(|&i| scene.bounds(i, t)).collect();
-            &lifted_marks
-        } else {
-            marks
-        };
-        for &(min, max) in marks {
+        for (min, max) in lifted.iter().filter_map(|&i| scene.bounds(i, t)) {
             let mark = Rect::from_min_max(to_screen(min), to_screen(max)).expand(3.0);
             painter.rect_stroke(
                 mark,

@@ -1,23 +1,26 @@
 use acre::lang::{Node, Program, Span};
-use acre::scene::Scene;
 use acre::scene::edit;
+use acre::scene::{Point, Scene};
 
 use crate::snap::Bounds;
 
-/// The nodes picked out by a click or a selection box, in source order.
-/// Each is kept by its place in the source tree, so an edit that shifts
-/// spans leaves it selected.
+/// The nodes picked out by a click, a selection box or the editor's
+/// cursor, in source order. Each is kept by its place in the source
+/// tree, so an edit that shifts spans leaves it selected.
 #[derive(Debug, Default, PartialEq)]
 pub struct Selection {
     paths: Vec<Vec<usize>>,
     /// The nodes' spans in the program the shown scene was built from,
     /// one for each of `paths`.
     spans: Vec<Span>,
+    /// Whether a click, a box or a new node in the viewer made the
+    /// selection, rather than the editor's cursor.
+    made_in_viewer: bool,
 }
 
 impl Selection {
-    /// The selection of the nodes at `spans` in `program`, leaving out a
-    /// span no node has.
+    /// The selection made in the viewer of the nodes at `spans` in
+    /// `program`, leaving out a span no node has.
     pub fn of(program: &Program, spans: &[Span]) -> Selection {
         let mut found: Vec<(Vec<usize>, Span)> = spans
             .iter()
@@ -27,14 +30,47 @@ impl Selection {
         found.sort_by_key(|(_, s)| (s.start, std::cmp::Reverse(s.end)));
         found.dedup_by_key(|(_, s)| *s);
         let (paths, spans) = found.into_iter().unzip();
-        Selection { paths, spans }
+        Selection {
+            paths,
+            spans,
+            made_in_viewer: true,
+        }
     }
 
-    /// The selection of the nodes at `paths` in `program`, leaving out a
-    /// path no node has.
+    /// The selection made in the viewer of the nodes at `paths` in
+    /// `program`, leaving out a path no node has.
     pub fn at(program: &Program, paths: Vec<Vec<usize>>) -> Selection {
-        let spans = Vec::new();
-        Selection { paths, spans }.follow(program)
+        Selection {
+            paths,
+            spans: Vec::new(),
+            made_in_viewer: true,
+        }
+        .follow(program)
+    }
+
+    /// The selection a click at canvas `point` on `scene` at time `t`
+    /// makes: the node that drew the object there, or none on empty
+    /// canvas.
+    pub fn clicked(program: &Program, scene: &Scene, t: f64, point: Point) -> Selection {
+        match scene.object_at(point, t) {
+            Some(i) => Selection::of(program, &[scene.objects[i].source]),
+            None => Selection::default(),
+        }
+    }
+
+    /// The selection once the editor's cursor moves to byte `offset` of
+    /// the source of `program`: this one when a selected node holds the
+    /// offset, else the innermost node under the canvas that holds it and
+    /// drew an object whose source is in `drawn`, else none.
+    pub fn at_cursor(self, program: &Program, drawn: &[Span], offset: usize) -> Selection {
+        if self.spans.iter().any(|&s| holds(s, offset)) {
+            return self;
+        }
+        let spans: Vec<Span> = innermost(program, drawn, offset).into_iter().collect();
+        Selection {
+            made_in_viewer: false,
+            ..Selection::of(program, &spans)
+        }
     }
 
     /// The same nodes in `program`, built after an edit, without those
@@ -48,7 +84,11 @@ impl Selection {
                 Some((p, span))
             })
             .unzip();
-        Selection { paths, spans }
+        Selection {
+            paths,
+            spans,
+            made_in_viewer: self.made_in_viewer,
+        }
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -63,6 +103,35 @@ impl Selection {
     pub fn contains(&self, node: Span) -> bool {
         self.spans.contains(&node)
     }
+
+    pub fn made_in_viewer(&self) -> bool {
+        self.made_in_viewer
+    }
+}
+
+/// Whether the node at `span` holds byte `offset`: from the first byte
+/// of its kind up to its closing brace, both included.
+fn holds(span: Span, offset: usize) -> bool {
+    span.start <= offset && offset < span.end
+}
+
+/// The innermost node under the canvas of `program` that holds byte
+/// `offset` and holds the source of an object in `drawn`.
+fn innermost(program: &Program, drawn: &[Span], offset: usize) -> Option<Span> {
+    let draws = |node: Span| {
+        drawn
+            .iter()
+            .any(|s| s.start < s.end && node.start <= s.start && s.end <= node.end)
+    };
+    let mut found = None;
+    let mut nodes = &program.nodes.first()?.children[..];
+    while let Some(node) = nodes.iter().find(|n| holds(n.span, offset)) {
+        if draws(node.span) {
+            found = Some(node.span);
+        }
+        nodes = &node.children;
+    }
+    found
 }
 
 /// The nodes a press on an object of the node at `pressed` drags: every
@@ -124,7 +193,7 @@ fn pick(node: &Node, drawn: &[(Span, Bounds)], area: Bounds, picked: &mut Vec<Sp
 mod tests {
     use super::*;
     use acre::lang::parse;
-    use acre::scene::{self, Point};
+    use acre::scene;
 
     const SRC: &str = "canvas { size 300 200; box a { at 10 10; size 40 40; } \
                        box b { at 200 100; size 40 40; } }";
@@ -133,12 +202,7 @@ mod tests {
     fn click(src: &str, point: Point) -> Selection {
         let program = parse(src).unwrap();
         let scene = scene::build(&program, &[], &[]).unwrap();
-        let spans: Vec<Span> = scene
-            .object_at(point, 0.0)
-            .map(|i| scene.objects[i].source)
-            .into_iter()
-            .collect();
-        Selection::of(&program, &spans)
+        Selection::clicked(&program, &scene, 0.0, point)
     }
 
     /// The nodes a box from `min` to `max` selects on the scene of `src`.
@@ -230,6 +294,116 @@ mod tests {
             boxed(GROUP, (90.0, 90.0), (130.0, 130.0)),
             [span_of(GROUP, "box c")]
         );
+    }
+
+    /// The selection the editor's cursor at `offset` in `src` makes from
+    /// `selected`.
+    fn cursor(src: &str, selected: Selection, offset: usize) -> Selection {
+        let program = parse(src).unwrap();
+        let scene = scene::build(&program, &[], &[]).unwrap();
+        let drawn: Vec<Span> = scene.objects.iter().map(|o| o.source).collect();
+        selected.at_cursor(&program, &drawn, offset)
+    }
+
+    #[test]
+    fn the_cursor_selects_the_innermost_node_that_holds_it() {
+        let program = parse(GROUP).unwrap();
+        let group = program.nodes[0].children[0].span;
+        let c = span_of(GROUP, "box c");
+        let in_c = GROUP.find("size 20").unwrap();
+        assert_eq!(cursor(GROUP, Selection::default(), in_c).spans(), [c]);
+        let in_group = GROUP.find("at 100").unwrap();
+        assert_eq!(
+            cursor(GROUP, Selection::default(), in_group).spans(),
+            [group]
+        );
+    }
+
+    #[test]
+    fn a_node_holds_the_cursor_from_its_kind_to_its_closing_brace() {
+        let a = span_of(SRC, "box a");
+        let on = |offset| cursor(SRC, Selection::default(), offset);
+        assert_eq!(on(a.start).spans(), [a]);
+        assert_eq!(on(a.end - 1).spans(), [a]);
+
+        // the space after the brace, between a and b
+        assert!(on(a.end).spans().is_empty());
+        assert!(on(a.start - 1).spans().is_empty());
+    }
+
+    #[test]
+    fn the_cursor_on_the_canvas_or_in_a_node_that_draws_nothing_selects_nothing() {
+        let on = |offset| cursor(SRC, Selection::default(), offset);
+        assert!(on(SRC.find("size 300").unwrap()).spans().is_empty());
+        assert!(on(0).spans().is_empty());
+
+        let styled = "canvas { size 300 200; style s { fill red; } \
+                      box a { at 10 10; size 40 40; } }";
+        let in_style = styled.find("fill").unwrap();
+        assert!(
+            cursor(styled, Selection::default(), in_style)
+                .spans()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_cursor_inside_a_selected_node_leaves_the_selection() {
+        let program = parse(GROUP).unwrap();
+        let group = program.nodes[0].children[0].span;
+        let selected = Selection::of(&program, &[group]);
+        let in_c = GROUP.find("size 20").unwrap();
+        assert_eq!(
+            cursor(GROUP, Selection::of(&program, &[group]), in_c),
+            selected
+        );
+    }
+
+    #[test]
+    fn a_boxed_selection_survives_the_cursor_its_goto_sends() {
+        let program = parse(SRC).unwrap();
+        let both = Selection::of(&program, &boxed(SRC, (0.0, 0.0), (300.0, 200.0)));
+        assert_eq!(both.spans().len(), 2);
+        let goto = both.spans()[1].start;
+        let after = cursor(SRC, Selection::of(&program, both.spans()), goto);
+        assert_eq!(after, both);
+        assert!(after.made_in_viewer());
+    }
+
+    #[test]
+    fn the_cursor_moving_the_selection_makes_it_the_editors() {
+        let program = parse(SRC).unwrap();
+        let a = span_of(SRC, "box a");
+        let b = span_of(SRC, "box b");
+        let clicked = Selection::of(&program, &[a]);
+        assert!(clicked.made_in_viewer());
+        let moved = cursor(SRC, clicked, b.start + 1);
+        assert_eq!(moved.spans(), [b]);
+        assert!(!moved.made_in_viewer());
+
+        // a click on the node the cursor picked hands it back to the viewer
+        assert!(Selection::of(&program, moved.spans()).made_in_viewer());
+        let left = cursor(SRC, Selection::of(&program, &[a]), a.end);
+        assert!(left.spans().is_empty());
+        assert!(!left.made_in_viewer());
+    }
+
+    #[test]
+    fn the_editors_selection_stays_the_editors_after_an_edit() {
+        let a = span_of(SRC, "box a");
+        let picked = cursor(SRC, Selection::default(), a.start);
+        let edited = SRC.replace("at 10 10", "at 10.5 10.5");
+        let followed = picked.follow(&parse(&edited).unwrap());
+        assert_eq!(followed.spans(), [span_of(&edited, "box a")]);
+        assert!(!followed.made_in_viewer());
+    }
+
+    #[test]
+    fn a_click_on_empty_canvas_clears_a_selection_the_cursor_made() {
+        let a = span_of(SRC, "box a");
+        assert_eq!(cursor(SRC, Selection::default(), a.start).spans(), [a]);
+        assert_eq!(click(SRC, Point::new(150.0, 150.0)), Selection::default());
+        assert_eq!(cursor(SRC, Selection::default(), a.start).spans(), [a]);
     }
 
     #[test]
