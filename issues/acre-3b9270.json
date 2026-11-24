@@ -1,0 +1,28 @@
+{
+  "id": "acre-3b9270",
+  "title": "The doc comment for modified sits on missing_glyph",
+  "body": "In `crates/acre-gui/src/app.rs`, the doc comment \"When the file at `path` last changed, or `None` when the disk cannot say.\" sits above `missing_glyph`, and `modified` below it has none. The comment belongs on `modified`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T07:54:29.128791867Z",
+  "updated_at": "2026-11-24T07:54:29.128791867Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "aa7933d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
