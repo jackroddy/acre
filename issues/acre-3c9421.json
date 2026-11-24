@@ -1,0 +1,28 @@
+{
+  "id": "acre-3c9421",
+  "title": "acre reference leaves containers out of what a container holds",
+  "body": "`acre reference` ends each container's entry with a `holds` line. For `group`, `stack`, `grid` and `panel` that line stops at `ruler`, and leaves out `group`, `stack`, `grid`, `panel` and `repeat`. acre accepts a stack inside a stack and a group inside a group, so the line is wrong. A reader of the reference concludes that containers do not nest and lays a figure out flat.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "acre-4ed6a0",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T23:40:04.164807659Z",
+  "updated_at": "2026-11-24T23:40:04.164807659Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "29eef0c",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
