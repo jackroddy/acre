@@ -3,20 +3,20 @@
   "title": "A repeat node draws its children once for each value of an index",
   "body": "Today the only repetition is `repeat N` on `line` and `arrow`, which draws N copies and moves each named cell index on by one per copy. Nothing else repeats. A figure with four thread quarters, four braces, four strips and four arrows writes each one out, or comes from a script. The sufr pipeline figure in `sufr-figures` comes from a Python script partly for this reason, and its 110 gather arrows and 111 slots are each a line of the script's output.\n\n## Proposal\n\nA node `repeat NAME FIRST LAST { ... }` draws its children once for each whole number from FIRST to LAST. In each copy, NAME stands for that number wherever a `let` name can appear, so it works inside `(…)` arithmetic.\n\n```text\nrepeat i 0 3 {\n    box { at (x0 + i * w) y; size w 24; fill tint; }\n    arrow { from (x0 + i * w + w / 2) (y + 28); to (x0 + i * w + w / 2) (y + 70); }\n}\n```\n\n`scene/expand.rs` already substitutes `let` names before `scene` reads a node, so the copies can be made there and `scene` sees plain nodes.\n\n## Open\n\n- How a copy picks the i-th of several values, such as the four thread colours. One option is `let tints a b c d;` with `(tints i)` choosing one.\n- A named child inside a `repeat` is defined once per copy. Either each name gets the index appended, or a named node inside `repeat` is an error.\n- What a drag in acre-gui rewrites for a node that `repeat` made. acre-4518a5 records the same question for computed values.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-9c9aee",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T07:13:39.929753803Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.514880655Z",
-  "updated_at": "2026-11-24T06:58:39.929753803Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:03:44.491358937Z",
+  "closed_at": "2026-11-24T07:03:44.491358937Z",
+  "close_reason": "Landed in 8611c9b. `scene::expand::repeat` makes the copies and `rename` adds the index to names. `substitute` picks `(NAME N)` from a list let. `lang::parse` keeps values before `{` in `Node::head`. The syntax is logged on acre-4518a5. A drag in acre-gui on a copy is still open there.",
+  "resolution": "done",
   "notes": [
     {
       "id": "5b01cff5",
@@ -32,6 +32,9 @@
       "commit": "58993b6",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8611c9b",
+      "branch": "dev"
+    }
   }
 }
