@@ -274,13 +274,13 @@ fn add_canvas_objects<'a>(
     let mut places = Places::new();
     name_things(&canvas.children, offset, &mut names, &mut places)?;
     let mut objects = Vec::new();
-    let mut panels = 0;
+    let mut counts = Counts::default();
     let pass = Pass {
         names: &names,
         places: &places,
         measuring: false,
     };
-    add_objects(&canvas.children, offset, &pass, &mut panels, &mut objects)?;
+    add_objects(&canvas.children, offset, &pass, &mut counts, &mut objects)?;
     Ok(objects)
 }
 
@@ -384,139 +384,237 @@ fn add_objects(
     nodes: &[Node],
     offset: Point,
     pass: &Pass,
-    panels: &mut usize,
+    counts: &mut Counts,
+    out: &mut Vec<Object>,
+) -> Result<(), Error> {
+    for node in nodes {
+        let start = out.len();
+        add_node(node, offset, pass, counts, out)?;
+        add_tag(node, pass.names, &mut counts.tags, start, out)?;
+    }
+    Ok(())
+}
+
+/// The space between a tag and its node.
+const TAG_GAP: f64 = 8.0;
+
+/// Append the tag `node` sets, if it sets one, left of what `out[start..]`
+/// draws and centered on it. `tags` counts the `tag auto` nodes so far.
+fn add_tag(
+    node: &Node,
+    names: &Names,
+    tags: &mut usize,
+    start: usize,
+    out: &mut Vec<Object>,
+) -> Result<(), Error> {
+    let Some(p) = node.properties.iter().find(|p| p.key.text == "tag") else {
+        return Ok(());
+    };
+    let text = match p.values.as_slice() {
+        [
+            Value {
+                kind: ValueKind::Word(w),
+                ..
+            },
+        ] if w == "auto" => {
+            *tags += 1;
+            format!("({})", letters(*tags))
+        }
+        [
+            Value {
+                kind: ValueKind::Str(s),
+                ..
+            },
+        ] => s.clone(),
+        _ => return Err(p.expected("a quoted text or `auto`")),
+    };
+    let Some((min, max)) = bounds_of(&names.fonts, &out[start..]) else {
+        return Ok(());
+    };
+    let props = Props::new(node, &keys(&node.kind.text), true)?;
+    let font = match props.get("tag-font") {
+        Some(p) => font(p, &names.fonts)?,
+        None => Font::SansBold,
+    };
+    let color = props.color_or("tag-color", Color::BLACK)?;
+    let runs = markup::runs(&text, font, color, &names.colors)
+        .map_err(|message| Error::new(p.span, message))?;
+    let label = Label {
+        runs,
+        size: props.number_or("tag-size", 14.0)?,
+        width: None,
+        justify: false,
+        fonts: names.fonts.clone(),
+    };
+    let size = label.size();
+    let text = Text {
+        origin: Point::new(min.x - TAG_GAP - size.x, (min.y + max.y - size.y) * 0.5),
+        label,
+        align: HAlign::Left,
+        rotate: 0.0,
+    };
+    out.push(Object {
+        tag: true,
+        ..Object::new(Kind::Text(text)).from_source(node.span)
+    });
+    Ok(())
+}
+
+/// The letters of the `n`th tag from 1: a to z, then aa, ab and on.
+fn letters(mut n: usize) -> String {
+    let mut out = Vec::new();
+    while n > 0 {
+        n -= 1;
+        out.push(b'a' + (n % 26) as u8);
+        n /= 26;
+    }
+    out.reverse();
+    String::from_utf8(out).expect("the letters a to z are ASCII")
+}
+
+/// How many panels and `tag auto` nodes a pass has numbered so far.
+#[derive(Default)]
+struct Counts {
+    panels: usize,
+    tags: usize,
+}
+
+/// Append the objects `node` draws to `out`.
+fn add_node(
+    node: &Node,
+    offset: Point,
+    pass: &Pass,
+    counts: &mut Counts,
     out: &mut Vec<Object>,
 ) -> Result<(), Error> {
     let names = pass.names;
-    for node in nodes {
-        let named = node.name.as_ref().map(|n| n.text.as_str());
-        let kind = match node.kind.text.as_str() {
-            "palette" | "fonts" | "data" | "timeline" => continue,
-            "caption" => {
-                // a caption goes under everything before it
-                let below = bounds_of(&names.fonts, out).map_or(offset.y, |(_, max)| max.y);
-                let t = caption(node, names, Point::new(offset.x, below))?;
-                out.push(Object::new(Kind::Text(t)).from_source(node.span));
-                continue;
+    let named = node.name.as_ref().map(|n| n.text.as_str());
+    let kind = match node.kind.text.as_str() {
+        "palette" | "fonts" | "data" | "timeline" => return Ok(()),
+        "caption" => {
+            // a caption goes under everything before it
+            let below = bounds_of(&names.fonts, out).map_or(offset.y, |(_, max)| max.y);
+            let t = caption(node, names, Point::new(offset.x, below))?;
+            out.push(Object::new(Kind::Text(t)).from_source(node.span));
+            return Ok(());
+        }
+        "group" => {
+            let at = group_at(node, names, offset)?;
+            add_objects(&node.children, at, pass, counts, out)?;
+            return Ok(());
+        }
+        "panel" => {
+            add_panel(node, pass, offset, counts, out)?;
+            return Ok(());
+        }
+        "stack" | "grid" => {
+            for child in &node.children {
+                let slot = pass.places[&child.span.start];
+                add_objects(std::slice::from_ref(child), slot, pass, counts, out)?;
             }
-            "group" => {
-                let at = group_at(node, names, offset)?;
-                add_objects(&node.children, at, pass, panels, out)?;
-                continue;
-            }
-            "panel" => {
-                add_panel(node, pass, offset, panels, out)?;
-                continue;
-            }
-            "stack" | "grid" => {
-                for child in &node.children {
-                    let slot = pass.places[&child.span.start];
-                    add_objects(std::slice::from_ref(child), slot, pass, panels, out)?;
-                }
-                continue;
-            }
-            "line" | "arrow" => {
-                let head = match node.kind.text.as_str() {
-                    "arrow" => Head::Triangle,
-                    _ => Head::None,
+            return Ok(());
+        }
+        "line" | "arrow" => {
+            let head = match node.kind.text.as_str() {
+                "arrow" => Head::Triangle,
+                _ => Head::None,
+            };
+            let repeat = node
+                .properties
+                .iter()
+                .find(|p| p.key.text == "repeat")
+                .map_or(Ok(1), |p| p.count())?;
+            for shift in 0..repeat {
+                let c = match connector(node, names, head, offset, shift) {
+                    Ok(c) => c,
+                    // a measure leaves out what names a thing not
+                    // placed yet
+                    Err(_) if pass.measuring => continue,
+                    Err(e) => return Err(e),
                 };
-                let repeat = node
-                    .properties
-                    .iter()
-                    .find(|p| p.key.text == "repeat")
-                    .map_or(Ok(1), |p| p.count())?;
-                for shift in 0..repeat {
-                    let c = match connector(node, names, head, offset, shift) {
-                        Ok(c) => c,
-                        // a measure leaves out what names a thing not
-                        // placed yet
-                        Err(_) if pass.measuring => continue,
-                        Err(e) => return Err(e),
-                    };
-                    out.push(Object::new(Kind::Connector(c)).from_source(node.span));
-                }
-                continue;
+                out.push(Object::new(Kind::Connector(c)).from_source(node.span));
             }
-            "sweep" => {
-                match sweep(node, names, offset) {
-                    Ok(c) => out.push(Object::new(Kind::Connector(c)).from_source(node.span)),
-                    // a measure leaves out what names a thing not
-                    // placed yet
-                    Err(_) if pass.measuring => {}
-                    Err(e) => return Err(e),
-                }
-                continue;
-            }
-            "merge" => {
-                match merge(node, names, offset) {
-                    Ok(m) => out.push(Object::new(Kind::Merge(m)).from_source(node.span)),
-                    // a measure leaves out what names a thing not
-                    // placed yet
-                    Err(_) if pass.measuring => {}
-                    Err(e) => return Err(e),
-                }
-                continue;
-            }
-            "box" | "ellipse" => match named {
-                Some(name) => Kind::Shape(names.shapes[name].clone()),
-                None => Kind::Shape(shape(node, names, offset)?),
-            },
-            "polygon" => Kind::Polygon(polygon(node, names, offset)?),
-            "polyline" => Kind::Polyline(polyline(node, names, offset)?),
-            "row" => match named {
-                Some(name) => Kind::Row(names.rows[name].clone()),
-                None => Kind::Row(row(node, names, offset)?),
-            },
-            "matrix" => match named {
-                Some(name) => Kind::Matrix(names.matrices[name].clone()),
-                None => Kind::Matrix(matrix(node, names, offset)?),
-            },
-            "code" => match named {
-                Some(name) => Kind::Code(names.codes[name].clone()),
-                None => Kind::Code(code(node, names, offset)?),
-            },
-            "text" => {
-                let (badge, t) = text(node, names, offset)?;
-                if let Some(badge) = badge {
-                    out.push(Object::new(Kind::Shape(badge)).from_source(node.span));
-                }
-                Kind::Text(t)
-            }
-            "marker" => match marker(node, names, offset) {
-                Ok(m) => Kind::Shape(m),
-                Err(_) if pass.measuring => continue,
+            return Ok(());
+        }
+        "sweep" => {
+            match sweep(node, names, offset) {
+                Ok(c) => out.push(Object::new(Kind::Connector(c)).from_source(node.span)),
+                // a measure leaves out what names a thing not
+                // placed yet
+                Err(_) if pass.measuring => {}
                 Err(e) => return Err(e),
-            },
-            "math" => Kind::Text(math(node, names, offset)?),
-            "table" => {
-                for t in table(node, names, offset)? {
-                    out.push(Object::new(Kind::Text(t)).from_source(node.span));
-                }
-                continue;
             }
-            "brace" => match brace(node, names, offset) {
-                Ok(b) => Kind::Brace(b),
-                Err(_) if pass.measuring => continue,
+            return Ok(());
+        }
+        "merge" => {
+            match merge(node, names, offset) {
+                Ok(m) => out.push(Object::new(Kind::Merge(m)).from_source(node.span)),
+                // a measure leaves out what names a thing not
+                // placed yet
+                Err(_) if pass.measuring => {}
                 Err(e) => return Err(e),
-            },
-            "ruler" => Kind::Ruler(ruler(node, names, offset)?),
-            other => {
-                return Err(Error::new(
-                    node.kind.span,
-                    format!(
-                        "unknown node `{other}`; a canvas holds box, ellipse, polygon, polyline, line, arrow, \
+            }
+            return Ok(());
+        }
+        "box" | "ellipse" => match named {
+            Some(name) => Kind::Shape(names.shapes[name].clone()),
+            None => Kind::Shape(shape(node, names, offset)?),
+        },
+        "polygon" => Kind::Polygon(polygon(node, names, offset)?),
+        "polyline" => Kind::Polyline(polyline(node, names, offset)?),
+        "row" => match named {
+            Some(name) => Kind::Row(names.rows[name].clone()),
+            None => Kind::Row(row(node, names, offset)?),
+        },
+        "matrix" => match named {
+            Some(name) => Kind::Matrix(names.matrices[name].clone()),
+            None => Kind::Matrix(matrix(node, names, offset)?),
+        },
+        "code" => match named {
+            Some(name) => Kind::Code(names.codes[name].clone()),
+            None => Kind::Code(code(node, names, offset)?),
+        },
+        "text" => {
+            let (badge, t) = text(node, names, offset)?;
+            if let Some(badge) = badge {
+                out.push(Object::new(Kind::Shape(badge)).from_source(node.span));
+            }
+            Kind::Text(t)
+        }
+        "marker" => match marker(node, names, offset) {
+            Ok(m) => Kind::Shape(m),
+            Err(_) if pass.measuring => return Ok(()),
+            Err(e) => return Err(e),
+        },
+        "math" => Kind::Text(math(node, names, offset)?),
+        "table" => {
+            for t in table(node, names, offset)? {
+                out.push(Object::new(Kind::Text(t)).from_source(node.span));
+            }
+            return Ok(());
+        }
+        "brace" => match brace(node, names, offset) {
+            Ok(b) => Kind::Brace(b),
+            Err(_) if pass.measuring => return Ok(()),
+            Err(e) => return Err(e),
+        },
+        "ruler" => Kind::Ruler(ruler(node, names, offset)?),
+        other => {
+            return Err(Error::new(
+                node.kind.span,
+                format!(
+                    "unknown node `{other}`; a canvas holds box, ellipse, polygon, polyline, line, arrow, \
                          text, math, marker, table, row, matrix, code, brace, ruler, group, panel, caption, stack, grid, \
                          palette and style"
-                    ),
-                ));
-            }
-        };
-        let texts = text_changes(node, &kind, names)?;
-        out.push(Object {
-            texts,
-            ..Object::new(kind).from_source(node.span)
-        });
-    }
+                ),
+            ));
+        }
+    };
+    let texts = text_changes(node, &kind, names)?;
+    out.push(Object {
+        texts,
+        ..Object::new(kind).from_source(node.span)
+    });
     Ok(())
 }
 
@@ -703,7 +801,7 @@ fn add_panel(
     node: &Node,
     pass: &Pass,
     offset: Point,
-    panels: &mut usize,
+    counts: &mut Counts,
     out: &mut Vec<Object>,
 ) -> Result<(), Error> {
     let names = pass.names;
@@ -713,8 +811,8 @@ fn add_panel(
         None => true,
     };
     let number = numbered.then(|| {
-        *panels += 1;
-        *panels
+        counts.panels += 1;
+        counts.panels
     });
     let place = panel_place(node, names, offset, number)?;
     let start = out.len();
@@ -730,7 +828,7 @@ fn add_panel(
     let (captions, contents): (Vec<&Node>, Vec<&Node>) =
         node.children.iter().partition(|c| c.kind.text == "caption");
     let contents: Vec<Node> = contents.into_iter().cloned().collect();
-    add_objects(&contents, place.contents, pass, panels, out)?;
+    add_objects(&contents, place.contents, pass, counts, out)?;
 
     let max = bounds_of(&names.fonts, &out[start..]).map_or(place.at, |(_, max)| max);
     let mut bottom = max.y;
@@ -833,7 +931,7 @@ fn measure<'a>(
         measuring: true,
     };
     let mut objects = Vec::new();
-    add_objects(node, slot, &pass, &mut 0, &mut objects)?;
+    add_objects(node, slot, &pass, &mut Counts::default(), &mut objects)?;
     Ok(bounds_of(&names.fonts, &objects))
 }
 
@@ -3096,7 +3194,7 @@ mod tests {
                 17,
                 "`box` has no property `colour`; it takes at, place, size, fill, stroke, \
                  stroke-width, dash, radius, text, text-size, text-color, font, width, \
-                 padding, text-align, anchor, style"
+                 padding, text-align, tag, tag-size, tag-color, tag-font, anchor, style"
                     .into()
             )
         );
@@ -3630,6 +3728,61 @@ mod tests {
             err(r#"canvas { size 9 9; text { at 0 0; text "a"; width 5; text-align left; } }"#),
             "`text-align` on `text` is justify; `align` places the text"
         );
+    }
+
+    #[test]
+    fn tags_letter_through_the_canvas_and_sit_left_of_their_node() {
+        let s = scene(
+            r#"canvas { size auto auto; margin 0;
+                style tags { tag-size 10; tag-color #ff0000; }
+                panel { title "one"; box { tag auto; at 40 0; size 50 20; } }
+                box { tag "(x)"; at 40 100; size 50 20; }
+                panel { title "two"; at 200 0; box { tag auto; style tags; at 40 0; size 50 30; } } }"#,
+        )
+        .unwrap();
+        let tags: Vec<&Text> = s
+            .objects
+            .iter()
+            .filter(|o| o.tag)
+            .map(|o| match &o.kind {
+                Kind::Text(t) => t,
+                other => panic!("expected a tag, got {other:?}"),
+            })
+            .collect();
+        let texts: Vec<String> = tags.iter().map(|t| t.label.text()).collect();
+        assert_eq!(texts, ["(a)", "(x)", "(b)"]);
+        assert_eq!(tags[2].label.size, 10.0);
+        assert_eq!(tags[2].label.runs[0].color, Color::rgb(1.0, 0.0, 0.0));
+
+        let Kind::Shape(b) = &s.objects[s.objects.len() - 2].kind else {
+            panic!("expected the box");
+        };
+        let size = tags[2].label.size();
+        assert!((tags[2].origin.x + size.x + TAG_GAP - b.origin.x).abs() < 1e-9);
+        assert!((tags[2].origin.y + size.y / 2.0 - (b.origin.y + 15.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_auto_canvas_holds_a_tag_and_a_tag_takes_text_or_auto() {
+        let s = scene("canvas { size auto auto; margin 0; box { tag auto; at 0 0; size 50 20; } }")
+            .unwrap();
+        let Kind::Shape(b) = &s.objects[0].kind else {
+            panic!("expected the box");
+        };
+        let Kind::Text(tag) = &s.objects[1].kind else {
+            panic!("expected the tag");
+        };
+        assert_eq!(tag.origin.x, 0.0);
+        assert_eq!(b.origin.x, tag.label.size().x + TAG_GAP);
+        assert_eq!(
+            scene("canvas { size 100 100; box { tag 3; size 50 20; } }")
+                .unwrap_err()
+                .2,
+            "`tag` takes a quoted text or `auto`"
+        );
+        assert_eq!(letters(1), "a");
+        assert_eq!(letters(26), "z");
+        assert_eq!(letters(27), "aa");
     }
 
     #[test]

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every drawn node but `caption` takes `tag "TEXT"` or `tag auto`. acre sets
+  the tag 8 pixels left of the box around what the node draws, centered on
+  it vertically. `tag auto` gives the next letter, (a), (b) and on, counting
+  through the whole canvas in source order. A tag set by hand does not
+  count. `tag-size`, `tag-color` and `tag-font` set its look, by default 14
+  pixels, black and sans-bold, and a style can carry them. An `auto` canvas
+  makes room for tags. When a timeline moves, scales or fades a node, its
+  tag moves, scales and fades with it. A color change leaves the tag alone.
+  `Object::tag` is new.
 - `merge` joins several lines into one arrow. Each `from` starts a line,
   and `from` on a `merge` is the one property a node may set more than
   once. Each line sweeps into a junction, and an arrow runs on from the

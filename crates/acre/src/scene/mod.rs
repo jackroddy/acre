@@ -112,6 +112,9 @@ pub struct Object {
     /// The node in the source that made the object, or an empty span
     /// for an object made in code.
     pub source: Span,
+    /// Whether the object is the tag of the node at `source`, which
+    /// moves, scales and fades with the node but keeps its own colors.
+    pub tag: bool,
     /// The animated groups the object sits in, innermost first.
     pub groups: Vec<Animation>,
     /// The cells of a row that move, scale or fade on their own, by
@@ -232,6 +235,7 @@ impl Object {
             texts: Vec::new(),
             lifetime: None,
             source: Span::default(),
+            tag: false,
             groups: Vec::new(),
             cells: Vec::new(),
         }

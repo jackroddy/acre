@@ -132,8 +132,15 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
             set(&mut groups[k].animation, channel, &actions);
             continue;
         }
-        let indices: Vec<usize> = (0..objects.len())
+        // the node's tag moves, scales and fades with it, and keeps its
+        // own colors
+        let with_tag: Vec<usize> = (0..objects.len())
             .filter(|&i| objects[i].source == node.span)
+            .collect();
+        let indices: Vec<usize> = with_tag
+            .iter()
+            .copied()
+            .filter(|&i| !objects[i].tag)
             .collect();
         if let (Some(cell), Channel::Scale | Channel::Move | Channel::Opacity) = (cell, channel) {
             for &i in &indices {
@@ -145,20 +152,20 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
             Channel::Scale => {
                 let track = scales(&actions);
                 let pivot = pivot(node, objects, &indices, fonts)?;
-                for &i in &indices {
+                for &i in &with_tag {
                     objects[i].scale = track.clone();
                     objects[i].pivot = pivot;
                 }
             }
             Channel::Move => {
                 let track = moves(&actions);
-                for &i in &indices {
+                for &i in &with_tag {
                     objects[i].offset = track.clone();
                 }
             }
             Channel::Opacity => {
                 let track = opacities(&actions);
-                for &i in &indices {
+                for &i in &with_tag {
                     objects[i].opacity = track.clone();
                 }
             }
@@ -365,8 +372,10 @@ impl<'a> Group<'a> {
     fn new(node: &'a Node, objects: &[Object], fonts: &Fonts) -> Result<Self, Error> {
         let mut inside = Vec::new();
         sources(node, &mut inside);
+        // the group's own tag sits outside what it holds
         let indices: Vec<usize> = (0..objects.len())
             .filter(|&i| inside.contains(&objects[i].source))
+            .filter(|&i| !(objects[i].tag && objects[i].source == node.span))
             .collect();
         let pivot = pivot(node, objects, &indices, fonts)?;
         Ok(Group {
@@ -1176,6 +1185,26 @@ mod tests {
             err("duration 2s; timeline { 1s to 2.5s { scale a 2; } }"),
             "the timeline runs to 2.5s, past this `duration`"
         );
+    }
+
+    #[test]
+    fn a_tag_moves_scales_and_fades_with_its_node_and_keeps_its_color() {
+        let s = canvas(
+            "box a { tag auto; at 100 100; size 40 20; fill #ffffff; text \"hi\"; }
+             group g { tag \"(z)\"; box { at 300 100; size 40 20; } }
+             timeline { 0s to 1s ease linear { move a 10 0; scale a 2; fade a 0.5; fill a #ff0000;
+                                               text-color a #ff0000; fade g 0.5; } }",
+        );
+        let [a, tag, _, group_tag] = [0, 1, 2, 3].map(|i| &s.objects[i]);
+        assert!(tag.tag && group_tag.tag);
+        assert_eq!(tag.offset.at(1.0), Point::new(10.0, 0.0));
+        assert_eq!(tag.scale.at(1.0), 2.0);
+        assert_eq!(tag.pivot, a.pivot);
+        assert_eq!(a.pivot.x, 120.0);
+        assert_eq!(tag.opacity.at(1.0), 0.5);
+        assert!(tag.paints.is_empty());
+        assert_eq!(a.paints.len(), 2);
+        assert_eq!(group_tag.opacity_at(1.0), 0.5);
     }
 
     #[test]
