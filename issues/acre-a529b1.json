@@ -3,26 +3,29 @@
   "title": "acre works out the source edits that move a node by an offset",
   "body": "`lang::parse` keeps a `Span` on every node, property and value, and `Object::source` is the span of the node that drew an object. Nothing maps a move of an object back to the numbers in the source that placed it.\n\n## Proposal\n\nA pure function in the library takes the source text, the parsed `Program` before expansion, a node span and an offset (dx, dy), and returns either a list of text edits (byte range and replacement) or a reason the node cannot move. It handles:\n\n- `at X Y` with both values number literals in the node: add the offset.\n- `at NAME DX DY` and `at ROW N DX DY`: add to the offsets, inserting ` DX DY` when they are absent.\n- A node with no `at`, outside a stack or grid: insert `at X Y;` placing it where it is drawn.\n- `points X Y ...` on a polygon or polyline: add to every pair.\n- `from X Y` and `to X Y` literal ends on a line or arrow: add to each.\n\nIt refuses, with a reason a person can read: a value from a `let`, a `( ... )` expression or a `style`; a child of a stack or grid; a node inside a `repeat`; a node a timeline moves or scales; and an end that names a node. Numbers are written rounded to whole pixels unless the original had decimals.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T07:52:29.892350797Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T07:37:09.34208022Z",
-  "updated_at": "2026-11-24T07:37:29.892350797Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:44:36.839695089Z",
+  "closed_at": "2026-11-24T07:44:36.839695089Z",
+  "close_reason": "Landed in aa36cc1 on dev. `scene::edit::move_edits(source, node, dx, dy) -> Result<Vec<TextEdit>, Error>` returns the edits that move a node, and `scene::edit::apply(source, edits)` makes them. An `at` from a named thing takes the offset as DX DY, written after it when it has none.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "6e5ed79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "aa36cc1",
+      "branch": "dev"
+    }
   }
 }
