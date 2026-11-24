@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::f64::consts::FRAC_1_SQRT_2;
+use std::ptr;
 
 use super::code::{self, Code};
 use super::connector::{self, Dir, End, Follow};
@@ -305,7 +306,7 @@ fn shown_later<'a>(
                     let after = &parent.children[k + 1..];
                     let shift = match after.first() {
                         Some(next) => {
-                            let d = places[&next.span.start] - places[&child.span.start];
+                            let d = places[&ptr::from_ref(next)] - places[&ptr::from_ref(child)];
                             if across {
                                 Point::new(d.x, 0.0)
                             } else {
@@ -390,7 +391,7 @@ fn name_things<'a>(
         if node.kind.text == "stack" || node.kind.text == "grid" {
             let slots = lay_out(node, offset, names, places)?;
             for (child, slot) in node.children.iter().zip(slots) {
-                places.insert(child.span.start, slot);
+                places.insert(ptr::from_ref(child), slot);
                 name_things(std::slice::from_ref(child), slot, names, places)?;
             }
             continue;
@@ -579,7 +580,7 @@ fn add_node(
         }
         "stack" | "grid" => {
             for child in &node.children {
-                let slot = pass.places[&child.span.start];
+                let slot = pass.places[&ptr::from_ref(child)];
                 add_objects(std::slice::from_ref(child), slot, pass, counts, out)?;
             }
             return Ok(());
@@ -897,8 +898,9 @@ fn add_panel(
     }
     let (captions, contents): (Vec<&Node>, Vec<&Node>) =
         node.children.iter().partition(|c| c.kind.text == "caption");
-    let contents: Vec<Node> = contents.into_iter().cloned().collect();
-    add_objects(&contents, place.contents, pass, counts, out)?;
+    for c in contents {
+        add_objects(std::slice::from_ref(c), place.contents, pass, counts, out)?;
+    }
 
     let max = bounds_of(&names.fonts, &out[start..]).map_or(place.at, |(_, max)| max);
     let mut bottom = max.y;
@@ -970,9 +972,11 @@ fn bounds_of(fonts: &Fonts, objects: &[Object]) -> Option<(Point, Point)> {
     super::primitive::bounds(fonts, &prims)
 }
 
-/// The slot of each child of a stack or a grid, by where the child's
-/// node starts in the source.
-type Places = HashMap<usize, Point>;
+/// The slot of each child of a stack or a grid, by the child's node.
+//
+// keyed by the node's address, not its span: the copies a `repeat`
+// makes share the span of the node they copy
+type Places = HashMap<*const Node, Point>;
 
 /// What a pass that adds objects reads.
 struct Pass<'p, 'a> {
@@ -4190,6 +4194,77 @@ mod tests {
             panic!("expected the arrow");
         };
         assert_eq!(arrow.to, Point::new(40.0, 50.0));
+    }
+
+    fn box_origins(s: &Scene) -> Vec<Point> {
+        s.objects
+            .iter()
+            .filter_map(|o| match &o.kind {
+                Kind::Shape(b) => Some(b.origin),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_copy_of_a_stack_in_a_repeat_takes_its_own_place() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                repeat v 0 2 { stack { at (v * 50) 0; box { size 40 40; } } }
+                repeat v 0 2 { group { at (v * 50) 60; stack { box { size 40 40; } } } }
+                repeat v 0 2 { box { at (v * 50) 120; size 40 40; } }
+            }"#,
+        )
+        .unwrap();
+        let mut want = Vec::new();
+        for y in [0.0, 60.0, 120.0] {
+            for x in [0.0, 50.0, 100.0] {
+                want.push(Point::new(x, y));
+            }
+        }
+        assert_eq!(box_origins(&s), want);
+    }
+
+    #[test]
+    fn grids_panels_and_nested_stacks_in_a_repeat_place_each_copy() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                repeat v 0 1 { grid { at (v * 100) 0; columns 2;
+                    box { size 10 10; } box { size 10 10; } } }
+                repeat v 0 1 { panel { at (v * 100) 50; number none;
+                    stack { box { size 10 10; } } } }
+                repeat v 0 1 { stack { at (v * 100) 200; direction right;
+                    stack { box { size 10 10; } box { size 10 10; } } } }
+            }"#,
+        )
+        .unwrap();
+        let o = box_origins(&s);
+        assert_eq!(
+            o[..4],
+            [0.0, 10.0, 100.0, 110.0].map(|x| Point::new(x, 0.0))
+        );
+        assert_eq!(o[4].x, 0.0);
+        assert_eq!(o[5].x, 100.0);
+        assert_eq!(o[4].y, o[5].y);
+        assert_eq!(
+            o[6..],
+            [(0.0, 200.0), (0.0, 210.0), (100.0, 200.0), (100.0, 210.0)]
+                .map(|(x, y)| Point::new(x, y))
+        );
+    }
+
+    #[test]
+    fn a_stack_lays_out_the_copies_of_a_repeat_it_holds_one_after_another() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                stack { gap 5; repeat v 0 2 { box { size 10 10; } } }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            box_origins(&s),
+            [0.0, 15.0, 30.0].map(|y| Point::new(0.0, y))
+        );
     }
 
     #[test]

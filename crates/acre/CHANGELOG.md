@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numbers blend from the matrix's `text-color`. `stroke` on a matrix with
   `stroke none` now changes the cells that set their own outline. It is an
   error only when no cell has an outline.
+- Each copy of a `stack` or a `grid` inside a `repeat` now takes its own
+  place. Before, every copy drew at the last copy's place, whether the
+  stack set its own `at` or sat in a `group`, a `panel` or another stack.
 
 ## [0.2.0] - 2026-11-24
 
