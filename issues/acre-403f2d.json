@@ -3,26 +3,29 @@
   "title": "Arrow ends snap to anchor dots on shapes and re-anchor by dragging",
   "body": "Ends of a line or arrow attach to a shape by name with no side, so where they meet is hard to control. With the Line or Arrow tool, hovering a shape shows 9 dots (corners, side midpoints, centre); the pointer snaps to the nearest within a few screen pixels and an end dropped on one writes `NAME SIDE` or `NAME CORNER` (or the bare name for the centre). Elsewhere on the outline an end writes `NAME SIDE F`. A point inside a shape has no form in the language, so ends stay on the outline. A selected line or arrow shows a handle on each end; dragging it onto a dot or edge re-anchors that end, and dropping it on empty canvas detaches it to a point.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T21:24:53.181502698Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:53:25.791736039Z",
-  "updated_at": "2026-11-24T21:09:53.181502698Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T21:18:32.914714218Z",
+  "closed_at": "2026-11-24T21:18:32.914714218Z",
+  "close_reason": "Landed in 8a9536b. `anchor::anchor_at` and `Outline::dots` in `crates/acre-gui/src/anchor.rs` pick the spot. `tool::end_at` and `tool::end_edits` write it, and `Target::Line` in `handle.rs` gives a line its end handles. The library gained `scene::edit::end_edits`, `EndAt::On` and `Spot`. Inside a thing, away from its outline, an end writes the bare name. Row and matrix cells get no dots, and a merge's ends get no handles.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "f8cb0c5",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8a9536b",
+      "branch": "dev"
+    }
   }
 }
