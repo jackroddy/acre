@@ -1,0 +1,28 @@
+{
+  "id": "acre-80f533",
+  "title": "Dragging a child of a stack or grid reorders it among its siblings",
+  "body": "A `stack` or `grid` places its children by their order in the source, not by `at`. In acre-gui a drag on such a child is refused (\"a child of a stack or grid\"), because `scene::edit::move_edits` has no literal position to change.\n\n## Proposal\n\n- While a stack child is dragged, a thin insertion line shows at the gap between siblings nearest the pointer; in a grid, a marker shows at the nearest slot.\n- On release, the child's source text, with its comments and properties, moves to that place among its siblings as one edit, so one neovim undo step. The stack lays out again on the rebuild.\n- A library function in `scene::edit` gives the edits that move a node's text to before a given sibling (or to the end), stable under `acre fmt`.\n\nSource order is also paint order and the order of `tag auto` letters and panel numbers, so a reorder can change which letter or number a child gets.\n\n## Out of scope\n\nDragging a child out of a stack onto free canvas, or a free node into a stack. Each needs `at` written or removed and the node moved between parents.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T22:05:17.207492447Z",
+  "updated_at": "2026-11-24T22:05:17.207492447Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "8a9536b",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
