@@ -1,0 +1,28 @@
+{
+  "id": "acre-9c9aee",
+  "title": "Outstanding syntax",
+  "body": "Every syntax change or addition open in foam as of 2026-11-23. Syntax stays provisional until one rework after these land (see CLAUDE.md), so each piece takes the form Jack accepted on 2026-11-23 or the plainest one the parser reads, logged on acre-4518a5.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:36:24.357033844Z",
+  "updated_at": "2026-11-24T06:36:24.357033844Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6faae32",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
