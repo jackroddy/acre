@@ -7,13 +7,15 @@
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
-  "blocked_by": [],
+  "blocked_by": [
+    "acre-b48061"
+  ],
   "related": [],
   "assignee": null,
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.22859145Z",
-  "updated_at": "2026-11-24T20:07:01.22859145Z",
+  "updated_at": "2026-11-24T20:07:01.274834301Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
