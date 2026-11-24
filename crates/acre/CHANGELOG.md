@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Text between single asterisks, `*like this*`, is set in italic sans. An
+  opening `*` starts a word and a closing `*` ends one. Any other `*` is the
+  character, so `2 * 3` and `a*b` stay as written, and so does a `*` in a
+  code span. Code inside italic stays upright and italic inside bold stays
+  bold, since acre has no italic mono or bold italic face. `\*` writes an
+  asterisk.
 - A child of a stack with `space shown` takes its space only once the
   timeline shows it. Layout still puts every child in its slot. Until the
   child's first `show` or `fade NAME in`, acre draws the children after it

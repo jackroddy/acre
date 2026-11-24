@@ -156,7 +156,8 @@ pub enum Highlight {
     Name,
     Number,
     Str,
-    /// A markup sign inside a string: `` ` ``, `**`, `{name`, `}` or `$`.
+    /// A markup sign inside a string: `` ` ``, `**`, `*`, `{name`, `}` or
+    /// `$`.
     Markup,
     /// A color, or a `let` name that stands for one, with its value.
     Color([u8; 4]),
@@ -273,10 +274,16 @@ fn markup(src: &str, span: Span, out: &mut Vec<(Span, Highlight)>) {
     };
     let bytes = text.as_bytes();
     let mut k = 0;
+    let mut code = false;
+    let mut italic = false;
     while k < bytes.len() {
         let (len, class) = match bytes[k] {
             b'\\' => (2.min(bytes.len() - k), Highlight::Str),
-            b'`' | b'}' => (1, Highlight::Markup),
+            b'`' => {
+                code = !code;
+                (1, Highlight::Markup)
+            }
+            b'}' => (1, Highlight::Markup),
             b'$' => {
                 // a formula's braces and backslashes are LaTeX, not
                 // markup, so it stays one `Str` between its `$` signs
@@ -291,6 +298,15 @@ fn markup(src: &str, span: Span, out: &mut Vec<(Span, Highlight)>) {
                 (1.min(bytes.len() - end), Highlight::Markup)
             }
             b'*' if bytes.get(k + 1) == Some(&b'*') => (2, Highlight::Markup),
+            b'*' if !code => {
+                let before = text[..k].chars().next_back().unwrap_or(' ');
+                if italic_mark(italic, before, text[k + 1..].chars()) {
+                    italic = !italic;
+                    (1, Highlight::Markup)
+                } else {
+                    (1, Highlight::Str)
+                }
+            }
             b'{' => {
                 let name = bytes[k..]
                     .iter()
@@ -306,6 +322,65 @@ fn markup(src: &str, span: Span, out: &mut Vec<(Span, Highlight)>) {
         push(k, k + len, class);
         k += len;
     }
+}
+
+/// Whether a lone `*` outside code is an italic mark, given whether
+/// italic is open, the character `before` it and the characters `after`
+/// it. A `*` that starts a word opens italic when a later `*` that ends
+/// a word closes it. Any other `*` is the character.
+pub(crate) fn italic_mark(
+    italic: bool,
+    before: char,
+    after: impl Iterator<Item = char> + Clone,
+) -> bool {
+    let next = after.clone().next();
+    if italic {
+        return ends_word(before, next);
+    }
+    if before.is_alphanumeric() || next.is_none_or(char::is_whitespace) {
+        return false;
+    }
+
+    // the closing `*` is found the way the markup reads the text after
+    // the opening one: escapes, code spans, formulas and `**` close
+    // nothing
+    let mut before = '*';
+    let mut code = false;
+    let mut after = after.peekable();
+    while let Some(c) = after.next() {
+        match c {
+            '\\' => {
+                if let Some(c) = after.next() {
+                    before = c;
+                }
+                continue;
+            }
+            '`' => code = !code,
+            _ if code => {}
+            '$' => {
+                while let Some(c) = after.next() {
+                    match c {
+                        '$' => break,
+                        '\\' => {
+                            after.next();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            '*' if after.peek() == Some(&'*') => {
+                after.next();
+            }
+            '*' if ends_word(before, after.peek().copied()) => return true,
+            _ => {}
+        }
+        before = c;
+    }
+    false
+}
+
+fn ends_word(before: char, next: Option<char>) -> bool {
+    !before.is_whitespace() && !next.is_some_and(char::is_alphanumeric)
 }
 
 /// Where a byte offset sits in the source, for an editor.
@@ -814,6 +889,30 @@ mod tests {
                 (" b", Highlight::Str),
                 ("}", Highlight::Markup),
                 ("\"", Highlight::Str),
+            ]
+        );
+    }
+
+    #[test]
+    fn highlight_marks_only_the_asterisks_that_set_italic() {
+        let src = r#"text "*a* 2 * 3 `*p*` *b";"#;
+        let classes: Vec<(&str, Highlight)> = highlight(src)
+            .into_iter()
+            .map(|(span, class)| (&src[span.start..span.end], class))
+            .filter(|(_, c)| *c != Highlight::Punct && *c != Highlight::Key)
+            .collect();
+        assert_eq!(
+            classes,
+            [
+                ("\"", Highlight::Str),
+                ("*", Highlight::Markup),
+                ("a", Highlight::Str),
+                ("*", Highlight::Markup),
+                (" 2 * 3 ", Highlight::Str),
+                ("`", Highlight::Markup),
+                ("*p*", Highlight::Str),
+                ("`", Highlight::Markup),
+                (" *b\"", Highlight::Str),
             ]
         );
     }

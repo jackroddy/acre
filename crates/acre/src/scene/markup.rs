@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 
 use super::primitive::{Color, Font, Run};
+use crate::lang::italic_mark;
 
 /// The runs a label's text marks up, starting in `font` and `color`.
 ///
 /// `` `code` `` sets text in the mono font, `**bold**` in the bold sans
-/// font, and code inside bold in the bold mono font. `{NAME text}`
+/// font, and code inside bold in the bold mono font. `*italic*` sets
+/// text in the italic sans font, but code stays upright and bold stays
+/// bold, since neither has an italic face. An opening `*` starts a word
+/// and a closing `*` ends one; any other `*`, and any `*` in code, is the
+/// character. `{NAME text}`
 /// colors `text` with the color `colors` gives `NAME`, or with
 /// `{#rrggbb text}`. `$formula$` is LaTeX math, as one
 /// run in the math font. A line that starts with `- ` is a list item,
@@ -21,44 +26,49 @@ pub fn runs(
     let mut out: Vec<Run> = Vec::new();
     let mut mono = false;
     let mut bold = false;
+    let mut italic = false;
     let mut stack: Vec<Color> = Vec::new();
     let mut chars = src.chars().peekable();
     let mut text = String::new();
     let mut line_start = true;
+    let mut prev = ' ';
 
     // the run being built is pushed whenever the style changes, with
     // the style it was written in
-    let flush = |out: &mut Vec<Run>, text: &mut String, mono: bool, bold: bool, stack: &[Color]| {
-        if text.is_empty() {
-            return;
-        }
-        let font = match (mono, bold) {
-            (true, true) => Font::MonoBold,
-            (true, false) => Font::Mono,
-            (false, true) => Font::SansBold,
-            (false, false) => font,
-        };
-        let color = stack.last().copied().unwrap_or(color);
-        match out.last_mut() {
-            Some(last) if !last.bullet && last.font == font && last.color == color => {
-                last.text.push_str(text)
+    let flush =
+        |out: &mut Vec<Run>, text: &mut String, style: (bool, bool, bool), stack: &[Color]| {
+            if text.is_empty() {
+                return;
             }
-            _ => out.push(Run {
-                text: text.clone(),
-                font,
-                color,
-                bullet: false,
-            }),
-        }
-        text.clear();
-    };
+            let font = match style {
+                (true, true, _) => Font::MonoBold,
+                (true, false, _) => Font::Mono,
+                (false, true, _) => Font::SansBold,
+                (false, false, true) if font != Font::SansBold => Font::SansItalic,
+                (false, false, _) => font,
+            };
+            let color = stack.last().copied().unwrap_or(color);
+            match out.last_mut() {
+                Some(last) if !last.bullet && last.font == font && last.color == color => {
+                    last.text.push_str(text)
+                }
+                _ => out.push(Run {
+                    text: text.clone(),
+                    font,
+                    color,
+                    bullet: false,
+                }),
+            }
+            text.clear();
+        };
 
     while let Some(c) = chars.next() {
         let at_line_start = std::mem::replace(&mut line_start, c == '\n');
+        let before = std::mem::replace(&mut prev, c);
         match c {
             '-' if at_line_start && chars.peek() == Some(&' ') => {
                 chars.next();
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 out.push(Run {
                     text: "\u{2022}".into(),
                     font: Font::Sans,
@@ -67,15 +77,18 @@ pub fn runs(
                 });
             }
             '\\' => match chars.next() {
-                Some(c) => text.push(c),
+                Some(c) => {
+                    text.push(c);
+                    prev = c;
+                }
                 None => return Err("a `\\` at the end of the text escapes nothing".into()),
             },
             '`' => {
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 mono = !mono;
             }
             '$' => {
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 let formula = formula(&mut chars)?;
                 out.push(Run {
                     text: formula,
@@ -86,11 +99,15 @@ pub fn runs(
             }
             '*' if chars.peek() == Some(&'*') => {
                 chars.next();
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 bold = !bold;
             }
+            '*' if !mono && italic_mark(italic, before, chars.clone()) => {
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
+                italic = !italic;
+            }
             '{' => {
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 let mut name = String::new();
                 for c in chars.by_ref() {
                     if c == ' ' {
@@ -109,7 +126,7 @@ pub fn runs(
                 stack.push(color);
             }
             '}' => {
-                flush(&mut out, &mut text, mono, bold, &stack);
+                flush(&mut out, &mut text, (mono, bold, italic), &stack);
                 if stack.pop().is_none() {
                     return Err("a `}` closes no `{`".into());
                 }
@@ -120,7 +137,7 @@ pub fn runs(
     if !stack.is_empty() {
         return Err("a `{` is never closed".into());
     }
-    flush(&mut out, &mut text, mono, bold, &stack);
+    flush(&mut out, &mut text, (mono, bold, italic), &stack);
     Ok(out)
 }
 
@@ -205,6 +222,40 @@ mod tests {
                 (" ".into(), Font::Sans, Color::BLACK),
                 ("d ".into(), Font::Mono, Color::BLACK),
                 ("e".into(), Font::MonoBold, Color::BLACK),
+            ]
+        );
+    }
+
+    #[test]
+    fn single_asterisks_set_italic_but_code_and_bold_stay_upright() {
+        assert_eq!(
+            styles("a *b `c` {red d}* **e *f* g** ***h***"),
+            [
+                ("a ".into(), Font::Sans, Color::BLACK),
+                ("b ".into(), Font::SansItalic, Color::BLACK),
+                ("c".into(), Font::Mono, Color::BLACK),
+                (" ".into(), Font::SansItalic, Color::BLACK),
+                ("d".into(), Font::SansItalic, RED),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("e f g".into(), Font::SansBold, Color::BLACK),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("h".into(), Font::SansBold, Color::BLACK),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_asterisk_with_no_partner_or_beside_a_space_is_the_character() {
+        assert_eq!(
+            styles(r"2 * 3 *b * c* `*p = *q*` $a*b$ a*b, x* 2*3*4 *a\*"),
+            [
+                ("2 * 3 ".into(), Font::Sans, Color::BLACK),
+                ("b * c".into(), Font::SansItalic, Color::BLACK),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("*p = *q*".into(), Font::Mono, Color::BLACK),
+                (" ".into(), Font::Sans, Color::BLACK),
+                ("a*b".into(), Font::Math, Color::BLACK),
+                (" a*b, x* 2*3*4 *a*".into(), Font::Sans, Color::BLACK),
             ]
         );
     }
