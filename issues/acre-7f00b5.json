@@ -1,0 +1,28 @@
+{
+  "id": "acre-7f00b5",
+  "title": "The viewer's side panels cover the render without resizing it",
+  "body": "The properties panel (`Panel::right(\"properties\")`) and the sections panel (`Panel::left(\"sections\")`) in `crates/acre-gui/src/app.rs` take their width from the render pane. In fit mode `View::show` recomputes the zoom from the pane each frame, so selecting a node shrinks the drawing; outside fit mode the pane edge moves and the drawing shifts. Jack wants a panel to never change the zoom or position of the render.\n\n## Proposal\n\nDraw both panels as overlays at the window edges, looking as they do now, while the render pane keeps the full width. Part of the drawing sits under an open panel.",
+  "type": "bug",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T23:20:53.274012943Z",
+  "updated_at": "2026-11-24T23:20:53.274012943Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "3cf6d44",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
