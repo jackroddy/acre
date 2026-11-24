@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-24T23:04:53.016089927Z",
   "defer_until": null,
   "created_at": "2026-11-12T21:53:33.950694153Z",
-  "updated_at": "2026-11-24T22:49:53.016089927Z",
+  "updated_at": "2026-11-24T22:50:34.263112509Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -43,6 +43,14 @@
       "branch": "dev",
       "edited_at": "2026-11-13T05:04:42.558442967Z",
       "reply_to": "99e8c309"
+    },
+    {
+      "id": "65b8565d",
+      "at": "2026-11-24T22:50:34.263111649Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "I read acre-gui's code at 35b117e for a first frame drawn at a provisional size and kept until input. I found none, and I did not open a window. Nothing below has been tested against a running acre-gui.\n\nWhat the code does each time eframe calls `App::ui`:\n\n- `View::show` in `view.rs` takes the pane's `rect` from `ui.available_size()` in that same call. While the canvas is fitted, `View::show` computes the zoom and origin from that `rect`. When the zoom changes, `View::show` calls `request_repaint`.\n- The cached texture is redrawn when `Drawn::pane` differs from the new pane size, whether or not the 150 ms `SETTLE` has passed. The cache key holds the pane size, so a resized pane gets a new texture in the first `ui` call after the resize.\n- `App::pane` copies `Shown::rect` every frame, so the menu commands zoom about the current pane.\n- eframe 0.37 asks for a repaint on winit's `WindowEvent::Resized` (`repaint_asap` in `wgpu_integration.rs`, and `egui-winit` marks `Resized` as needing a repaint). So acre-gui does not need input to learn the new size.\n\nThe screenshots show the whole window at the wrong size, with the status bar 40 pixels lower in the first shot. `View`'s texture would not move the status bar, so the first frame came from a window laid out at another size.\n\n## Candidate causes, most likely first\n\n1. The first frame was drawn at the size acre-gui asks for in `main.rs`, 900 by 720 points via `with_inner_size`, or at the compositor's first configure, before decade gave the window its pane size. eframe would repaint on the `Resized` that follows. On Wayland that repaint waits for a frame callback, and the memory `decade-frames-only-on-screen` records that decade sends none while it is off screen. This explains both screenshots without a fault in acre-gui. I have not checked that the measured 940 pixel canvas matches a 900 point window. The screenshots' pixel scale is unknown to me.\n2. decade resized the window but winit delivered no `Resized` until the click. That would be a fault in decade's configure handling or in winit. acre-gui could not see it.\n3. A fault in acre-gui's layout on the first frame. I found no code that keeps a size past the frame it was measured in.\n\n## To settle it\n\nRun acre-gui inside decade with decade on screen the whole time, and log `ui.ctx().content_rect()` in `App::ui`, along with each `Resized` from eframe. Two outcomes are possible. If a second `ui` call at the pane's size arrives without input, candidate 1 holds and the issue can close as decade-7091e6. If no `Resized` arrives, candidate 2 holds and the fault belongs to decade.",
+      "commit": "35b117e",
+      "branch": "dev"
     }
   ],
   "stamps": {
