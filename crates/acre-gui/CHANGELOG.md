@@ -7,6 +7,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+
+- When the editor sends a source with another path, the viewer pauses at 0,
+  as it does when it opens a file.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added

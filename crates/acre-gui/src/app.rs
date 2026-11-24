@@ -264,6 +264,9 @@ impl App {
             if path != self.path {
                 self.selection = Selection::default();
                 self.field = None;
+                let now = Instant::now();
+                self.playback.pause(now);
+                self.playback.seek(now, 0.0);
             }
             self.path = path;
 

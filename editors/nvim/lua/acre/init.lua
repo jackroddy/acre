@@ -144,6 +144,34 @@ local function receive(message)
   end
 end
 
+-- Wire the autocmds that keep the viewer up to date with `buf`.
+local function follow(buf)
+  vim.api.nvim_clear_autocmds({ group = group })
+  local changed = function()
+    view.timer:stop()
+    view.timer:start(M.config.debounce, 0, vim.schedule_wrap(function()
+      if view then
+        send_text()
+      end
+    end))
+  end
+  local events = M.config.render == "change" and { "TextChanged", "TextChangedI" } or {}
+  if #events > 0 then
+    vim.api.nvim_create_autocmd(events, { group = group, buffer = buf, callback = changed })
+  end
+  vim.api.nvim_create_autocmd("BufWritePost", { group = group, buffer = buf, callback = send_text })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = group,
+    buffer = buf,
+    callback = send_cursor,
+  })
+  vim.api.nvim_create_autocmd({ "BufWipeout", "VimLeavePre" }, {
+    group = group,
+    buffer = buf,
+    callback = M.stop,
+  })
+end
+
 function M.stop()
   if not view then
     return
@@ -189,39 +217,32 @@ function M.start()
     return
   end
   view = { job = job, buf = buf, timer = vim.uv.new_timer() }
+  follow(buf)
+  send_text()
+  send_cursor()
+end
 
-  local changed = function()
-    view.timer:stop()
-    view.timer:start(M.config.debounce, 0, vim.schedule_wrap(function()
-      if view then
-        send_text()
-      end
-    end))
+-- Show the current buffer in the running viewer, in place of the
+-- buffer it showed.
+function M.switch()
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.api.nvim_buf_is_valid(view.buf) then
+    vim.diagnostic.reset(ns, view.buf)
   end
-  local events = M.config.render == "change" and { "TextChanged", "TextChangedI" } or {}
-  if #events > 0 then
-    vim.api.nvim_create_autocmd(events, { group = group, buffer = buf, callback = changed })
-  end
-  vim.api.nvim_create_autocmd("BufWritePost", { group = group, buffer = buf, callback = send_text })
-  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-    group = group,
-    buffer = buf,
-    callback = send_cursor,
-  })
-  vim.api.nvim_create_autocmd({ "BufWipeout", "VimLeavePre" }, {
-    group = group,
-    buffer = buf,
-    callback = M.stop,
-  })
+  view.timer:stop()
+  view.buf = buf
+  follow(buf)
   send_text()
   send_cursor()
 end
 
 function M.toggle()
-  if view then
+  if not view then
+    M.start()
+  elseif view.buf == vim.api.nvim_get_current_buf() then
     M.stop()
   else
-    M.start()
+    M.switch()
   end
 end
 
