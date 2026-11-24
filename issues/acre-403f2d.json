@@ -1,0 +1,28 @@
+{
+  "id": "acre-403f2d",
+  "title": "Arrow ends snap to anchor dots on shapes and re-anchor by dragging",
+  "body": "Ends of a line or arrow attach to a shape by name with no side, so where they meet is hard to control. With the Line or Arrow tool, hovering a shape shows 9 dots (corners, side midpoints, centre); the pointer snaps to the nearest within a few screen pixels and an end dropped on one writes `NAME SIDE` or `NAME CORNER` (or the bare name for the centre). Elsewhere on the outline an end writes `NAME SIDE F`. A point inside a shape has no form in the language, so ends stay on the outline. A selected line or arrow shows a handle on each end; dragging it onto a dot or edge re-anchors that end, and dropping it on empty canvas detaches it to a point.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T20:53:25.791736039Z",
+  "updated_at": "2026-11-24T20:53:25.791736039Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f8cb0c5",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
