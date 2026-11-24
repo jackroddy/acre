@@ -36,13 +36,14 @@ const RESERVED: &[&str] = &[
 /// properties.
 pub(super) type Expanded = (Node, HashMap<String, Color>, Vec<Property>);
 
-/// The canvas with its `let` lines and `style` nodes applied and removed,
-/// and the colors its lets name. A style named after a node kind applies
+/// The canvas with its `let` lines, `style` nodes and `repeat` nodes
+/// applied and removed, and the colors its lets name. A style named after a node kind applies
 /// to every node of that kind. A node's own property wins over a style's,
 /// and a later style over an earlier one. The properties of the style
 /// named `marker` come back as well, for the numbered text that wears
 /// the same badge.
 pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
+    one_name(canvas)?;
     let mut lets: HashMap<&str, Vec<Value>> = HashMap::new();
     let mut properties = Vec::new();
     for p in &canvas.properties {
@@ -107,7 +108,7 @@ pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
     };
     for node in &canvas.children {
         if node.kind.text != "style" {
-            out.children.push(apply(node, &lets, &styles)?);
+            apply(node, &lets, &styles, &mut out.children)?;
         }
     }
     let badge = match styles.get("marker") {
@@ -140,12 +141,18 @@ pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
     Ok((out, colors, badge))
 }
 
-/// `node` and its children with styles applied and names substituted.
+/// Push `node` onto `out`, with its children, styles applied and names
+/// substituted, or push the copies a `repeat` node makes.
 fn apply(
     node: &Node,
     lets: &HashMap<&str, Vec<Value>>,
     styles: &HashMap<&str, Vec<Property>>,
-) -> Result<Node, Error> {
+    out: &mut Vec<Node>,
+) -> Result<(), Error> {
+    if node.kind.text == "repeat" {
+        return repeat(node, lets, styles, out);
+    }
+    one_name(node)?;
     let mut own: Vec<Property> = Vec::new();
 
     // a style named after the node's kind comes first, so a style the
@@ -186,29 +193,174 @@ fn apply(
             })
         })
         .collect::<Result<_, Error>>()?;
-    let children = node
-        .children
-        .iter()
-        .map(|c| apply(c, lets, styles))
-        .collect::<Result<_, _>>()?;
-    Ok(Node {
+    let mut children = Vec::new();
+    for c in &node.children {
+        apply(c, lets, styles, &mut children)?;
+    }
+    out.push(Node {
         kind: node.kind.clone(),
         name: node.name.clone(),
         head: node.head.clone(),
         properties,
         children,
         span: node.span,
-    })
+    });
+    Ok(())
+}
+
+/// An error unless `node` has at most one name before `{`, or opens
+/// with a time.
+fn one_name(node: &Node) -> Result<(), Error> {
+    if node.kind.text.is_empty() {
+        return Ok(());
+    }
+    match node.head.as_slice() {
+        [] => Ok(()),
+        [one] => Err(Error::new(one.span, "a node's name is a bare word")),
+        [_, extra, ..] => Err(Error::new(
+            extra.span,
+            "a node takes at most one name before `{`",
+        )),
+    }
+}
+
+/// Push a copy of the children of `repeat INDEX FIRST LAST { ... }` onto
+/// `out` for each whole number from FIRST to LAST, both included, with
+/// INDEX standing for that number. A node named inside the repeat has
+/// the number added to its name in each copy, and so does each word
+/// that names it there.
+fn repeat(
+    node: &Node,
+    lets: &HashMap<&str, Vec<Value>>,
+    styles: &HashMap<&str, Vec<Property>>,
+    out: &mut Vec<Node>,
+) -> Result<(), Error> {
+    let [index, first, last] = node.head.as_slice() else {
+        return Err(Error::new(
+            node.kind.span,
+            "`repeat` takes an index name, a first number and a last number before `{`",
+        ));
+    };
+    let ValueKind::Word(word) = &index.kind else {
+        return Err(Error::new(index.span, "a `repeat` index is a bare word"));
+    };
+    if RESERVED.contains(&word.as_str()) {
+        return Err(Error::new(
+            index.span,
+            format!("`{word}` is a word acre reads itself, so it cannot be a `repeat` index"),
+        ));
+    }
+    if lets.contains_key(word.as_str()) {
+        return Err(Error::new(
+            index.span,
+            format!("`{word}` already names a value, so it cannot be a `repeat` index"),
+        ));
+    }
+    if let Some(p) = node.properties.first() {
+        return Err(Error::new(p.span, "a `repeat` holds nodes, not properties"));
+    }
+    let whole = |v: &Value| match substitute(std::slice::from_ref(v), lets)?.as_slice() {
+        [
+            Value {
+                kind: ValueKind::Number(n),
+                ..
+            },
+        ] if n.fract() == 0.0 => Ok(*n as i64),
+        _ => Err(Error::new(
+            v.span,
+            "a `repeat` counts between whole numbers",
+        )),
+    };
+    let (first, last) = (whole(first)?, whole(last)?);
+
+    let mut names = Vec::new();
+    named(&node.children, &mut names);
+    for i in first..=last {
+        let mut lets = lets.clone();
+        let value = Value {
+            kind: ValueKind::Number(i as f64),
+            span: index.span,
+        };
+        lets.insert(word.as_str(), vec![value]);
+        for child in &node.children {
+            let mut child = child.clone();
+            rename(&mut child, &names, i);
+            apply(&child, &lets, styles, out)?;
+        }
+    }
+    Ok(())
+}
+
+/// Push the name of every node in `nodes`, and in their children, onto
+/// `names`.
+fn named(nodes: &[Node], names: &mut Vec<String>) {
+    for node in nodes {
+        if let Some(name) = &node.name {
+            names.push(name.text.clone());
+        }
+        named(&node.children, names);
+    }
+}
+
+/// Add `i` to the name of `node` and of its children, and to each word
+/// of their properties, wherever the name is one of `names`.
+fn rename(node: &mut Node, names: &[String], i: i64) {
+    if let Some(name) = &mut node.name
+        && names.contains(&name.text)
+    {
+        name.text = format!("{}{i}", name.text);
+    }
+    for p in &mut node.properties {
+        for v in &mut p.values {
+            if let ValueKind::Word(w) = &mut v.kind
+                && names.contains(w)
+            {
+                *w = format!("{w}{i}");
+            }
+        }
+    }
+    for child in &mut node.children {
+        rename(child, names, i);
+    }
 }
 
 /// `values` with each let name replaced by its values and each group
-/// replaced by the number it comes to.
+/// replaced by the number it comes to. A group that opens with the name
+/// of a let of several values, such as `(tints i)`, is replaced by the
+/// one the rest of the group counts to, from 0.
 fn substitute(values: &[Value], lets: &HashMap<&str, Vec<Value>>) -> Result<Vec<Value>, Error> {
     let mut out = Vec::with_capacity(values.len());
     for v in values {
         match &v.kind {
             ValueKind::Word(w) if lets.contains_key(w.as_str()) => {
                 out.extend(lets[w.as_str()].iter().cloned());
+            }
+            ValueKind::Group(inner)
+                if let [first, rest @ ..] = inner.as_slice()
+                    && let ValueKind::Word(name) = &first.kind
+                    && let Some(list) = lets.get(name.as_str())
+                    && list.len() > 1 =>
+            {
+                let rest = substitute(rest, lets)?;
+                let mut terms = rest.as_slice();
+                let n = sum(&mut terms, v)?;
+                if let Some(extra) = terms.first() {
+                    return Err(Error::new(extra.span, "expected an operator"));
+                }
+                if n.fract() != 0.0 || n < 0.0 || n >= list.len() as f64 {
+                    return Err(Error::new(
+                        v.span,
+                        format!(
+                            "`{name}` has {} values, so `({name} N)` takes a whole N from 0 to {}",
+                            list.len(),
+                            list.len() - 1
+                        ),
+                    ));
+                }
+                out.push(Value {
+                    kind: list[n as usize].kind.clone(),
+                    span: v.span,
+                });
             }
             ValueKind::Group(inner) => {
                 let inner = substitute(inner, lets)?;
@@ -390,6 +542,117 @@ mod tests {
             [ValueKind::Color([255, 255, 255, 255])]
         );
         assert!(keys(1).is_empty());
+    }
+
+    #[test]
+    fn a_repeat_copies_its_children_for_each_index_from_first_to_last() {
+        let canvas = expanded(
+            "canvas { size 10 10; let w 20; let tints #000000 #ffffff;
+                box first { }
+                repeat i 1 (w / 10) {
+                    box b { at (i * w) 0; fill (tints (i - 1)); }
+                    arrow { from b bottom; to first; }
+                } }",
+        );
+        let kinds: Vec<(&str, Option<&str>)> = canvas
+            .children
+            .iter()
+            .map(|n| {
+                (
+                    n.kind.text.as_str(),
+                    n.name.as_ref().map(|w| w.text.as_str()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("box", Some("first")),
+                ("box", Some("b1")),
+                ("arrow", None),
+                ("box", Some("b2")),
+                ("arrow", None),
+            ]
+        );
+        let b2 = &canvas.children[3];
+        assert_eq!(
+            values(&b2.properties[0]),
+            [ValueKind::Number(40.0), ValueKind::Number(0.0)]
+        );
+        assert_eq!(
+            values(&b2.properties[1]),
+            [ValueKind::Color([255, 255, 255, 255])]
+        );
+        assert_eq!(
+            values(&canvas.children[4].properties[0]),
+            [
+                ValueKind::Word("b2".into()),
+                ValueKind::Word("bottom".into())
+            ]
+        );
+        assert_eq!(
+            values(&canvas.children[4].properties[1]),
+            [ValueKind::Word("first".into())]
+        );
+    }
+
+    #[test]
+    fn a_nested_repeat_adds_the_outer_index_to_a_name_first() {
+        let canvas = expanded(
+            "canvas { size 10 10;
+                repeat i 0 1 { repeat j i 1 { box b { at i j; } } } }",
+        );
+        let names: Vec<&str> = canvas
+            .children
+            .iter()
+            .map(|n| n.name.as_ref().unwrap().text.as_str())
+            .collect();
+        assert_eq!(names, ["b00", "b01", "b11"]);
+    }
+
+    #[test]
+    fn a_repeat_whose_last_is_before_its_first_draws_nothing() {
+        let canvas = expanded("canvas { size 10 10; repeat i 0 -1 { box { } } }");
+        assert!(canvas.children.is_empty());
+    }
+
+    #[test]
+    fn a_repeat_index_may_not_hide_a_name() {
+        let err = |src: &str| expand(&parse(src).unwrap().nodes[0]).unwrap_err().message;
+        assert_eq!(
+            err("canvas { let i 2; repeat i 0 3 { box { } } }"),
+            "`i` already names a value, so it cannot be a `repeat` index"
+        );
+        assert_eq!(
+            err("canvas { repeat i 0 1 { repeat i 0 1 { box { } } } }"),
+            "`i` already names a value, so it cannot be a `repeat` index"
+        );
+        assert_eq!(
+            err("canvas { repeat i 0 1.5 { box { } } }"),
+            "a `repeat` counts between whole numbers"
+        );
+        assert_eq!(
+            err("canvas { repeat i 3 { box { } } }"),
+            "`repeat` takes an index name, a first number and a last number before `{`"
+        );
+    }
+
+    #[test]
+    fn a_list_index_outside_the_list_is_an_error() {
+        let program = parse("canvas { let t 1 2 3; size (t 3) 1; }").unwrap();
+        let err = expand(&program.nodes[0]).unwrap_err();
+        assert_eq!(
+            err.message,
+            "`t` has 3 values, so `(t N)` takes a whole N from 0 to 2"
+        );
+    }
+
+    #[test]
+    fn a_node_other_than_repeat_takes_at_most_one_name() {
+        let program = parse("canvas { size 1 1; box a b { } }").unwrap();
+        let err = expand(&program.nodes[0]).unwrap_err();
+        assert_eq!(err.message, "a node takes at most one name before `{`");
+        assert_eq!(err.span.start, 25);
     }
 
     #[test]

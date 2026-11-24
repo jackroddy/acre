@@ -209,7 +209,7 @@ const CONNECTOR: &[Property] = &[
 const DRAWN: &[&str] = &[
     "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep", "text",
     "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack", "grid",
-    "code",
+    "code", "repeat",
 ];
 
 pub const NODES: &[NodeKind] = &[
@@ -237,13 +237,13 @@ pub const NODES: &[NodeKind] = &[
             prop(
                 "let",
                 "NAME VALUES...",
-                "a name that stands for its values in any later property",
+                "a name that stands for its values in any later property; `(NAME N)` stands for value N of several, counting from 0",
             ),
         ],
         children: &[
             "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep",
             "text", "math", "marker", "table", "brace", "ruler", "group", "panel", "caption",
-            "stack", "grid", "code", "palette", "style", "fonts", "data", "timeline",
+            "stack", "grid", "code", "repeat", "palette", "style", "fonts", "data", "timeline",
         ],
     },
     NodeKind {
@@ -834,6 +834,16 @@ pub const NODES: &[NodeKind] = &[
             ),
         ],
         children: &[],
+    },
+    NodeKind {
+        name: "repeat",
+        about: "`repeat INDEX FIRST LAST { NODE... }` draws its nodes once for each whole number from FIRST \
+                to LAST, both included; INDEX stands for that number wherever a `let` name can, and may not \
+                be a `let` name or the index of a repeat around it; a node named inside gets the number \
+                added to its name in each copy, as do the words inside that name it, so `b` is `b0`, `b1` \
+                and so on; a repeat inside a repeat adds the outer number first",
+        properties: &[],
+        children: DRAWN,
     },
     NodeKind {
         name: "style",

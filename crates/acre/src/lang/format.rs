@@ -111,6 +111,15 @@ mod tests {
     }
 
     #[test]
+    fn values_before_a_brace_stay_on_the_node() {
+        let src = "canvas { repeat  i 0 ( n - 1 ) { box b { at (i*2) 0; } } }";
+        assert_eq!(
+            format(src).unwrap(),
+            "canvas { repeat i 0 (n - 1) { box b { at (i * 2) 0; } } }\n"
+        );
+    }
+
+    #[test]
     fn a_file_that_does_not_parse_is_left_alone() {
         assert!(format("canvas { size 1 1").is_err());
     }

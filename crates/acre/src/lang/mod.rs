@@ -14,6 +14,12 @@
 //! 0s to 1s { scale a 1.5; }
 //! ```
 //!
+//! Any other node may keep values before `{` in place of a name:
+//!
+//! ```text
+//! repeat i 0 3 { box { at (i * 40) 0; } }
+//! ```
+//!
 //! The parser gives no node kind or property a meaning. `scene` does.
 
 mod format;
@@ -45,8 +51,8 @@ pub struct Node {
     /// time.
     pub kind: Word,
     pub name: Option<Word>,
-    /// The values before `{` of a node that opens with a time, the
-    /// time first.
+    /// The values before `{` when they are not one name, such as the
+    /// times of a node that opens with a time.
     pub head: Vec<Value>,
     pub properties: Vec<Property>,
     pub children: Vec<Node>,
@@ -462,24 +468,20 @@ impl Parser<'_> {
                     return Ok(());
                 }
                 Tok::Open => {
-                    let name = match values.as_slice() {
-                        [] => None,
+                    let (name, head) = match values.as_slice() {
                         [
                             Value {
                                 kind: ValueKind::Word(text),
                                 span,
                             },
-                        ] => Some(Word {
-                            text: text.clone(),
-                            span: *span,
-                        }),
-                        [one] => return Err(Error::new(one.span, "a node's name is a bare word")),
-                        [_, extra, ..] => {
-                            return Err(Error::new(
-                                extra.span,
-                                "a node takes at most one name before `{`",
-                            ));
-                        }
+                        ] => (
+                            Some(Word {
+                                text: text.clone(),
+                                span: *span,
+                            }),
+                            Vec::new(),
+                        ),
+                        _ => (None, values),
                     };
                     let (props, children) = self.body(Some(token.span))?;
                     let end = self.tokens[self.pos - 1].span.end;
@@ -490,7 +492,7 @@ impl Parser<'_> {
                         },
                         kind: key,
                         name,
-                        head: Vec::new(),
+                        head,
                         properties: props,
                         children,
                     });
@@ -673,10 +675,29 @@ mod tests {
             err_at("size 1 2;"),
             (1, 1, "property `size` is outside any node".into())
         );
+    }
+
+    #[test]
+    fn a_node_keeps_values_before_its_brace_that_are_not_one_name() {
+        let src = "canvas { repeat i 0 3 { box b { } } }";
+        let repeat = &parse(src).unwrap().nodes[0].children[0];
+        assert_eq!(repeat.kind.text, "repeat");
+        assert_eq!(repeat.name, None);
         assert_eq!(
-            err_at("box a b {}"),
-            (1, 7, "a node takes at most one name before `{`".into())
+            repeat
+                .head
+                .iter()
+                .map(|v| v.kind.clone())
+                .collect::<Vec<_>>(),
+            [
+                ValueKind::Word("i".into()),
+                ValueKind::Number(0.0),
+                ValueKind::Number(3.0),
+            ]
         );
+        let b = &repeat.children[0];
+        assert_eq!(b.name.as_ref().map(|w| w.text.as_str()), Some("b"));
+        assert!(b.head.is_empty());
     }
 
     #[test]

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `repeat INDEX FIRST LAST { NODE... }` draws its nodes once for each whole
+  number from FIRST to LAST, both included. In each copy, INDEX stands for
+  that number wherever a `let` name can, inside `( )` as well. A node named
+  inside a repeat gets the number added to its name in each copy, so `b`
+  becomes `b0`, `b1` and so on. Each word inside the repeat that names such a
+  node gets the same number. A repeat inside another adds the outer number
+  first, so for `i` 0 and `j` 1 the copy of `b` is `b01`. A last number below
+  the first draws nothing. An index that has the name of a `let` or of an
+  outer repeat's index is an error.
+- `(NAME N)` stands for value N, counting from 0, of a `let` with several
+  values. `fill (tints i);` takes the i-th color of `let tints a b c d;`.
+
 - A `row` with `width W` and `weights N...` gives each cell a share of W in
   proportion to its weight, in order. The `gap` between cells comes out of
   each cell's share. `weights DATA COL` takes one weight per line of a column
@@ -303,6 +315,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight segments.
 
 ### Changed
+
+- Any node may keep values before `{`. When they are not one bare word,
+  `lang::parse` keeps them in `Node::head`, as it did for a node that opens
+  with a time. The error for two names before `{`, or for a name that is not
+  a bare word, now comes from `scene` and no longer from `lang::parse`.
 
 - `Row` holds the row's height in `height`, where it held `unit`. `RowCell`
   holds a cell's place in pixels from the row's left edge in `left` and
