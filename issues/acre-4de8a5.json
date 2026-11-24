@@ -3,26 +3,29 @@
   "title": "Clicking a node opens a panel that changes its colours and strokes",
   "body": "Changing a fill or stroke means editing the source by hand.\n\n## Proposal\n\n- With one node selected, a right-hand panel lists the properties the kind takes that a person changes by eye: `fill`, `stroke`, `stroke-width`, `dash`, `text-color`, `text-size`, `font`, with the current value of each (the node's own, a style's, or the default).\n- A colour picker or field per colour, a number field per size; a change writes the property on the node through a new `property_edits(source, node, key, value)`, replacing the node's own value or inserting one, which then overrides a style. A value from a `let` is refused with the reason.\n- `none` is a choice where the property takes it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:53:42.209785793Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.238415133Z",
-  "updated_at": "2026-11-24T20:38:42.209785793Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:45:34.075209471Z",
+  "closed_at": "2026-11-24T20:45:34.075209471Z",
+  "close_reason": "Landed in 68b4632. `scene::edit::property_edits` sets a key on one or more nodes and `scene::edit::property_values` reads each value with whether the node, a style or the default sets it; acre-gui's right-hand panel is `crates/acre-gui/src/properties.rs`. The panel also lists `color`, which text, math, caption and table nodes take for their text. It shows \"default\" without a value, because the defaults differ by kind inside `build.rs`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3818184",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "68b4632",
+      "branch": "dev"
+    }
   }
 }
