@@ -3,26 +3,29 @@
   "title": "acre works out the source edits that add, delete and copy nodes",
   "body": "Plan and survey: `tmp-claude/2026-11-23-overnight/create-research.md` in the acre checkout. `scene::edit` has `move_edits` and `text_edits` only.\n\n## Proposal\n\n- `Scene` exposes the offset `size auto` shifts the drawing by, so a viewer turns a canvas point into source coordinates.\n- `insert_edits` appends a one-line node at the end of the canvas body, before the timeline, at the indent of its neighbours, stable under `acre fmt`.\n- `fresh_name` picks `KIND` + N, clashing with no word in the source, no reserved word and no repeat rename; and the edit that names an unnamed node.\n- `delete_edits` removes one or more nodes cleanly, refusing while anything names them (checked by rebuilding the edited source).\n- `copy_text` and `paste_edits` carry one or more nodes as text, renaming names inside the copy and its own references, offset +10 +10, as one insertion.\n- Each edit set is one message, so one neovim undo step.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:22:20.391639059Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.198428384Z",
-  "updated_at": "2026-11-24T20:07:20.391639059Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:16:39.715858933Z",
+  "closed_at": "2026-11-24T20:16:39.715858933Z",
+  "close_reason": "Landed in 83fc522 on dev, in `crates/acre/src/scene/edit/nodes.rs`: `NewNode::text`, `insert_edits`, `fresh_name`, `name_edits`, `delete_edits`, `copy_text` and `paste_edits`, re-exported from `scene::edit`. `Scene::origin` gives the shift a `size auto` canvas applies. `move_edits` now dispatches through `Mover::edits`, which `paste_edits` shares.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3818184",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "83fc522",
+      "branch": "dev"
+    }
   }
 }
