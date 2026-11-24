@@ -3,26 +3,29 @@
   "title": "The viewer sends an edit that the neovim plugin applies to the buffer",
   "body": "The `--stdio` link (`crates/acre-gui/src/link.rs`, `editors/nvim/lua/acre/init.lua`) carries `text` and `cursor` into acre-gui and `goto`, `error` and `ok` out. Nothing carries a change to the source back to the editor.\n\n## Proposal\n\n- An outgoing message `edit`, holding a list of `{start, end, text}` byte ranges in the source acre-gui last received, and the `tick` of that source.\n- The `text` message carries neovim's `changedtick` as `tick`. acre-gui keeps the tick with the text it built from.\n- The plugin applies an `edit` with `nvim_buf_set_text` only when the buffer's `changedtick` still equals the edit's tick, ranges applied from last to first so earlier offsets stay valid. Otherwise it drops the edit and sends the text again.\n- All ranges of one edit are one undo step.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T08:00:06.698728927Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T07:37:09.33219962Z",
-  "updated_at": "2026-11-24T07:45:06.698728927Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:49:08.017878852Z",
+  "closed_at": "2026-11-24T07:49:08.017878852Z",
+  "close_reason": "Landed in a220913. `Outgoing::Edit` and the `tick` on `Incoming::Text` are in `crates/acre-gui/src/link.rs`, and `App::send_edits` is in `app.rs` for the drag to call. The plugin's `apply` and the `edit` branch of `receive` are in `editors/nvim/lua/acre/init.lua`. Tests are in `editors/nvim/tests/`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "6e5ed79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a220913",
+      "branch": "dev"
+    }
   }
 }
