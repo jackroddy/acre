@@ -7,42 +7,154 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-### Changed
-
-- A double-click on a box, an ellipse or a connector with no text opens an
-  empty field over it. Typing writes the `text` (or `label`) property. An
-  empty field writes nothing. Before, acre-gui refused with "the box has
-  no text of its own to edit".
-
 ### Added
 
-- With the Line or Arrow tool, a box, ellipse, polygon, polyline, row,
-  matrix or code under the pointer shows nine dots: its centre, the
-  middles of its sides and its corners. An ellipse's corner dots sit
-  where the diagonals of its box cross the ellipse, which is where acre
-  ends a line there. An end within 8 screen points of a dot snaps to it
-  and writes `a top`, `a top-left` or, for the centre, the bare `a`.
-  Elsewhere within 8 points of the outline, the end writes `a top F` for
-  the nearest side, with F rounded to 2 decimals, and a dot marks the
-  spot. Inside the thing and away from its outline, the end writes the
-  bare name, which ends on the edge facing the other end. Polygons and
-  polylines take the dots of the box around them, as their ends do. A
-  copy a `repeat` draws shows no dots.
-- One selected line or arrow shows a handle on each end. While a handle
-  is dragged, the thing under the pointer shows the same dots. On
-  release acre-gui rewrites that end's `from` or `to`. The same edit
-  names the thing when it has no name. An end dropped on empty canvas
-  becomes a point. An end inside a `repeat`, or one given by a style, a `let` or
-  `( ... )`, is refused. A `merge`'s ends have no handles.
-- With two or more nodes selected, the toolbar shows Left, Centre, Right,
-  Top, Middle and Bottom. Each lines up the selected nodes on that edge or
-  centre of the box around them all. With three or more, Space across and
-  Space down sort the nodes by their left or top edge. The first and last
-  stay put, and the others move so the gaps between neighbours are equal.
-  Each node's box holds everything it draws at the time shown. A node
-  inside another selected node moves with it. The offsets are written with
-  up to two decimals, as for a snapped drag, and go out as one edit. A
-  node a stack or grid places is refused, as for a drag.
+- The `acre-gui` viewer. It renders a drawing and draws it again when the
+  source changes. The last good render stays up while the source has an
+  error, and the error's line, column and message show in the status line.
+- `acre-gui FILE` shows a file and reads it again whenever it changes on disk.
+  Without a file it shows the last one opened. File > Open and Open Recent
+  pick another.
+- `acre-gui --stdio` renders the source an editor sends as JSON lines on
+  stdin, and answers on stdout with the source's error and with clicks on the
+  render. It closes when stdin closes. `src/link.rs` lists the messages. A
+  `text` message carries a `tick`, the editor's number for that version of the
+  source. The outgoing message `edit` holds a list of `{start, end, text}`
+  byte ranges in the source of a tick, and the editor makes the edit only
+  while its own tick still matches. While an edit is with the editor, the
+  viewer refuses another with "waiting for the editor; try again", and a
+  refused drag snaps back.
+- The viewer reads the font files a drawing lists in `fonts` and the data
+  files it names with `data`, each relative to the drawing's file. It builds
+  the drawing again when one of them changes.
+- The viewer prints a warning on stderr for each character in a drawing's
+  text that no font has, whenever the set of those characters changes. The
+  status line shows the first of them. A source error shows ahead of the
+  warning, and so does a notice set after the last build, such as the reason
+  a drag was refused. A new build clears the notice.
+- The render is drawn at the pane's own pixels, so it stays sharp at any size.
+  The scroll wheel zooms about the pointer, a drag with the middle button
+  pans, and a double-click on empty canvas fits the canvas to the pane.
+  Buttons zoom out, zoom in, fit, and show the canvas at 100%. The status line
+  shows the zoom and the canvas point under the pointer.
+- A pan or a zoom moves and scales the last drawn image, which reaches a
+  quarter of the pane past each edge. acre-gui draws the scene again 150 ms
+  after the person stops, or sooner when the image no longer covers the pane.
+  acre-gui shrinks the margin to keep the image within the GPU's texture
+  limit, which it reads at run time. When the pane alone is larger than the
+  limit, acre-gui draws it at a lower resolution.
+- A click on the render sends the editor to the node that drew the object
+  under the pointer. Without an editor, the status line names the node's
+  line. The render outlines in orange what the node under the editor's cursor
+  drew.
+
+- A drawing with a `timeline` plays in the viewer. A bar under the render
+  holds a Play and Pause button, a time bar over the drawing's length, the
+  time as `1.25 s / 5.00 s`, and a Loop toggle that starts on. A press or a
+  drag on the time bar goes to that time. Space plays and pauses. With
+  nothing selected, Left and Right step one frame. A file opens paused at 0.
+  A reload keeps the time and whether it plays, and cuts the time to the new
+  length. A still drawing shows no bar.
+- The time bar shows a drawing's sections. A line marks where each one starts,
+  and its title sits in its stretch of the bar, cut short when it does not
+  fit. A short tick marks where each subsection starts, and hovering the bar
+  names the section and subsection under the pointer. A Sections toggle
+  beside Loop opens a left-hand panel, open at start, that lists each section
+  with its start, marks the one playing, and goes to a section's start on a
+  click. In the panel, a section with subsections has a fold arrow and starts
+  folded. Opened, it lists its subsections, marks the one playing, and goes
+  to one's start on a click.
+
+- A click on an object selects the node that drew it. The viewer outlines
+  the node's objects in blue at their bounds at the time shown, outside the
+  orange outline that follows the editor's cursor. A click on empty canvas
+  clears the selection, and so does opening another file. After an edit, the
+  selection stays on the node at the same place in the source tree.
+- A drag with the primary button that starts on empty canvas draws a
+  translucent selection box. On release, the viewer selects each node whose
+  objects all lie inside the box. When a whole group lies inside, the viewer
+  selects the group and not its children. When only one child of a group
+  lies inside, the viewer selects that child. A box around no whole node
+  clears the selection.
+- A drag with the primary button that starts on an object selects its node
+  and moves it. A drag on any selected node, or on an object inside one,
+  moves every selected node by the same offset. The viewer draws the nodes at
+  the pointer's offset during the drag. On release it works out the source
+  edits, sends them to the editor with `--stdio`, and writes them to the file
+  without. A node inside another selected node moves with that node. A node
+  placed `at` a selected node moves with it once, and so does an arrow or
+  line whose ends name selected nodes. When acre cannot move one of the
+  nodes, none moves, and the status line gives that node's reason.
+- A dragged object snaps to other objects. Its left edge, centre and right
+  edge snap to those of any other object, and so do its top, middle and
+  bottom. Each axis snaps on its own. A snap reaches 6 screen points at any
+  zoom, and the object comes free once the pointer moves past that. A thin
+  line marks each snap that holds. The written numbers land on the snap,
+  to two decimals. Without a snap, a move is in whole pixels. Several nodes
+  snap as one, on the box around all their objects.
+- The toolbar has a `Snap` toggle, on at start, that turns snapping on and
+  off. A `Grid` toggle, off at start, draws a faint grid over the canvas.
+  The field beside it sets the grid's spacing in canvas pixels, 10 at
+  start. When zoomed far out, the viewer draws every second line, or
+  fewer. With the grid on, an axis that snaps to no object snaps the
+  dragged object's top-left corner to the grid.
+- With a selection, each press of an arrow key moves the selected nodes
+  one canvas pixel, without snapping. Holding the key keeps moving them.
+  With `--stdio`, the presses made while an edit is with the editor add up
+  and go out as one edit once the editor sends its text back. With nothing
+  selected, Up and Down do nothing.
+- Delete deletes the selected nodes and clears the selection. When acre
+  cannot delete them, the status line gives the reason.
+- Ctrl+C puts the selected nodes' source on the clipboard. Ctrl+V adds the
+  nodes on the clipboard to the canvas, 10 pixels right of and below where
+  they were, and selects them. When the clipboard holds no acre nodes, or
+  acre cannot add them, the status line gives the reason.
+- A right-click on an object selects its node and opens a menu with Delete
+  and Duplicate. Duplicate adds a copy 10 pixels right of and below the
+  node, as a copy and a paste do.
+- A double-click on an object opens a field over it that holds its node's
+  text as the file writes it, markup included. A box, an ellipse or a
+  connector with no text opens an empty field, and typing writes its `text`
+  or `label`. The field shows as many lines as the text has, and Shift+Enter
+  starts a new line. The viewer writes the text when the field loses focus:
+  on Enter, Escape, Tab or a click elsewhere. An unchanged or empty text
+  writes nothing. The edit goes to the editor over the link, or into the
+  file, as a drag's does. The double-click selects the node, and the
+  selection stays on it after the edit. When the node's kind takes no text,
+  or its text comes from a `let`, a style, a `repeat` or the timeline, the
+  status line says why.
+- While a text field has focus, none of the viewer's keys acts, except
+  Shift+Enter in the field.
+
+- The toolbar has a palette of tools: Select, Box, Ellipse, Text, Line,
+  Arrow, Polygon and Polyline. After a tool adds a node, the palette goes
+  back to Select. acre-gui adds each node at the end of the canvas, before
+  its timeline, as one edit, and selects it. When the source with the new
+  node would not build, acre-gui writes nothing and the status line gives
+  the build's error.
+- With Box or Ellipse, a drag from one corner to the other draws the
+  outline, and the dragged corner snaps to other objects and the grid as a
+  moved object does. A click adds one 80 by 48 pixels at the click.
+- With Text, a click adds `text "text"` there and opens its text field.
+  With `--stdio`, the field opens once the editor sends its text back.
+- With Line or Arrow, a drag runs from one end to the other. A box,
+  ellipse, polygon, polyline, row, matrix or code under the pointer shows
+  nine dots: its centre, the middles of its sides and its corners. An
+  ellipse's corner dots sit where the diagonals of its box cross the
+  ellipse, which is where acre ends a line there. Polygons and polylines
+  take the dots of the box around them, as their ends do. An end within 8
+  screen points of a dot snaps to it and writes `a top`, `a top-left` or,
+  for the centre, the bare `a`. Elsewhere within 8 points of the outline,
+  the end writes `a top F` for the nearest side, with F rounded to 2
+  decimals, and a dot marks the spot. Inside the thing and away from its
+  outline, the end writes the bare name, which ends on the edge facing the
+  other end. The same edit names the thing when it has no name. An end
+  anywhere else is a point. A copy a `repeat` draws shows no dots. acre-gui
+  refuses a line with both ends on one thing or at one point.
+- With Polygon or Polyline, each click adds a point. A click on the first
+  point closes a polygon, and a click on the last point again ends a
+  polyline. While a path is drawn, the toolbar shows Done and Cancel.
+
 - One selected box or ellipse shows eight handles, at its corners and the
   middles of its sides. A drag on a handle draws the new outline and
   resizes the node on release. The dragged edges snap to the edges and
@@ -52,7 +164,22 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `size`.
 - One selected polygon or polyline shows a handle on each vertex. A drag
   on a handle moves that vertex and rewrites its pair in `points`.
+- One selected line or arrow shows a handle on each end. While a handle
+  is dragged, the thing under the pointer shows the same dots as for the
+  Line tool. On release acre-gui rewrites that end's `from` or `to`, and
+  names the thing when it has no name. An end dropped on empty canvas
+  becomes a point. An end inside a `repeat`, or one given by a style, a
+  `let` or `( ... )`, is refused. A `merge`'s ends have no handles.
 - Over a handle the pointer changes to a resize or move cursor.
+- With two or more nodes selected, the toolbar shows Left, Centre, Right,
+  Top, Middle and Bottom. Each lines up the selected nodes on that edge or
+  centre of the box around them all. With three or more, Space across and
+  Space down sort the nodes by their left or top edge. The first and last
+  stay put, and the others move so the gaps between neighbours are equal.
+  Each node's box holds everything it draws at the time shown. A node
+  inside another selected node moves with it. The offsets are written with
+  up to two decimals, as for a snapped drag, and go out as one edit. A
+  node a stack or grid places is refused, as for a drag.
 - With one or more nodes selected, a panel on the right lists the
   properties every selected node's kind takes among `fill`, `stroke`,
   `stroke-width`, `dash`, `color`, `text-color`, `text-size` and `font`.
@@ -65,166 +192,3 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   button is released. The × beside a node's own value takes it away. For
   a refused change acre-gui writes nothing, and the status line gives the
   reason.
-- The toolbar has a palette of tools: Select, Box, Ellipse, Text, Line,
-  Arrow, Polygon and Polyline. After a tool adds a node, the palette goes
-  back to Select. acre-gui adds each node at the end of the canvas, before
-  its timeline, as one edit, and selects it. When the source with the new
-  node would not build, acre-gui writes nothing and the status line gives
-  the build's error.
-- With Box or Ellipse, a drag from one corner to the other draws the
-  outline, and the dragged corner snaps to other objects and the grid as a
-  moved object does. A click adds one 80 by 48 pixels at the click.
-- With Text, a click adds `text "text"` there and opens its text field.
-  With `--stdio`, the field opens once the editor sends its text back.
-- With Line or Arrow, a drag runs from one end to the other. An end on a
-  box, ellipse, polygon, polyline, row, matrix or code joins it by name,
-  and the same edit names it when it has no name. An end anywhere else is
-  a point. acre-gui refuses a line with both ends on one thing or at one
-  point.
-- With Polygon or Polyline, each click adds a point. A click on the first
-  point closes a polygon, and a click on the last point again ends a
-  polyline. While a path is drawn, the toolbar shows Done and Cancel.
-- A right-click on an object selects its node and opens a menu with Delete
-  and Duplicate. Duplicate adds a copy 10 pixels right of and below the
-  node, as a copy and a paste do.
-- With a selection, each press of an arrow key moves the selected nodes
-  one canvas pixel, without snapping. Holding the key keeps moving them.
-  With `--stdio`, the presses made while an edit is with the editor add up
-  and go out as one edit once the editor sends its text back. The editor
-  drops an edit made to an older text, so presses sent one by one would be
-  lost. With nothing
-  selected, Left and Right step a frame as before, and Up and Down do
-  nothing.
-- Delete deletes the selected nodes and clears the selection. When acre
-  cannot delete them, the status line gives the reason.
-- Ctrl+C puts the selected nodes' source on the clipboard. Ctrl+V adds the
-  nodes on the clipboard to the canvas, 10 pixels right of and below where
-  they were, and selects them. When the clipboard holds no acre nodes, or
-  acre cannot add them, the status line gives the reason.
-- While a text field has focus, none of the viewer's keys acts, except
-  Shift+Enter in the field.
-- A drag with the primary button that starts on empty canvas draws a
-  translucent selection box. On release, the viewer selects each node whose
-  objects all lie inside the box. When a whole group lies inside, the viewer
-  selects the group and not its children. When only one child of a group
-  lies inside, the viewer selects that child. A box around no whole node
-  clears the selection.
-- The selection can hold several nodes, and the viewer outlines each in
-  blue. A drag on any selected node, or on an object inside one, moves every
-  selected node by the same offset. A node inside another selected node moves
-  with that node. A node placed `at` a selected node moves with it once.
-  So does an arrow or line whose ends name selected nodes. The nodes snap
-  as one, on the box around all their objects.
-  When acre cannot move one of them, none moves, and the status line gives
-  that node's reason.
-- A double-click on an object opens a field over it that holds its node's
-  text as the file writes it, markup included. The field shows as many
-  lines as the text has, and Shift+Enter starts a new line. The viewer
-  writes the text when the field loses focus: on Enter, Escape, Tab or a
-  click elsewhere. An unchanged text writes nothing. The
-  edit goes to the editor over the link, or into the file, as a drag's
-  does. The double-click selects the node, and the selection stays on it
-  after the edit. When the node has no text of its own, or its text comes
-  from a `let`, a style, a `repeat` or the timeline, the status line says
-  why. A double-click on empty canvas still fits the canvas to the pane.
-- A dragged object snaps to other objects. Its left edge, centre and right
-  edge snap to those of any other object, and so do its top, middle and
-  bottom. Each axis snaps on its own. A snap reaches 6 screen points at any
-  zoom, and the object comes free once the pointer moves past that. A thin
-  line marks each snap that holds. The written numbers land on the snap,
-  to two decimals. Without a snap, a move is in whole pixels.
-- The toolbar has a `Snap` toggle, on at start, that turns snapping on and
-  off. A `Grid` toggle, off at start, draws a faint grid over the canvas.
-  The field beside it sets the grid's spacing in canvas pixels, 10 at
-  start. When zoomed far out, the viewer draws every second line, or
-  fewer. With the grid on, an axis that snaps to no object snaps the
-  dragged object's top-left corner to the grid.
-- A click on an object selects the node that drew it. The viewer outlines
-  the node's objects in blue at their bounds at the time shown. The blue
-  outline sits outside the orange one that follows the editor's cursor.
-  The selection lasts until a click on empty canvas or on another object.
-  A drag selects the node it moves. After an edit, the selection stays on
-  the node at the same place in the source tree. The selection ends when
-  the viewer opens another file.
-- A drag with the primary button that starts on an object moves the object.
-  While the pointer moves, the viewer draws the object at the pointer's
-  offset with an outline. On release the viewer works out the source edits
-  for the move. With `--stdio` it sends them to the editor as an `edit`.
-  Without, it writes them to the file and shows the result. When acre cannot
-  move the object, the object goes back and the status line gives the reason.
-  A drag with the middle button pans. A click still goes to the node under
-  the pointer.
-- With `--stdio`, a `text` message carries a `tick`. The tick is the
-  editor's number for that version of the source. A new outgoing message
-  `edit` holds a list of `{start, end, text}` byte ranges in the source of a
-  tick. The editor makes the edit only while its own tick still matches.
-- The viewer reads the data files a drawing names with `data`. A path is
-  relative to the drawing's file. The viewer builds the drawing again when
-  one of them changes.
-- The time bar shows a drawing's sections. A line marks where each one starts,
-  and its title sits in its stretch of the bar, cut short when it does not
-  fit. A press or a drag on the bar goes to that time. A Sections toggle
-  beside Loop opens a left-hand panel that lists each section with its start,
-  marks the one playing, and goes to a section's start on a click. The panel
-  starts open. A short tick on the bar marks where each subsection starts, and
-  hovering the bar names the section and subsection under the pointer. In the
-  panel, a section with subsections has a fold arrow and starts folded.
-  Opened, it lists its subsections, marks the one playing, and goes to one's
-  start on a click.
-- The viewer prints a warning on stderr for each character in a drawing's
-  text that no font has, whenever the set of those characters changes. The
-  status bar shows the first of them.
-- A drawing with a `timeline` plays in the viewer. A bar under the render
-  holds a Play and Pause button, a slider over the drawing's length, the time
-  as `1.25 s / 5.00 s`, and a Loop toggle that starts on. Space plays and
-  pauses, and Left and Right step one frame, unless a text field has focus. A
-  file opens paused at 0. A reload keeps the time and whether it plays, and
-  cuts the time to the new length. A still drawing shows no bar.
-- The viewer reads the font files a drawing lists in `fonts`, relative to the
-  drawing's file, and builds the drawing again when one of them changes.
-- The `acre-gui` viewer. It renders a drawing and draws it again when the
-  source changes. The last good render stays up while the source has an
-  error, and the error's line, column and message show in the status line.
-- `acre-gui FILE` shows a file and reads it again whenever it changes on disk.
-  Without a file it shows the last one opened. File > Open and Open Recent
-  pick another.
-- `acre-gui --stdio` renders the source an editor sends as JSON lines on stdin,
-  and answers on stdout with the source's error and with clicks on the render.
-  It closes when stdin closes. `src/link.rs` lists the messages.
-- The render is drawn at the pane's own pixels, so it stays sharp at any size.
-  The scroll wheel zooms about the pointer, a drag pans, and a double-click
-  fits the canvas to the pane. Buttons zoom out, zoom in, fit, and show the
-  canvas at 100%. The status line shows the zoom and the canvas point under
-  the pointer.
-- A pan or a zoom moves and scales the last drawn image, which reaches a
-  quarter of the pane past each edge. acre-gui draws the scene again 150 ms
-  after the person stops, or sooner when the image no longer covers the pane.
-- A click on the render sends the editor to the node that drew the object
-  under the pointer. Without an editor, the status line names the node's
-  line. The render outlines what the node under the editor's cursor drew.
-
-### Changed
-
-- A drag with the primary button on empty canvas no longer pans. The viewer
-  draws a selection box for it instead. A drag with the middle button pans.
-
-### Fixed
-
-- Over the editor link, a drag, Delete, a paste, a duplicate, a text
-  edit or a property change made while an earlier edit is still with the
-  editor is now refused with "waiting for the editor; try again". Before,
-  the editor dropped it without a message. A refused drag snaps back.
-
-- A missing-glyph warning no longer hides the status line's notices. A
-  notice set after the last build, such as the reason a drag was refused,
-  now shows ahead of the warning. A new build clears the notice. A source
-  error still shows first.
-
-- The viewer no longer crashes in a very wide window. It draws a margin past
-  each edge of the pane, so its texture was 1.5 times the pane's size. egui
-  creates the GPU device with a limit of 8192 pixels on a side for a texture.
-  In a wide window on a Retina screen, the viewer's texture was larger than
-  that. The viewer now asks egui for the device's texture limit at run time,
-  whatever that limit is, and draws a smaller margin to stay within it. If the
-  pane alone is wider or taller than the device's limit, the viewer draws it
-  at a lower resolution.
