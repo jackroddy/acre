@@ -337,7 +337,7 @@ fn shown_later<'a>(
 
 /// Whether the stack whose properties are `props` runs right rather
 /// than down.
-fn stack_across(props: &Props) -> Result<bool, Error> {
+pub(super) fn stack_across(props: &Props) -> Result<bool, Error> {
     match props.get("direction") {
         None => Ok(false),
         Some(p) => match p.word()? {
@@ -346,6 +346,12 @@ fn stack_across(props: &Props) -> Result<bool, Error> {
             _ => Err(Error::new(p.span, "`direction` is down or right")),
         },
     }
+}
+
+/// How many cells across the grid whose properties are `props` has, at
+/// least one.
+pub(super) fn grid_columns(props: &Props) -> Result<usize, Error> {
+    Ok(props.count_or("columns", 1)?.max(1))
 }
 
 /// The width and height `size` gives, `None` for each `auto`.
@@ -1055,7 +1061,7 @@ fn lay_out<'a>(
 
     // a grid: cells row by row, each column as wide as its widest
     // child and each row as tall as its tallest
-    let columns = props.count_or("columns", 1)?.max(1);
+    let columns = grid_columns(&props)?;
     let gap = match props.get("gap") {
         None => Point::ZERO,
         Some(p) => match p.values.len() {

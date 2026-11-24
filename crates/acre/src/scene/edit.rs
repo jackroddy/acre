@@ -14,15 +14,18 @@
 //! and [`paste_edits`] add, delete and copy whole nodes.
 //! [`property_values`] reads a node's `fill`, `stroke` and the like, and
 //! [`property_edits`] sets them, and [`end_edits`] moves an end of a
-//! line or an arrow.
+//! line or an arrow. [`siblings`] lists the children of the stack or
+//! grid that holds a node, and [`reorder_edits`] moves one among them.
 
 mod nodes;
+mod order;
 mod properties;
 
 pub use nodes::{
     EndAt, NewNode, Spot, copy_text, delete_edits, fresh_name, insert_edits, name_edits,
     paste_edits,
 };
+pub use order::{Layout, Siblings, reorder_edits, siblings};
 pub use properties::{Origin, Setting, end_edits, property_edits, property_values};
 
 use super::Point;

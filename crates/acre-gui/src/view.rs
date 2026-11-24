@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use acre::lang::Span;
 use acre::render;
+use acre::scene::edit::Siblings;
 use acre::scene::{Animation, Point, Scene, Track};
 use eframe::egui::{
     self, Color32, CursorIcon, PointerButton, Popup, Pos2, Rect, Sense, SetOpenCommand, Shape,
@@ -9,8 +10,10 @@ use eframe::egui::{
 };
 
 use crate::anchor::{self, Anchor, Outline};
+use crate::arrange;
 use crate::drag::{Drag, Release};
 use crate::handle::{self, Edge, Grip, Reshape, Target};
+use crate::reorder;
 use crate::selection;
 use crate::snap::{self, Bounds, Guide, Snapped};
 use crate::tool::{self, Tool};
@@ -90,6 +93,12 @@ pub struct Shown {
     pub chosen: Option<MenuItem>,
     /// The change a handle dragged and let go of this frame makes.
     pub reshaped: Option<Reshape>,
+    /// The one node a press this frame drags.
+    pub pressed: Option<Span>,
+    /// The child of a stack or grid dragged and let go of this frame,
+    /// the sibling it goes before, or `None` for after the last, and its
+    /// index among them after the move.
+    pub reordered: Option<(Span, Option<Span>, usize)>,
 }
 
 /// An entry in the menu of a right-clicked object.
@@ -151,6 +160,14 @@ impl View {
         }
     }
 
+    /// Make the drag just pressed on one child of a stack or grid, whose
+    /// siblings are `siblings`, reorder it among them.
+    pub fn reorder(&mut self, siblings: Siblings) {
+        if let Some(drag) = &mut self.drag {
+            drag.reorder(siblings);
+        }
+    }
+
     /// Stop drawing the nodes let go of after a drag where they were
     /// moved to.
     pub fn end_move(&mut self) {
@@ -190,7 +207,9 @@ impl View {
     /// another around each object the nodes at `selected` draw. While
     /// nodes are dragged, their objects are drawn where they are dragged
     /// to, snapped, and outlined in place of `marks`, with a guide for
-    /// each snap. A drag on empty canvas draws a selection box. A
+    /// each snap. A drag that reorders a child of a stack or grid outlines
+    /// it at the pointer and marks the place it would land. A drag on
+    /// empty canvas draws a selection box. A
     /// double-click on no object fits the canvas to the pane. With a tool
     /// other than Select, a press draws a new node, outlined as it goes.
     /// A right-click on an object opens its menu. With the Select tool,
@@ -219,6 +238,8 @@ impl View {
             right_clicked: None,
             chosen: None,
             reshaped: None,
+            pressed: None,
+            reordered: None,
         };
         let Some(scene) = scene else {
             self.drag = None;
@@ -250,6 +271,9 @@ impl View {
                 (Tool::Select, None) => {
                     let nodes = node_at(scene, p, t)
                         .map_or(Vec::new(), |node| selection::dragged(selected, node));
+                    if let [node] = nodes[..] {
+                        shown.pressed = Some(node);
+                    }
                     Drag::new(nodes, at)
                 }
                 _ => Drag::create(at),
@@ -306,6 +330,7 @@ impl View {
             drag.place(snapped.by);
             guides = snapped.guides;
         }
+        let place = pointer.and_then(|at| self.aim_reorder(scene, t, self.to_canvas(rect, at)));
         if let Some(drag) = &mut self.drag
             && let Some((target, grip, by)) = drag.gripping()
             && !matches!(grip, Grip::End(_))
@@ -341,6 +366,11 @@ impl View {
                     shown.created = Some((self.to_canvas(rect, from), self.to_canvas(rect, to)));
                 }
                 Release::Grip { target, grip, by } => shown.reshaped = target.reshape(grip, by),
+                Release::Reorder {
+                    node,
+                    before,
+                    index,
+                } => shown.reordered = Some((node, before, index)),
             }
         }
         let preview = match self.drag.as_ref().and_then(Drag::moving) {
@@ -455,6 +485,22 @@ impl View {
             );
         }
 
+        if let Some(line) = place {
+            let orange = Color32::from_rgb(0xff, 0x9e, 0x64);
+            painter.line_segment(line.map(to_screen), Stroke::new(3.0, orange));
+        }
+        if let Some((node, _, by)) = self.drag.as_ref().and_then(Drag::reordering)
+            && let Some((min, max)) = arrange::bounds(scene, node, t)
+        {
+            let outline = Rect::from_min_max(to_screen(min + by), to_screen(max + by));
+            painter.rect_stroke(
+                outline,
+                3.0,
+                Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
+                StrokeKind::Outside,
+            );
+        }
+
         if let Some((from, to)) = self.drag.as_ref().and_then(Drag::boxed) {
             let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
             let area = Rect::from_two_pos(from, to);
@@ -554,6 +600,24 @@ impl View {
         let grid = self.grid.then_some(self.spacing);
         let snapped = snap::snap((p, p), &others, Point::ZERO, reach, grid);
         (p + snapped.by, snapped.guides)
+    }
+
+    /// While the drag reorders a child of a stack or grid, with the
+    /// pointer at canvas point `p`, aim it at the place among its
+    /// siblings nearest `p`, and give the line that marks the place when
+    /// the child would move.
+    fn aim_reorder(&mut self, scene: &Scene, t: f64, p: Point) -> Option<[Point; 2]> {
+        let drag = self.drag.as_mut()?;
+        let (node, siblings, _) = drag.reordering()?;
+        let boxes: Vec<Option<Bounds>> = siblings
+            .children
+            .iter()
+            .map(|&child| arrange::bounds(scene, child, t))
+            .collect();
+        let from = siblings.children.iter().position(|&c| c == node)?;
+        let (slot, line) = reorder::slot(siblings.layout, &boxes, p)?;
+        drag.aim(slot);
+        (slot != from && slot != from + 1).then_some(line)
     }
 
     /// Draw the outline of the node the tool is drawing, with the

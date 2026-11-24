@@ -12,6 +12,7 @@ mod nudge;
 mod playback;
 mod properties;
 mod recent;
+mod reorder;
 mod selection;
 mod snap;
 mod tool;

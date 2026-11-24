@@ -317,8 +317,16 @@ impl App {
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
+        let outer = arrange::outermost(nodes);
+        let stacked = outer.len() > 1
+            && self.error.is_none()
+            && outer.iter().any(|&n| edit::siblings(&self.text, n).is_ok());
         let edits = match &self.error {
             Some(_) => Err("fix the source's error before moving things".to_string()),
+            None if stacked => Err(
+                "cannot move: drag one child of a stack or a grid at a time to reorder it"
+                    .to_string(),
+            ),
             None => edit::move_edits(&self.text, nodes, by.x, by.y).map_err(|e| {
                 let (line, col) = e.line_col(&self.text);
                 format!("cannot move: {line}:{col}: {}", e.message)
@@ -336,6 +344,38 @@ impl App {
         if let Err(why) = self.write(&edits) {
             self.view.end_move();
             self.notice = Some(why);
+        }
+    }
+
+    /// Move the child of a stack or grid at `node` before its sibling
+    /// `before`, or after the last when `None`, and keep it selected at
+    /// `index` among them, or name on the status line why not.
+    fn reorder(&mut self, node: lang::Span, before: Option<lang::Span>, index: usize) {
+        let path = self.program.as_ref().and_then(|p| edit::node_path(p, node));
+        let Some(mut path) = path else { return };
+        let edits = self.on_source("reorder", |text| edit::reorder_edits(text, node, before));
+        let written = edits.and_then(|edits| {
+            if edits.is_empty() {
+                return Ok(false);
+            }
+            self.write(&edits).map(|()| true)
+        });
+        match written {
+            Ok(true) => {
+                self.notice = None;
+                *path.last_mut().expect("a path names a node") = index;
+                self.select_added(Added {
+                    paths: vec![path],
+                    open_field: false,
+                });
+            }
+            Ok(false) => {
+                self.notice = None;
+                if let Some(program) = &self.program {
+                    self.selection = Selection::at(program, vec![path]);
+                }
+            }
+            Err(why) => self.notice = Some(why),
         }
     }
 
@@ -1257,8 +1297,17 @@ impl eframe::App for App {
                 if let Some(node) = shown.double_clicked {
                     self.open_field(node);
                 }
+                if let Some(node) = shown.pressed
+                    && self.error.is_none()
+                    && let Ok(siblings) = edit::siblings(&self.text, node)
+                {
+                    self.view.reorder(siblings);
+                }
                 if let Some((nodes, by)) = shown.moved {
                     self.move_nodes(&nodes, by);
+                }
+                if let Some((node, before, index)) = shown.reordered {
+                    self.reorder(node, before, index);
                 }
                 if let Some(reshape) = shown.reshaped {
                     self.reshape(reshape);

@@ -7,6 +7,17 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Added
+
+- Dragging one child of a stack or a grid reorders it among its siblings.
+  The viewer outlines the child under the pointer. A line marks the place
+  it would land: across the stack at the nearest gap, or along the
+  nearest side of a grid cell in reading order. On release the child's
+  source moves there and the child stays selected. Before, the viewer
+  refused the drag. A drag on several selected nodes that includes a
+  child of a stack or grid is refused, and the status line gives the
+  reason.
+
 ### Changed
 
 - When the editor sends a source with another path, the viewer pauses at 0,

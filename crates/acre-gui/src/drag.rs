@@ -1,8 +1,10 @@
 use acre::lang::Span;
 use acre::scene::Point;
+use acre::scene::edit::Siblings;
 use eframe::egui::Pos2;
 
 use crate::handle::{Grip, Target};
+use crate::reorder::moved_index;
 
 /// How far, in screen points, the pointer goes from where it was
 /// pressed before the press is a drag and not a click.
@@ -19,6 +21,10 @@ pub struct Drag {
     /// The handle the drag pulls and what it sits on, when the press was
     /// on one.
     grip: Option<(Target, Grip)>,
+    /// The children of the stack or grid that holds the one node the
+    /// drag moves, and the index among them of the child the node goes
+    /// before, or their count for after the last.
+    reorder: Option<(Siblings, usize)>,
     /// Where the press was, on screen.
     from: Pos2,
     /// Where the pointer is, on screen.
@@ -45,6 +51,13 @@ pub enum Release {
         grip: Grip,
         by: Point,
     },
+    /// Move `node` before its sibling `before`, or after the last when
+    /// `None`, to end up at `index` among them.
+    Reorder {
+        node: Span,
+        before: Option<Span>,
+        index: usize,
+    },
 }
 
 impl Drag {
@@ -53,6 +66,7 @@ impl Drag {
             nodes,
             create: false,
             grip: None,
+            reorder: None,
             from,
             to: from,
             by: None,
@@ -72,6 +86,30 @@ impl Drag {
         Drag {
             grip: Some((target, grip)),
             ..Drag::new(Vec::new(), from)
+        }
+    }
+
+    /// Make the drag of one child of a stack or grid, whose siblings
+    /// are `siblings`, reorder it among them in place of moving it.
+    pub fn reorder(&mut self, siblings: Siblings) {
+        let [node] = self.nodes[..] else { return };
+        if let Some(index) = siblings.children.iter().position(|&c| c == node) {
+            self.reorder = Some((siblings, index));
+        }
+    }
+
+    /// The node being reordered, its siblings and how far it has been
+    /// dragged, once the pointer has gone past the threshold.
+    pub fn reordering(&self) -> Option<(Span, &Siblings, Point)> {
+        let (siblings, _) = self.reorder.as_ref()?;
+        Some((self.nodes[0], siblings, self.by?))
+    }
+
+    /// Put the node being reordered before the sibling at `slot`, or
+    /// after the last when `slot` is their count.
+    pub fn aim(&mut self, slot: usize) {
+        if let Some((_, aimed)) = &mut self.reorder {
+            *aimed = slot;
         }
     }
 
@@ -98,7 +136,8 @@ impl Drag {
     /// the threshold.
     pub fn moving(&self) -> Option<(&[Span], Point)> {
         let by = self.by?;
-        (!self.nodes.is_empty()).then_some((self.nodes.as_slice(), by))
+        let moves = !self.nodes.is_empty() && self.reorder.is_none();
+        moves.then_some((self.nodes.as_slice(), by))
     }
 
     /// The corners on screen of the selection box, once the pointer has
@@ -128,6 +167,18 @@ impl Drag {
         if let Some((target, grip)) = self.grip {
             return Release::Grip { target, grip, by };
         }
+        if let Some((siblings, slot)) = self.reorder {
+            let from = siblings
+                .children
+                .iter()
+                .position(|&c| c == self.nodes[0])
+                .expect("`reorder` takes the node's siblings");
+            return Release::Reorder {
+                node: self.nodes[0],
+                before: siblings.children.get(slot).copied(),
+                index: moved_index(from, slot),
+            };
+        }
         if self.create {
             Release::Create(self.from, self.to)
         } else if self.nodes.is_empty() {
@@ -144,6 +195,7 @@ impl Drag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acre::scene::edit::Layout;
     use eframe::egui::pos2;
 
     fn span() -> Span {
@@ -255,5 +307,58 @@ mod tests {
                 by: Point::new(11.0, 0.0),
             }
         );
+    }
+
+    #[test]
+    fn a_drag_on_a_child_of_a_stack_reorders_it_and_does_not_move_it() {
+        let a = Span { start: 0, end: 5 };
+        let siblings = Siblings {
+            layout: Layout::Down,
+            children: vec![a, span(), Span { start: 30, end: 40 }],
+        };
+        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
+        drag.reorder(siblings.clone());
+        assert_eq!(drag.reordering(), None);
+        drag.follow(pos2(0.0, 30.0), 1.0);
+        assert_eq!(drag.moving(), None);
+        assert_eq!(
+            drag.reordering(),
+            Some((span(), &siblings, Point::new(0.0, 30.0)))
+        );
+        drag.aim(0);
+        assert_eq!(
+            drag.release(),
+            Release::Reorder {
+                node: span(),
+                before: Some(a),
+                index: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn a_reorder_to_the_end_goes_before_nothing_and_several_nodes_move() {
+        let siblings = Siblings {
+            layout: Layout::Down,
+            children: vec![span(), Span { start: 30, end: 40 }],
+        };
+        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
+        drag.reorder(siblings.clone());
+        drag.follow(pos2(0.0, 30.0), 1.0);
+        drag.aim(2);
+        assert_eq!(
+            drag.release(),
+            Release::Reorder {
+                node: span(),
+                before: None,
+                index: 1,
+            }
+        );
+
+        let other = Span { start: 30, end: 40 };
+        let mut drag = Drag::new(vec![span(), other], pos2(0.0, 0.0));
+        drag.reorder(siblings);
+        drag.follow(pos2(0.0, 30.0), 1.0);
+        assert!(drag.moving().is_some());
     }
 }

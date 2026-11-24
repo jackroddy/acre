@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scene::edit::reorder_edits` moves a child of a stack or a grid to just
+  before one of its siblings, or after the last. The child's text goes
+  with its properties and the nodes inside it. A child alone on its lines
+  takes its lines with it, along with its trailing comment and the comment
+  lines directly above it. A child that shares a line moves on its own.
+  The edits keep the layout `acre fmt` gives. A move to the child's
+  current place makes no edits. A node outside a stack or grid, a copy
+  made by a `repeat`, and a sibling from another parent are refused.
+- `scene::edit::siblings` gives the children of the stack or grid that
+  holds a node, and how it lays them out as a `Layout`: `Down`, `Right`,
+  or `Grid` with its columns.
+
 ### Fixed
 
 - A character that bold text's own font lacks now comes from a bold face.

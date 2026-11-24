@@ -488,19 +488,19 @@ fn indented(text: &str, indent: &str) -> String {
 }
 
 /// The offset of the start of the line that holds `offset`.
-fn line_start(source: &str, offset: usize) -> usize {
+pub(super) fn line_start(source: &str, offset: usize) -> usize {
     source[..offset].rfind('\n').map_or(0, |k| k + 1)
 }
 
 /// The spaces that open the line starting at `start`.
-fn indent_at(source: &str, start: usize) -> &str {
+pub(super) fn indent_at(source: &str, start: usize) -> &str {
     let line = &source[start..];
     &line[..line.len() - line.trim_start_matches(' ').len()]
 }
 
 /// An error unless the node is its own and not one copy of a `repeat`
 /// around it; `why` says what acting on it would do.
-fn in_repeat(target: &Node, around: &[&Node], why: &str) -> Result<(), Error> {
+pub(super) fn in_repeat(target: &Node, around: &[&Node], why: &str) -> Result<(), Error> {
     if around.iter().any(|n| n.kind.text == "repeat") {
         return Err(Error::new(
             target.kind.span,
@@ -653,7 +653,7 @@ pub(super) fn removal(source: &str, span: Span) -> Span {
 
 /// `span`, a deletion, with the blank line after it too when it takes
 /// whole lines from between two blank ones.
-fn without_double_blank(source: &str, span: Span) -> Span {
+pub(super) fn without_double_blank(source: &str, span: Span) -> Span {
     if span.start != line_start(source, span.start) || !source[..span.end].ends_with('\n') {
         return span;
     }
