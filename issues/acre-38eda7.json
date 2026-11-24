@@ -1,0 +1,28 @@
+{
+  "id": "acre-38eda7",
+  "title": "A node can carry a letter tag such as (a)",
+  "body": "Today panels number themselves in source order, and `marker` and `text` take a `number`. Nothing letters the parts inside a panel. The sufr pipeline figure in `sufr-figures` puts \"(a)\" to \"(d)\" beside each graphic in a stage, so a part can be cited as 1(b). Each letter is a `text` node placed by a script from the graphic's left edge and height.\n\n## Proposal\n\nAny drawn node takes `tag \"TEXT\"`. acre sets the text in a small bold face, a fixed gap left of the node's box and centred on it vertically. `tag auto` gives the next letter in source order within the enclosing panel, starting at \"(a)\".\n\n```text\nrow strips { tag auto; at 200 160; unit 24 24; chars \"$%ACGNT\"; }\n```\n\n## Open\n\n- A `tag-side left | top-left` property for a node with no room on its left.\n- Whether `tag auto` restarts in each panel or runs on through the canvas.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:21:35.597792351Z",
+  "updated_at": "2026-11-24T06:21:35.597792351Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "58993b6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
