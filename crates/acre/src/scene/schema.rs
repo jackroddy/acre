@@ -329,7 +329,7 @@ const MERGE: &[Property] = &[
     STYLE,
 ];
 
-const DRAWN: &[&str] = &[
+pub const DRAWN: &[&str] = &[
     "box", "ellipse", "polygon", "polyline", "row", "matrix", "line", "arrow", "sweep", "merge",
     "text", "math", "marker", "table", "brace", "ruler", "group", "panel", "caption", "stack",
     "grid", "code", "repeat",

@@ -674,9 +674,8 @@ fn add_node(
             return Err(Error::new(
                 node.kind.span,
                 format!(
-                    "unknown node `{other}`; a canvas holds box, ellipse, polygon, polyline, line, arrow, \
-                         text, math, marker, table, row, matrix, code, brace, ruler, group, panel, caption, stack, grid, \
-                         palette and style"
+                    "unknown node `{other}`; a canvas holds {}",
+                    schema::node("canvas").map_or(String::new(), |c| c.children.join(", "))
                 ),
             ));
         }
@@ -3233,6 +3232,68 @@ mod tests {
             let (line, col) = e.line_col(src);
             (line, col, e.message)
         })
+    }
+
+    /// A node of each drawn kind that builds on its own.
+    fn drawn_snippet(kind: &str) -> &'static str {
+        match kind {
+            "box" => "box { size 10 10; }",
+            "ellipse" => "ellipse { size 10 10; }",
+            "polygon" => "polygon { points 0 0 10 0 10 10; }",
+            "polyline" => "polyline { points 0 0 10 10; }",
+            "row" => "row { unit 10 10; cell { text \"a\"; } }",
+            "matrix" => "matrix { rows 2; columns 2; unit 10 10; }",
+            "line" => "line { from 0 0; to 10 10; }",
+            "arrow" => "arrow { from 0 0; to 10 10; }",
+            "sweep" => "sweep { from 0 0; to 10 10; leave down; enter up; }",
+            "merge" => "merge { from 0 0; from 0 10; to 20 5; }",
+            "text" => "text { text \"a\"; }",
+            "math" => "math { text \"\"\"x\"\"\"; }",
+            "marker" => "marker { at 5 5; number 1; }",
+            "table" => "table { columns 0 40; row \"a\" \"b\"; }",
+            "brace" => "brace { from 0 0; to 10 0; }",
+            "ruler" => "ruler { unit 10; count 3; }",
+            "group" => "group { }",
+            "panel" => "panel { }",
+            "caption" => "caption { text \"a\"; }",
+            "stack" => "stack { }",
+            "grid" => "grid { }",
+            "code" => "code { text \"\"\"a\"\"\"; }",
+            "repeat" => "repeat j 0 1 { }",
+            _ => panic!("no snippet for {kind}"),
+        }
+    }
+
+    #[test]
+    fn a_container_holds_exactly_the_drawn_kinds_the_builder_accepts() {
+        for container in schema::NODES.iter().filter(|k| !k.children.is_empty()) {
+            if container.name == "row" || container.name == "matrix" {
+                continue;
+            }
+            for kind in schema::NODES
+                .iter()
+                .filter(|k| schema::DRAWN.contains(&k.name))
+            {
+                let node = drawn_snippet(kind.name);
+                let src = match container.name {
+                    "canvas" => format!("canvas {{ size 100 100; {node} }}"),
+                    "repeat" => format!("canvas {{ size 100 100; repeat i 0 1 {{ {node} }} }}"),
+                    name => format!("canvas {{ size 100 100; {name} {{ {node} }} }}"),
+                };
+                let built = scene(&src);
+                let listed = container.children.contains(&kind.name);
+                let accepted = match &built {
+                    Ok(_) => true,
+                    Err((_, _, message)) if message.starts_with("unknown node") => false,
+                    Err(e) => panic!("{src} fails: {e:?}"),
+                };
+                assert_eq!(
+                    accepted, listed,
+                    "{} holds {}: listed {listed}, accepted {accepted}",
+                    container.name, kind.name
+                );
+            }
+        }
     }
 
     #[test]

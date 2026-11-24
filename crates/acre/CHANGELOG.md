@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The error for an unknown node lists the kinds a canvas holds. It left
+  out `sweep`, `merge`, `repeat`, `fonts`, `data` and `timeline`.
 - A character that bold text's own font lacks now comes from a bold face.
   In `sans-bold` text, acre sets `→` in mono bold, where it used regular
   mono before. Bold text falls back to sans bold, mono bold and the math
