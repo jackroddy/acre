@@ -25,6 +25,11 @@ meaning. The parser gives them none. A change of vocabulary then leaves the
 parser alone. Record each change of syntax and its reason on the language
 design issue in foam.
 
+Syntax is provisional until one large rework, once acre has the features I
+want. Do not ask me to decide syntax before then. Take the plainest form the
+parser already reads, build it, and log the choice on the language design
+issue so the rework can revisit it.
+
 ## Layers
 
 The planned shape. Only the renderer deals in pixels.
