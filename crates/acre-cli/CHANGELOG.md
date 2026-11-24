@@ -7,6 +7,12 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Fixed
+
+- `acre reference` and `acre fmt -` end quietly when the program reading
+  their output stops early, as in `acre reference | head`. Before, the first
+  panicked and the second printed an error, and both exited non-zero.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added

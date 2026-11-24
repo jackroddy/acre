@@ -123,25 +123,8 @@ fn main() -> anyhow::Result<()> {
                         .ok_or_else(|| anyhow!("acre has no node kind `{name}`"))?,
                 ],
             };
-            for (k, kind) in kinds.iter().enumerate() {
-                if k > 0 {
-                    println!();
-                }
-                println!("{}: {}", kind.name, kind.about);
-                let width = kind
-                    .properties
-                    .iter()
-                    .map(|p| p.name.len())
-                    .max()
-                    .unwrap_or(0);
-                for p in kind.properties {
-                    println!("  {:width$}  {}", p.name, p.takes);
-                    println!("  {:width$}  {}", "", p.about);
-                }
-                if !kind.children.is_empty() {
-                    println!("  holds {}", kind.children.join(", "));
-                }
-            }
+            quiet_on_broken_pipe(write_reference(&mut io::stdout().lock(), &kinds))
+                .context("cannot write stdout")?;
         }
         Command::Fmt(args) if args.files == [Path::new("-")] => {
             let mut src = String::new();
@@ -157,8 +140,7 @@ fn main() -> anyhow::Result<()> {
                     return Err(anyhow!("not formatted: <stdin>"));
                 }
             } else {
-                io::stdout()
-                    .write_all(formatted.as_bytes())
+                quiet_on_broken_pipe(io::stdout().lock().write_all(formatted.as_bytes()))
                     .context("cannot write stdout")?;
             }
         }
@@ -227,6 +209,37 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn write_reference(out: &mut impl Write, kinds: &[&scene::schema::NodeKind]) -> io::Result<()> {
+    for (k, kind) in kinds.iter().enumerate() {
+        if k > 0 {
+            writeln!(out)?;
+        }
+        writeln!(out, "{}: {}", kind.name, kind.about)?;
+        let width = kind
+            .properties
+            .iter()
+            .map(|p| p.name.len())
+            .max()
+            .unwrap_or(0);
+        for p in kind.properties {
+            writeln!(out, "  {:width$}  {}", p.name, p.takes)?;
+            writeln!(out, "  {:width$}  {}", "", p.about)?;
+        }
+        if !kind.children.is_empty() {
+            writeln!(out, "  holds {}", kind.children.join(", "))?;
+        }
+    }
+    Ok(())
+}
+
+/// Treat a closed output pipe as the reader being done, not as a failure.
+fn quiet_on_broken_pipe(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
 }
 
 fn load(path: &Path) -> anyhow::Result<Scene> {
