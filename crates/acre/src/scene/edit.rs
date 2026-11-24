@@ -1,8 +1,8 @@
-//! The source edits that move a drawn node by an offset or change its
-//! text.
+//! The source edits that move drawn nodes by an offset or change a
+//! node's text.
 //!
-//! A viewer that drags an object asks [`move_edits`] for the changes to
-//! the numbers that place the object's node, and [`apply`] makes them.
+//! A viewer that drags objects asks [`move_edits`] for the changes to
+//! the numbers that place their nodes, and [`apply`] makes them.
 //! One that edits an object's text reads it with [`text_of`] and asks
 //! [`text_edits`] for the change to its string.
 //! [`node_path`] and [`node_span`] find a node again after an edit
@@ -45,56 +45,85 @@ pub fn apply(source: &str, edits: &[TextEdit]) -> String {
     out
 }
 
-/// The edits to `source` that move the node whose span is `node`, as an
-/// object's [`source`](super::Object::source) gives it, `dx` pixels
+/// The edits to `source` that move the nodes whose spans are `nodes`,
+/// as objects' [`source`](super::Object::source) gives them, `dx` pixels
 /// across and `dy` down, in source order. A number keeps as many decimals
 /// as it was written with, or as the offset needs up to two, whichever is
 /// more.
 ///
-/// The edits change the node's `at`, adding `DX DY` to an `at` that names
-/// a thing and an `at X Y` to a node without one, or the numbers of its
-/// `from`, `to` and `points`. A group's `at` moves what it holds one to
-/// one, so `dx` and `dy` are the same in the node's own coordinates. On
-/// a canvas whose `size` has an `auto`, the drawing moves to keep its
-/// margin, so the node moves by `dx` and `dy` against the rest.
+/// The edits change each node's `at`, adding `DX DY` to an `at` that
+/// names a thing and an `at X Y` to a node without one, or the numbers of
+/// its `from`, `to` and `points`. A group's `at` moves what it holds one
+/// to one, so `dx` and `dy` are the same in the node's own coordinates.
+/// On a canvas whose `size` has an `auto`, the drawing moves to keep its
+/// margin, so the nodes move by `dx` and `dy` against the rest.
+///
+/// The nodes move as one. A node inside another of `nodes` moves with it
+/// and takes no edits of its own. An `at`, an end, a marker's `at` or a
+/// brace's `over` that names a thing in `nodes`, or in one of them,
+/// follows that thing and takes no edit.
 ///
 /// # Errors
 ///
-/// If `source` does not parse, no node has the span `node`, or the node
-/// is not placed by numbers it sets itself: the error says why.
-pub fn move_edits(source: &str, node: Span, dx: f64, dy: f64) -> Result<Vec<TextEdit>, Error> {
+/// If `source` does not parse, no node has a span in `nodes`, or a node
+/// is placed neither by numbers it sets itself nor by things that move
+/// with it. An end, a marker or a brace on a thing that stays put is
+/// refused. The error is the first such node's and says why.
+pub fn move_edits(source: &str, nodes: &[Span], dx: f64, dy: f64) -> Result<Vec<TextEdit>, Error> {
     let program = lang::parse(source)?;
-    let (canvas, path) = locate(&program, node)?;
-    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
-    let mover = Mover {
-        source,
-        canvas,
-        target,
-        by: [dx, dy],
-        paste: None,
-    };
-    mover.check_place(around)?;
-    let Some(mut edits) = mover.edits()? else {
-        if let Some(p) = own(target, "over") {
-            return Err(Error::new(
-                p.span,
-                "the brace is set by the things it brackets; move them instead",
-            ));
+    let mut found = nodes
+        .iter()
+        .map(|&span| locate(&program, span))
+        .collect::<Result<Vec<_>, _>>()?;
+    found.sort_by_key(|(_, path)| path[path.len() - 1].span.start);
+    let mut outer: Vec<(&Node, Vec<&Node>)> = Vec::new();
+    for (canvas, path) in found {
+        let start = path[path.len() - 1].span.start;
+        if outer
+            .last()
+            .is_none_or(|(_, o)| o[o.len() - 1].span.end <= start)
+        {
+            outer.push((canvas, path));
         }
-        return Err(match target.kind.text.as_str() {
-            "caption" => Error::new(
-                target.kind.span,
-                "a caption sits under what comes before it and has no place of its own",
-            ),
-            other => Error::new(
-                target.kind.span,
-                format!("a `{other}` has no place to move"),
-            ),
-        });
-    };
+    }
+    let mut moved = Vec::new();
+    for (_, path) in &outer {
+        nodes::defined(path[path.len() - 1], false, &mut moved);
+    }
+    let mut edits = Vec::new();
+    for (canvas, path) in &outer {
+        let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+        let mover = Mover {
+            source,
+            canvas,
+            target,
+            by: [dx, dy],
+            moved: &moved,
+            paste: false,
+        };
+        mover.check_place(around)?;
+        edits.extend(mover.edits()?.ok_or_else(|| no_place(target))?);
+    }
     edits.retain(|e| source[e.span.start..e.span.end] != e.text);
     edits.sort_by_key(|e| e.span.start);
     Ok(edits)
+}
+
+/// Why `node` has no place of its own to move.
+fn no_place(node: &Node) -> Error {
+    if let Some(p) = own(node, "over") {
+        return Error::new(
+            p.span,
+            "the brace is set by the things it brackets; move them instead",
+        );
+    }
+    match node.kind.text.as_str() {
+        "caption" => Error::new(
+            node.kind.span,
+            "a caption sits under what comes before it and has no place of its own",
+        ),
+        other => Error::new(node.kind.span, format!("a `{other}` has no place to move")),
+    }
 }
 
 /// The text of the node whose span is `node`, markup included, as
@@ -113,7 +142,8 @@ pub fn text_of(source: &str, node: Span) -> Result<Option<String>, Error> {
         canvas,
         target,
         by: [0.0; 2],
-        paste: None,
+        moved: &[],
+        paste: false,
     };
     let text = mover.text(around)?;
     Ok(text.set.map(|(_, s)| s.to_string()))
@@ -145,7 +175,8 @@ pub fn text_edits(source: &str, node: Span, new_text: &str) -> Result<Vec<TextEd
         canvas,
         target,
         by: [0.0; 2],
-        paste: None,
+        moved: &[],
+        paste: false,
     };
     let NodeText { key, set } = mover.text(around)?;
     let unwritable = || {
@@ -241,20 +272,24 @@ struct NodeText<'a> {
     set: Option<(&'a Value, &'a str)>,
 }
 
-/// What one call to [`move_edits`], [`text_of`] or [`text_edits`]
-/// reads, or [`paste_edits`] for one pasted node. `by` is 0 for the
-/// text.
+/// What [`move_edits`] reads for one moved node, [`paste_edits`] for
+/// one pasted node, or [`text_of`] and [`text_edits`] for their node.
+/// `by` is 0 for the text.
 struct Mover<'a> {
     source: &'a str,
     canvas: &'a Node,
     target: &'a Node,
     by: [f64; 2],
-    /// The names in a paste, when the node is one of its nodes.
+    /// The names given in the nodes moved or pasted together, each with
+    /// whether a `repeat` copies it.
     //
-    // a pasted end or marker on a thing follows it, and so does an `at`
-    // on a pasted thing, which moves with the paste: those take no edit
-    // where a move refuses them or adds the offset
-    paste: Option<&'a [String]>,
+    // an end, a marker or a brace on one of these things follows it, and
+    // so does an `at`: those take no edit where a move of the node alone
+    // refuses them or adds the offset
+    moved: &'a [(&'a str, bool)],
+    /// Whether the node is pasted, so that an end, a marker or a brace
+    /// on any thing follows it.
+    paste: bool,
 }
 
 impl Mover<'_> {
@@ -266,8 +301,11 @@ impl Mover<'_> {
             | "group" | "panel" | "stack" | "grid" => self.at()?,
             "marker" => self.marker()?,
             "line" | "arrow" | "sweep" | "brace" => {
-                if own(self.target, "over").is_some() {
-                    return Ok(None);
+                if let Some(p) = own(self.target, "over") {
+                    let follows = p.values.iter().all(|v| {
+                        !matches!(v.kind, ValueKind::Word(_)) || self.follows(Some(v), false)
+                    });
+                    return Ok(follows.then(Vec::new));
                 }
                 let mut edits = self.end("from")?;
                 edits.extend(self.end("to")?);
@@ -280,20 +318,21 @@ impl Mover<'_> {
         Ok(Some(edits))
     }
 
-    /// Whether `value` names a thing the node follows in a paste:
-    /// anything, or with `pasted` only a thing of the paste.
-    fn follows(&self, value: Option<&Value>, pasted: bool) -> bool {
-        let (
-            Some(names),
-            Some(Value {
-                kind: ValueKind::Word(w),
-                ..
-            }),
-        ) = (self.paste, value)
+    /// Whether `value` names a thing the node follows: one in `moved`,
+    /// or in a paste any thing unless `moved_only`.
+    fn follows(&self, value: Option<&Value>, moved_only: bool) -> bool {
+        let Some(Value {
+            kind: ValueKind::Word(w),
+            ..
+        }) = value
         else {
             return false;
         };
-        !pasted || names.contains(w)
+        self.paste && !moved_only
+            || self
+                .moved
+                .iter()
+                .any(|&(name, repeated)| w == name || repeated && nodes::digits_after(w, name))
     }
 
     /// An error unless the node's place is its own to set: not a copy
@@ -723,20 +762,36 @@ mod tests {
     }
 
     /// `src` in acre's layout, with the node of object `index` moved by
-    /// `dx` and `dy`, after checking that the result keeps that layout
-    /// and that the box of every object the node draws moved by exactly
-    /// `dx` and `dy`.
+    /// `dx` and `dy`, checked as [`moved_spans`] checks it.
     fn moved(src: &str, index: usize, dx: f64, dy: f64) -> String {
         let src = format(src).unwrap();
-        let before = scene(&src);
-        let span = before.objects[index].source;
-        let edits = move_edits(&src, span, dx, dy).unwrap();
-        let out = apply(&src, &edits);
+        let span = scene(&src).objects[index].source;
+        moved_spans(&src, &[span], dx, dy)
+    }
+
+    /// `src` in acre's layout, with the nodes that start with `nodes`
+    /// moved together by `dx` and `dy`, checked as [`moved_spans`]
+    /// checks it.
+    fn moved_together(src: &str, nodes: &[&str], dx: f64, dy: f64) -> String {
+        let src = format(src).unwrap();
+        let spans: Vec<Span> = nodes.iter().map(|n| span_of(&src, n)).collect();
+        moved_spans(&src, &spans, dx, dy)
+    }
+
+    /// `src`, in acre's layout, with the nodes at `spans` moved by `dx`
+    /// and `dy`, after checking that the result keeps that layout and
+    /// that the box of every object the nodes draw moved by exactly `dx`
+    /// and `dy`.
+    fn moved_spans(src: &str, spans: &[Span], dx: f64, dy: f64) -> String {
+        let before = scene(src);
+        let edits = move_edits(src, spans, dx, dy).unwrap();
+        let out = apply(src, &edits);
         assert_eq!(format(&out).unwrap(), out);
         let after = scene(&out);
         assert_eq!(before.objects.len(), after.objects.len());
         for (k, o) in before.objects.iter().enumerate() {
-            if o.source.start < span.start || o.source.end > span.end {
+            let inside = |s: &Span| s.start <= o.source.start && o.source.end <= s.end;
+            if !spans.iter().any(inside) {
                 continue;
             }
             let (min0, max0) = before.bounds(k, 0.0).unwrap();
@@ -765,7 +820,7 @@ mod tests {
 
     /// Why the node of `src` that starts with `node` cannot move.
     fn refusal(src: &str, node: &str) -> String {
-        move_edits(src, span_of(src, node), 5.0, 3.0)
+        move_edits(src, &[span_of(src, node)], 5.0, 3.0)
             .unwrap_err()
             .message
     }
@@ -804,21 +859,21 @@ mod tests {
     fn a_number_keeps_its_decimals_or_the_offsets_up_to_two() {
         let src = "canvas { size 300 200; box { at 40 60.5; size 50 30; } }\n";
         let span = scene(src).objects[0].source;
-        let out = apply(src, &move_edits(src, span, 3.0, 2.0).unwrap());
+        let out = apply(src, &move_edits(src, &[span], 3.0, 2.0).unwrap());
         assert!(out.contains("at 43 62.5;"), "{out}");
-        let out = apply(src, &move_edits(src, span, 3.5, 0.25).unwrap());
+        let out = apply(src, &move_edits(src, &[span], 3.5, 0.25).unwrap());
         assert!(out.contains("at 43.5 60.75;"), "{out}");
-        let out = apply(src, &move_edits(src, span, 1.004, -0.333).unwrap());
+        let out = apply(src, &move_edits(src, &[span], 1.004, -0.333).unwrap());
         assert!(out.contains("at 41 60.17;"), "{out}");
 
         let src = "canvas { size 300 200; box { at 3 0.25; size 50 30; } }\n";
         let span = scene(src).objects[0].source;
-        let out = apply(src, &move_edits(src, span, -3.0, -0.25).unwrap());
+        let out = apply(src, &move_edits(src, &[span], -3.0, -0.25).unwrap());
         assert!(out.contains("at 0 0.00;"), "{out}");
 
         let src = "canvas { size 300 200; box { size 50 30; } }\n";
         let span = scene(src).objects[0].source;
-        let out = apply(src, &move_edits(src, span, 2.5, -0.004).unwrap());
+        let out = apply(src, &move_edits(src, &[span], 2.5, -0.004).unwrap());
         assert!(out.contains("at 2.5 0;"), "{out}");
     }
 
@@ -828,7 +883,7 @@ mod tests {
         let s = scene(src);
         for o in &s.objects {
             assert_eq!(
-                move_edits(src, o.source, 0.002, -0.004).unwrap(),
+                move_edits(src, &[o.source], 0.002, -0.004).unwrap(),
                 Vec::new()
             );
         }
@@ -897,7 +952,7 @@ mod tests {
         let s = scene(src);
         let out = apply(
             src,
-            &move_edits(src, span_of(src, "group g"), 4.0, 6.0).unwrap(),
+            &move_edits(src, &[span_of(src, "group g")], 4.0, 6.0).unwrap(),
         );
         assert!(
             out.contains("group g {\n        at 4 6;\n        box"),
@@ -905,7 +960,7 @@ mod tests {
         );
         let out = apply(
             &out,
-            &move_edits(&out, span_of(&out, "group h"), 4.0, 6.0).unwrap(),
+            &move_edits(&out, &[span_of(&out, "group h")], 4.0, 6.0).unwrap(),
         );
         assert!(out.contains("group h { at 4 6; box"), "{out}");
         let after = scene(&out);
@@ -922,7 +977,7 @@ mod tests {
         let src = "canvas { size 300 200; group {} }\n";
         let program = parse(src).unwrap();
         let span = program.nodes[0].children[0].span;
-        let out = apply(src, &move_edits(src, span, 4.0, 6.0).unwrap());
+        let out = apply(src, &move_edits(src, &[span], 4.0, 6.0).unwrap());
         assert_eq!(out, "canvas { size 300 200; group { at 4 6; } }\n");
         assert_eq!(format(&out).unwrap(), out);
     }
@@ -1037,7 +1092,7 @@ mod tests {
         let before = scene(src);
         let out = apply(
             src,
-            &move_edits(src, before.objects[0].source, -10.0, 4.0).unwrap(),
+            &move_edits(src, &[before.objects[0].source], -10.0, 4.0).unwrap(),
         );
         let after = scene(&out);
         let gap = |s: &Scene| s.bounds(1, 0.0).unwrap().0 - s.bounds(0, 0.0).unwrap().0;
@@ -1067,7 +1122,7 @@ mod tests {
         let src =
             "canvas { size 300 200; style s { at 10 10; } box { style s; at 1 1; size 5 5; } }";
         let span = scene(src).objects[0].source;
-        assert_eq!(move_edits(src, span, 1.0, 0.0).unwrap().len(), 1);
+        assert_eq!(move_edits(src, &[span], 1.0, 0.0).unwrap().len(), 1);
     }
 
     #[test]
@@ -1133,12 +1188,137 @@ mod tests {
     }
 
     #[test]
+    fn a_thing_placed_at_another_moved_with_it_moves_once() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box b { at a 10 0; size 20 20; } }";
+        let out = moved_together(src, &["box a", "box b"], 5.0, 3.0);
+        assert!(
+            out.contains("at 15 13;") && out.contains("at a 10 0;"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_arrow_moved_with_both_its_ends_takes_no_edit() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box b { at 100 50; size 20 20; } arrow k { from a; to b; } }";
+        let out = moved_together(src, &["box a", "box b", "arrow k"], 5.0, 3.0);
+        assert!(out.contains("from a;") && out.contains("to b;"), "{out}");
+        assert!(
+            out.contains("at 15 13;") && out.contains("at 105 53;"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_whole_diagram_moves_as_one() {
+        let src = "canvas { size 400 300;
+            box a { at 20 20; size 40 30; text \"a\"; }
+            box b { at 150 20; size 40 30; }
+            group g { at 60 150; box c { at 0 0; size 40 30; } }
+            text t { at a 0 -12; text \"a label\"; }
+            arrow k { from a right; to b left; label \"k\"; }
+            line l { from a bottom 0.5; to c top; }
+            merge m { from a; from b; to c; }
+            marker n { at b right; number 1; }
+            brace o { over a b; side top; label \"both\"; }
+            polygon p { points 250 200 300 200 280 250; }
+        }";
+        let nodes = [
+            "box a",
+            "box b",
+            "group g",
+            "text t",
+            "arrow k",
+            "line l",
+            "merge m",
+            "marker n",
+            "brace o",
+            "polygon p",
+        ];
+        let out = moved_together(src, &nodes, -7.5, 4.0);
+        for kept in [
+            "at a 0 -12;",
+            "from a right;",
+            "to c top;",
+            "at b right;",
+            "over a b;",
+        ] {
+            assert!(out.contains(kept), "{kept} in\n{out}");
+        }
+    }
+
+    #[test]
+    fn an_end_on_a_thing_that_stays_put_is_refused_and_a_literal_end_moves() {
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box c { at 200 10; size 20 20; } arrow k { from a; to 100 50; } }";
+        let out = moved_together(src, &["box a", "arrow k"], 5.0, 3.0);
+        assert!(
+            out.contains("from a;") && out.contains("to 105 53;"),
+            "{out}"
+        );
+        let spans = [span_of(src, "box c"), span_of(src, "arrow k")];
+        let e = move_edits(src, &spans, 5.0, 3.0).unwrap_err();
+        assert!(e.message.contains("`from` names `a`"), "{}", e.message);
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   box c { at 200 10; size 20 20; } brace o { over a c; side top; } }";
+        let spans = [span_of(src, "box a"), span_of(src, "brace o")];
+        let e = move_edits(src, &spans, 5.0, 3.0).unwrap_err();
+        assert!(
+            e.message.contains("the things it brackets"),
+            "{}",
+            e.message
+        );
+    }
+
+    #[test]
+    fn a_node_inside_another_moved_node_takes_no_edits_of_its_own() {
+        let src = "canvas { size 300 200; group g { at 100 100; box c { at 0 0; size 20 20; } } \
+                   arrow k { from c; to 10 10; } }";
+        let out = moved_together(src, &["group g", "box c", "arrow k"], 5.0, 0.0);
+        assert!(
+            out.contains("at 105 100;") && out.contains("at 0 0;"),
+            "{out}"
+        );
+        assert!(
+            out.contains("from c;") && out.contains("to 15 10;"),
+            "{out}"
+        );
+        let span = span_of(src, "group g");
+        assert_eq!(
+            move_edits(src, &[span, span], 5.0, 0.0).unwrap(),
+            move_edits(src, &[span], 5.0, 0.0).unwrap()
+        );
+    }
+
+    #[test]
+    fn an_end_on_a_copy_of_a_repeat_in_a_moved_group_follows_it() {
+        let src = "canvas { size 300 200; group g { at 10 10; \
+                   repeat i 0 2 { box b { at (i * 30) 0; size 20 20; } } } \
+                   arrow k { from b1; to 200 100; } }";
+        let out = moved_together(src, &["group g", "arrow k"], 5.0, 0.0);
+        assert!(
+            out.contains("from b1;") && out.contains("to 205 100;"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn one_node_that_cannot_move_stops_them_all() {
+        let src = "canvas { size 300 200; let x 10; box a { at 10 10; size 40 40; } \
+                   box b { at x 100; size 40 40; } }";
+        let spans = [span_of(src, "box a"), span_of(src, "box b")];
+        let e = move_edits(src, &spans, 5.0, 0.0).unwrap_err();
+        assert!(e.message.contains("`let`"), "{}", e.message);
+    }
+
+    #[test]
     fn a_caption_or_a_span_that_is_no_node_is_refused() {
         let src = "canvas { size 300 200; panel { title \"p\"; caption { text \"c\"; } } }";
         assert!(refusal(src, "caption").contains("a caption sits under"));
-        let err = move_edits(src, Span { start: 3, end: 9 }, 1.0, 1.0).unwrap_err();
+        let err = move_edits(src, &[Span { start: 3, end: 9 }], 1.0, 1.0).unwrap_err();
         assert!(err.message.contains("no node"), "{}", err.message);
-        assert!(move_edits("canvas {", Span::default(), 1.0, 1.0).is_err());
+        assert!(move_edits("canvas {", &[Span::default()], 1.0, 1.0).is_err());
     }
 
     #[test]
@@ -1158,7 +1338,7 @@ mod tests {
                 .unwrap();
         let b = span_of(&src, "box b");
         let path = node_path(&parse(&src).unwrap(), b).unwrap();
-        let edits = move_edits(&src, span_of(&src, "box a"), 5.0, 5.0).unwrap();
+        let edits = move_edits(&src, &[span_of(&src, "box a")], 5.0, 5.0).unwrap();
         let out = apply(&src, &edits);
         let moved = node_span(&parse(&out).unwrap(), &path).unwrap();
         assert_ne!(moved, b);

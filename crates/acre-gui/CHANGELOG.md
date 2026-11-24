@@ -18,7 +18,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - The selection can hold several nodes, and the viewer outlines each in
   blue. A drag on any selected node, or on an object inside one, moves every
   selected node by the same offset. A node inside another selected node moves
-  with that node. The nodes snap as one, on the box around all their objects.
+  with that node. A node placed `at` a selected node moves with it once.
+  So does an arrow or line whose ends name selected nodes. The nodes snap
+  as one, on the box around all their objects.
   When acre cannot move one of them, none moves, and the status line gives
   that node's reason.
 - A double-click on an object opens a field over it that holds its node's

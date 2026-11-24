@@ -294,7 +294,7 @@ impl App {
         // text, so its spans do not point into `text`
         let edits = match &self.error {
             Some(_) => Err("fix the source's error before moving things".to_string()),
-            None => selection::move_edits(&self.text, nodes, by.x, by.y).map_err(|e| {
+            None => edit::move_edits(&self.text, nodes, by.x, by.y).map_err(|e| {
                 let (line, col) = e.line_col(&self.text);
                 format!("cannot move: {line}:{col}: {}", e.message)
             }),

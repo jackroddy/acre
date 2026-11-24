@@ -1,6 +1,6 @@
-use acre::lang::{Error, Node, Program, Span};
+use acre::lang::{Node, Program, Span};
 use acre::scene::Scene;
-use acre::scene::edit::{self, TextEdit};
+use acre::scene::edit;
 
 use crate::snap::Bounds;
 
@@ -107,28 +107,6 @@ fn pick(node: &Node, drawn: &[(Span, Bounds)], area: Bounds, picked: &mut Vec<Sp
     for child in &node.children {
         pick(child, drawn, area, picked);
     }
-}
-
-/// The edits to `source` that move each node at `nodes` by `dx` across
-/// and `dy` down, as one list. A node inside another of `nodes` moves
-/// with it and takes no edits of its own.
-///
-/// # Errors
-///
-/// The first node's error from [`edit::move_edits`], when a node cannot
-/// move.
-pub fn move_edits(source: &str, nodes: &[Span], dx: f64, dy: f64) -> Result<Vec<TextEdit>, Error> {
-    let mut edits = Vec::new();
-    for &node in nodes {
-        let inside_another = nodes
-            .iter()
-            .any(|o| *o != node && o.start <= node.start && node.end <= o.end);
-        if !inside_another {
-            edits.extend(edit::move_edits(source, node, dx, dy)?);
-        }
-    }
-    edits.sort_by_key(|e| e.span.start);
-    Ok(edits)
 }
 
 #[cfg(test)]
@@ -247,29 +225,5 @@ mod tests {
         let group = program.nodes[0].children[0].span;
         let c = span_of(GROUP, "box c");
         assert_eq!(dragged(&[group], c), [group]);
-    }
-
-    #[test]
-    fn moving_several_nodes_edits_each_and_an_inner_one_not_at_all() {
-        let a = span_of(SRC, "box a");
-        let b = span_of(SRC, "box b");
-        let edits = move_edits(SRC, &[a, b], 5.0, -5.0).unwrap();
-        let moved = edit::apply(SRC, &edits);
-        assert!(moved.contains("at 15 5;") && moved.contains("at 205 95;"));
-
-        let program = parse(GROUP).unwrap();
-        let group = program.nodes[0].children[0].span;
-        let c = span_of(GROUP, "box c");
-        let moved = edit::apply(GROUP, &move_edits(GROUP, &[group, c], 5.0, 0.0).unwrap());
-        assert!(moved.contains("at 105 100;") && moved.contains("at 0 0;"));
-    }
-
-    #[test]
-    fn one_node_that_cannot_move_stops_them_all() {
-        let src = "canvas { size 300 200; let x 10; box a { at 10 10; size 40 40; } \
-                   box b { at x 100; size 40 40; } }";
-        let nodes = [span_of(src, "box a"), span_of(src, "box b")];
-        let e = move_edits(src, &nodes, 5.0, 0.0).unwrap_err();
-        assert!(e.message.contains("`let`"), "{}", e.message);
     }
 }

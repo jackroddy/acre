@@ -256,6 +256,7 @@ pub fn paste_edits(
     let pasted = nodes_in(text)?;
 
     let (renamed, names) = renamed(&program, &pasted, text);
+    let moved: Vec<(&str, bool)> = names.iter().map(|(n, r)| (n.as_str(), *r)).collect();
 
     let insert = insertion(source, canvas, &renamed);
     let start = insert.span.start;
@@ -275,7 +276,8 @@ pub fn paste_edits(
             canvas,
             target: node,
             by: [dx, dy],
-            paste: Some(names.as_slice()),
+            moved: &moved,
+            paste: true,
         };
         moves.extend(mover.edits()?.unwrap_or_default());
     }
@@ -295,8 +297,8 @@ pub fn paste_edits(
 
 /// `text`, whose nodes are `pasted`, with each name that clashes with
 /// `program` renamed as [`paste_edits`] says, and every name in `text`
-/// as it is after.
-fn renamed(program: &Program, pasted: &Program, text: &str) -> (String, Vec<String>) {
+/// as it is after, with whether a `repeat` copies it.
+fn renamed(program: &Program, pasted: &Program, text: &str) -> (String, Vec<(String, bool)>) {
     let target = Taken::of(program);
     let mut taken = Taken {
         words: &Taken::of(pasted).words | &target.words,
@@ -326,9 +328,9 @@ fn renamed(program: &Program, pasted: &Program, text: &str) -> (String, Vec<Stri
     let names = names
         .iter()
         .map(
-            |&(word, _)| match renames.iter().find(|(old, ..)| *old == word) {
-                Some((_, new, _)) => new.clone(),
-                None => word.to_string(),
+            |&(word, repeated)| match renames.iter().find(|(old, ..)| *old == word) {
+                Some((_, new, _)) => (new.clone(), repeated),
+                None => (word.to_string(), repeated),
             },
         )
         .collect();
@@ -484,7 +486,7 @@ fn targets<'a>(
 /// Push onto `names` every name given in `node` and the nodes inside it,
 /// each with whether a `repeat` copies it, which `in_repeat` says of
 /// `node`.
-fn defined<'a>(node: &'a Node, in_repeat: bool, names: &mut Vec<(&'a str, bool)>) {
+pub(super) fn defined<'a>(node: &'a Node, in_repeat: bool, names: &mut Vec<(&'a str, bool)>) {
     if let Some(name) = &node.name {
         names.push((&name.text, in_repeat));
     }
@@ -556,7 +558,7 @@ fn each_word<'a>(value: &'a Value, f: &mut impl FnMut(&'a Value, &'a str)) {
 
 /// Whether `word` is `name` with a number after it, as a `repeat` names
 /// its copies.
-fn digits_after(word: &str, name: &str) -> bool {
+pub(super) fn digits_after(word: &str, name: &str) -> bool {
     word.strip_prefix(name)
         .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
 }
@@ -1257,7 +1259,7 @@ mod tests {
         assert_eq!(edits.len(), 1);
         let moved = apply(
             src,
-            &move_edits(src, span_of(src, "polygon"), 3.0, 4.0).unwrap(),
+            &move_edits(src, &[span_of(src, "polygon")], 3.0, 4.0).unwrap(),
         );
         let out = edited(src, &edits);
         assert!(

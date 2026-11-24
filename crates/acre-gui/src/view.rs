@@ -584,7 +584,8 @@ mod tests {
         let scene = acre::scene::build(&acre::lang::parse(src).unwrap(), &[], &[]).unwrap();
         let node = scene.objects[0].source;
         let snapped = snap_drag(&scene, &[node], by, 0.0, true, 6.0, None);
-        let edits = acre::scene::edit::move_edits(src, node, snapped.by.x, snapped.by.y).unwrap();
+        let edits =
+            acre::scene::edit::move_edits(src, &[node], snapped.by.x, snapped.by.y).unwrap();
         acre::scene::edit::apply(src, &edits)
     }
 
@@ -616,7 +617,7 @@ mod tests {
         let nodes = [scene.objects[0].source, scene.objects[1].source];
         let snapped = snap_drag(&scene, &nodes, Point::new(84.5, 0.0), 0.0, true, 2.0, None);
         assert_eq!(snapped.by, Point::new(85.0, 0.0));
-        let edits = crate::selection::move_edits(src, &nodes, 85.0, 0.0).unwrap();
+        let edits = acre::scene::edit::move_edits(src, &nodes, 85.0, 0.0).unwrap();
         let out = acre::scene::edit::apply(src, &edits);
         assert!(
             out.contains("at 85 0;") && out.contains("at 115 0;"),
