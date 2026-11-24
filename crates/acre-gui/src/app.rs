@@ -8,7 +8,7 @@ use acre::scene::{self, Scene, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{
-    self, Color32, Event, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2,
+    self, Align2, Color32, Event, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2,
     ViewportCommand,
 };
 
@@ -1075,41 +1075,39 @@ impl App {
         let Some(scene) = &self.scene else { return };
         let current = playback::current(&scene.sections, self.time);
         let mut chosen = None;
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (i, section) in scene.sections.iter().enumerate() {
-                let here = current == Some(i);
-                let text = format!("{:.2} s  {}", section.start, section.title);
-                if section.subsections.is_empty() {
-                    ui.horizontal(|ui| {
-                        // the width of a fold arrow, so titles line up
-                        ui.add_space(ui.spacing().indent);
-                        if ui.selectable_label(here, text).clicked() {
-                            chosen = Some(section.start);
-                        }
-                    });
-                    continue;
-                }
-
-                // keyed by title, so a section stays open or folded
-                // when an edit moves its start
-                let id = ui.make_persistent_id(("section", &section.title));
-                let sub = playback::current_subsection(section, self.time).filter(|_| here);
-                CollapsingState::load_with_default_open(ui.ctx(), id, false)
-                    .show_header(ui, |ui| {
-                        if ui.selectable_label(here, text).clicked() {
-                            chosen = Some(section.start);
-                        }
-                    })
-                    .body(|ui| {
-                        for (j, s) in section.subsections.iter().enumerate() {
-                            let text = format!("{:.2} s  {}", s.start, s.title);
-                            if ui.selectable_label(sub == Some(j), text).clicked() {
-                                chosen = Some(s.start);
-                            }
-                        }
-                    });
+        for (i, section) in scene.sections.iter().enumerate() {
+            let here = current == Some(i);
+            let text = format!("{:.2} s  {}", section.start, section.title);
+            if section.subsections.is_empty() {
+                ui.horizontal(|ui| {
+                    // the width of a fold arrow, so titles line up
+                    ui.add_space(ui.spacing().indent);
+                    if ui.selectable_label(here, text).clicked() {
+                        chosen = Some(section.start);
+                    }
+                });
+                continue;
             }
-        });
+
+            // keyed by title, so a section stays open or folded
+            // when an edit moves its start
+            let id = ui.make_persistent_id(("section", &section.title));
+            let sub = playback::current_subsection(section, self.time).filter(|_| here);
+            CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    if ui.selectable_label(here, text).clicked() {
+                        chosen = Some(section.start);
+                    }
+                })
+                .body(|ui| {
+                    for (j, s) in section.subsections.iter().enumerate() {
+                        let text = format!("{:.2} s  {}", s.start, s.title);
+                        if ui.selectable_label(sub == Some(j), text).clicked() {
+                            chosen = Some(s.start);
+                        }
+                    }
+                });
+        }
         if let Some(t) = chosen {
             self.playback.seek(Instant::now(), t);
         }
@@ -1239,13 +1237,18 @@ impl eframe::App for App {
         if self.playback.duration() > 0.0 {
             egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));
         }
+        let pane = ui.available_rect_before_wrap();
         let has_sections = self.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
         if self.sections_open && has_sections {
-            egui::Panel::left("sections").show(ui, |ui| self.sections(ui));
+            side_panel(ui, "sections", pane, Align2::LEFT_TOP, |ui| {
+                self.sections(ui)
+            });
         }
         if !self.selection.spans().is_empty() {
             self.write_property(ui.ctx());
-            egui::Panel::right("properties").show(ui, |ui| self.properties(ui));
+            side_panel(ui, "properties", pane, Align2::RIGHT_TOP, |ui| {
+                self.properties(ui)
+            });
         }
         if self.playback.playing() {
             ui.ctx().request_repaint();
@@ -1326,6 +1329,48 @@ struct Added {
     paths: Vec<Vec<usize>>,
     /// Whether to open a field on the first to edit its text.
     open_field: bool,
+}
+
+/// The width of a side panel, as egui gives a side panel by default.
+const PANEL_WIDTH: f32 = 200.0;
+
+/// Draw `contents` in a panel over the `side` edge of the render pane at
+/// `pane`, as tall as the pane and scrolled when taller. The pane keeps
+/// its size, and the pointer over the panel reaches the panel alone.
+fn side_panel(
+    ui: &egui::Ui,
+    id: &str,
+    pane: Rect,
+    side: Align2,
+    contents: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Area::new(ui.scope_id().with(id))
+        .order(egui::Order::Middle)
+        .movable(false)
+        .fade_in(false)
+        .constrain_to(pane)
+        .anchor(side, Vec2::ZERO)
+        .show(ui.ctx(), |ui| {
+            let frame = egui::Frame::side_top_panel(ui.style());
+            let margin = frame.total_margin().sum();
+            let height = pane.height() - margin.y;
+            let rect = frame
+                .show(ui, |ui| {
+                    ui.set_min_size(Vec2::new(PANEL_WIDTH - margin.x, height));
+                    egui::ScrollArea::vertical()
+                        .max_height(height)
+                        .show(ui, contents);
+                })
+                .response
+                .rect;
+            let edge = if side == Align2::LEFT_TOP {
+                rect.right()
+            } else {
+                rect.left()
+            };
+            let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+            ui.painter().vline(edge, rect.y_range(), stroke);
+        });
 }
 
 /// Draw the bar that scrubs over `0..=duration`, divided into

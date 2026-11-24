@@ -22,6 +22,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 - When the editor sends a source with another path, the viewer pauses at 0,
   as it does when it opens a file.
+- The sections panel and the properties panel lie over the render instead
+  of narrowing it. Opening or closing either leaves the zoom and the
+  position of the drawing as they were, and the part of the drawing under
+  an open panel is hidden. A click, drag or scroll over a panel goes to the
+  panel. The panels no longer resize by dragging their edge.
 
 ## [0.1.0] - 2026-11-24
 
