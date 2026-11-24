@@ -3,26 +3,29 @@
   "title": "Data fills a row, a table or a text, and points take a scale",
   "body": "Since acre-4d72e1 a `data` node feeds only `points DATA XCOL YCOL` on a polygon or polyline, in pixels. Filling a `row`, a `table` or a `text` from a data file, and a scale from data units to pixels, were left open. Jack wants these designed after the editing milestone.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": "acre-9c9aee",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T08:10:48.872234268Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:36:24.386114204Z",
-  "updated_at": "2026-11-24T07:55:48.872234268Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:58:47.024022073Z",
+  "closed_at": "2026-11-24T07:58:47.024022073Z",
+  "close_reason": "Landed in 4c45d30. A row takes `cells DATA COL` and a table takes `row DATA COL...`, read by `Table::column_texts` and `Table::texts` in `scene/data.rs`. Data points take `units SX SY` and `origin X Y`, applied in `points` in `scene/build.rs`. A `text` from data was left out: a text holds one string, a column holds one per row, and nothing plain picks the row. The syntax is logged on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "6faae32",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "4c45d30",
+      "branch": "dev"
+    }
   }
 }
