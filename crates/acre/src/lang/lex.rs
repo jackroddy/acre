@@ -244,6 +244,72 @@ fn block(src: &str, start: usize) -> Result<(String, usize), Error> {
     Ok((text, body + len + 3))
 }
 
+/// `text` as a `"..."` string literal, escaped the way [`string`]
+/// reads one back. A `"` or a line break between `$` signs has no
+/// escape there, so such a text does not read back the same.
+pub(super) fn quoted(text: &str) -> String {
+    let mut out = String::from('"');
+    let mut chars = text.chars().peekable();
+    let mut math = false;
+    while let Some(c) = chars.next() {
+        match c {
+            '$' => {
+                math = !math;
+                out.push('$');
+            }
+            '\\' if math => {
+                out.push('\\');
+                out.extend(chars.next());
+            }
+            '\\' => match chars.peek() {
+                Some(&c @ ('{' | '}' | '`' | '*' | '$')) => {
+                    chars.next();
+                    out.push('\\');
+                    out.push(c);
+                }
+                _ => out.push_str("\\\\"),
+            },
+            '"' if !math => out.push_str("\\\""),
+            '\n' if !math => out.push_str("\\n"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// `text` as a `"""` block string: on one line when it has no line
+/// break, and otherwise with its lines one indent past `indent` and the
+/// closing `"""` at `indent`.
+pub(super) fn block_quoted(text: &str, indent: &str) -> String {
+    if !text.contains('\n') {
+        return format!("\"\"\"{text}\"\"\"");
+    }
+    let mut out = String::from("\"\"\"\n");
+    for line in text.split('\n') {
+        if !line.is_empty() {
+            out.push_str(indent);
+            out.push_str("    ");
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out.push_str(indent);
+    out.push_str("\"\"\"");
+    out
+}
+
+/// The text of `literal` when it is one string literal and nothing
+/// else.
+pub(super) fn read_string(literal: &str) -> Option<String> {
+    let mut i = 0;
+    let token = next_token(literal, &mut i)?.ok()?;
+    match token.tok {
+        Tok::Str(text) if token.span.start == 0 && i == literal.len() => Some(text),
+        _ => None,
+    }
+}
+
 fn color(hex: &str, span: Span) -> Result<[u8; 4], Error> {
     let bad = || Error::new(span, "a color is `#rrggbb` or `#rrggbbaa`");
     if hex.len() != 6 && hex.len() != 8 {

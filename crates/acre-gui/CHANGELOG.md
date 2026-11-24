@@ -9,6 +9,16 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A double-click on an object opens a field over it that holds its node's
+  text as the file writes it, markup included. The field takes one line,
+  or several when the text has a line break. The viewer writes the text
+  when the field loses focus: on a click elsewhere, or on Enter in a
+  one-line field, Escape or Tab. An unchanged text writes nothing. The
+  edit goes to the editor over the link, or into the file, as a drag's
+  does. The double-click selects the node, and the selection stays on it
+  after the edit. When the node has no text of its own, or its text comes
+  from a `let`, a style, a `repeat` or the timeline, the status line says
+  why. A double-click on empty canvas still fits the canvas to the pane.
 - A dragged object snaps to other objects. Its left edge, centre and right
   edge snap to those of any other object, and so do its top, middle and
   bottom. Each axis snaps on its own. A snap reaches 6 screen points at any

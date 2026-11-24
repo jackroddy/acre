@@ -55,11 +55,14 @@ pub struct View {
 
 /// What the person did in the pane this frame.
 pub struct Shown {
-    pub pane: Vec2,
+    /// Where the pane is on screen.
+    pub rect: Rect,
     /// The canvas point under the pointer.
     pub hover: Option<Point>,
     /// The canvas point clicked.
     pub clicked: Option<Point>,
+    /// The node that drew the object double-clicked.
+    pub double_clicked: Option<Span>,
     /// The node dragged and let go of this frame, and how far it moved
     /// in canvas pixels.
     pub moved: Option<(Span, Point)>,
@@ -152,7 +155,7 @@ impl View {
     /// another around each object the node at `selected` draws. While a
     /// node is dragged, its objects are drawn where it is dragged to,
     /// snapped, and outlined in place of `marks`, with a guide for each
-    /// snap.
+    /// snap. A double-click on no object fits the canvas to the pane.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -164,9 +167,10 @@ impl View {
     ) -> Shown {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         let mut shown = Shown {
-            pane: rect.size(),
+            rect,
             hover: None,
             clicked: None,
+            double_clicked: None,
             moved: None,
         };
         let Some(scene) = scene else {
@@ -197,7 +201,14 @@ impl View {
         }
 
         if response.double_clicked() {
-            self.fit = true;
+            let node = pointer
+                .and_then(|at| scene.object_at(self.to_canvas(rect, at), t))
+                .map(|i| scene.objects[i].source)
+                .filter(|s| s.start < s.end);
+            match node {
+                Some(node) => shown.double_clicked = Some(node),
+                None => self.fit = true,
+            }
         }
         let pans = self.drag.as_ref().is_some_and(Drag::pans);
         if response.dragged_by(PointerButton::Middle)
@@ -315,8 +326,7 @@ impl View {
             let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
             painter.image(texture.id(), cover, uv, Color32::WHITE);
         }
-        let to_screen =
-            |p: Point| rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom;
+        let to_screen = |p: Point| self.to_screen(rect, p);
         if self.grid {
             let step = snap::grid_step(self.spacing, self.zoom);
             let (lo, hi) = (
@@ -381,6 +391,11 @@ impl View {
 
         shown.hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
         shown
+    }
+
+    /// The screen point at canvas point `p` in a pane at `rect`.
+    pub fn to_screen(&self, rect: Rect, p: Point) -> Pos2 {
+        rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom
     }
 
     /// The canvas point at screen point `p` in a pane at `rect`.

@@ -146,6 +146,20 @@ pub fn parse(src: &str) -> Result<Program, Error> {
     Ok(Program { nodes })
 }
 
+/// `text` written as a string literal that reads back as `text`, or
+/// `None` when no literal does. A `"""` block string, with its lines one
+/// indent past `indent`, comes first when `block` is true, and a `"..."`
+/// string first when not.
+pub fn string_literal(text: &str, block: bool, indent: &str) -> Option<String> {
+    let mut tries = [lex::quoted(text), lex::block_quoted(text, indent)];
+    if block {
+        tries.reverse();
+    }
+    tries
+        .into_iter()
+        .find(|literal| lex::read_string(literal).as_deref() == Some(text))
+}
+
 /// What a span of source is, for coloring it in an editor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Highlight {
@@ -963,5 +977,51 @@ mod tests {
             fonts.properties[0].values[0].kind,
             ValueKind::Str("fonts/serif.ttf".into())
         );
+    }
+
+    #[test]
+    fn a_string_literal_escapes_what_the_lexer_reads_and_reads_back() {
+        for (text, want) in [
+            ("plain", r#""plain""#),
+            ("say \"hi\"", r#""say \"hi\"""#),
+            ("a\\b", r#""a\\b""#),
+            ("two\nlines", r#""two\nlines""#),
+            // markup escapes and a formula's backslashes stay as written
+            (r"\*not italic\* \{x\}", r#""\*not italic\* \{x\}""#),
+            (r"$\nu \frac12$ and \$5", r#""$\nu \frac12$ and \$5""#),
+        ] {
+            assert_eq!(string_literal(text, false, "").as_deref(), Some(want));
+        }
+    }
+
+    #[test]
+    fn a_block_literal_indents_its_lines_or_stays_on_one_line() {
+        assert_eq!(
+            string_literal("fn f() {\n    x\n}", true, "    ").as_deref(),
+            Some("\"\"\"\n        fn f() {\n            x\n        }\n    \"\"\"")
+        );
+        assert_eq!(
+            string_literal("let x = \"1\";", true, "").as_deref(),
+            Some("\"\"\"let x = \"1\";\"\"\"")
+        );
+    }
+
+    #[test]
+    fn a_text_one_kind_of_literal_cannot_hold_takes_the_other() {
+        // a block string trims trailing spaces and holds no `"""`
+        assert_eq!(
+            string_literal("a  \nb", true, "").as_deref(),
+            Some(r#""a  \nb""#)
+        );
+        assert_eq!(
+            string_literal(r#"say """"#, true, "").as_deref(),
+            Some(r#""say \"\"\"""#)
+        );
+        // a `"` between `$` signs has no escape in a `"..."` string
+        assert_eq!(
+            string_literal("$\"x\"$", false, "").as_deref(),
+            Some("\"\"\"$\"x\"$\"\"\"")
+        );
+        assert_eq!(string_literal("$\"$ \"\"\"", false, ""), None);
     }
 }

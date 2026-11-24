@@ -1,7 +1,10 @@
-//! The source edits that move a drawn node by an offset.
+//! The source edits that move a drawn node by an offset or change its
+//! text.
 //!
 //! A viewer that drags an object asks [`move_edits`] for the changes to
 //! the numbers that place the object's node, and [`apply`] makes them.
+//! One that edits an object's text reads it with [`text_of`] and asks
+//! [`text_edits`] for the change to its string.
 //! [`node_path`] and [`node_span`] find a node again after an edit
 //! shifts its span.
 
@@ -54,15 +57,8 @@ pub fn apply(source: &str, edits: &[TextEdit]) -> String {
 /// is not placed by numbers it sets itself: the error says why.
 pub fn move_edits(source: &str, node: Span, dx: f64, dy: f64) -> Result<Vec<TextEdit>, Error> {
     let program = lang::parse(source)?;
-    let canvas = program
-        .nodes
-        .first()
-        .ok_or_else(|| Error::new(node, "the file has no `canvas`"))?;
-    let mut path = Vec::new();
-    if !find(&canvas.children, node, &mut path) {
-        return Err(Error::new(node, "no node in the file has this span"));
-    }
-    let (target, around) = path.split_last().expect("`find` pushes the node it finds");
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
     let mover = Mover {
         source,
         canvas,
@@ -105,6 +101,82 @@ pub fn move_edits(source: &str, node: Span, dx: f64, dy: f64) -> Result<Vec<Text
     Ok(edits)
 }
 
+/// The text of the node whose span is `node`, markup included, as
+/// [`text_edits`] changes it, or `None` when the node's kind takes text
+/// and the node sets none.
+///
+/// # Errors
+///
+/// As [`text_edits`].
+pub fn text_of(source: &str, node: Span) -> Result<Option<String>, Error> {
+    let program = lang::parse(source)?;
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+    let mover = Mover {
+        source,
+        canvas,
+        target,
+        by: [0.0; 2],
+    };
+    let text = mover.text(around)?;
+    Ok(text.set.map(|(_, s)| s.to_string()))
+}
+
+/// The edits to `source` that set the text of the node whose span is
+/// `node` to `new_text`, written as a string literal that reads back as
+/// `new_text`.
+///
+/// A node's text is its `text` on a box, an ellipse, a text, a math, a
+/// code or a caption, and its `label` on a line, an arrow, a sweep, a
+/// merge or a brace. A `"""` string stays one when it can hold the new
+/// text. A node without the property gets one before its first property,
+/// as [`move_edits`] adds an `at`. There are no edits when the text is
+/// unchanged, or when the node has none and `new_text` is empty.
+///
+/// # Errors
+///
+/// If `source` does not parse, no node has the span `node`, its kind has
+/// no text, or its text is not its own to change: it comes from a `let`
+/// or a style, the node is a copy of a `repeat`, or the timeline sets
+/// it. Also if no string literal reads back as `new_text`.
+pub fn text_edits(source: &str, node: Span, new_text: &str) -> Result<Vec<TextEdit>, Error> {
+    let program = lang::parse(source)?;
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+    let mover = Mover {
+        source,
+        canvas,
+        target,
+        by: [0.0; 2],
+    };
+    let NodeText { key, set } = mover.text(around)?;
+    let unwritable = || {
+        Error::new(
+            target.kind.span,
+            "no string literal holds this text; edit it by hand",
+        )
+    };
+    match set {
+        Some((_, old)) if old == new_text => Ok(Vec::new()),
+        Some((value, _)) => {
+            let span = value.span;
+            let line = &source[source[..span.start].rfind('\n').map_or(0, |k| k + 1)..];
+            let indent = &line[..line.len() - line.trim_start_matches(' ').len()];
+            let block = source[span.start..].starts_with("\"\"\"");
+            let literal = lang::string_literal(new_text, block, indent).ok_or_else(unwritable)?;
+            Ok(vec![TextEdit {
+                span,
+                text: literal,
+            }])
+        }
+        None if new_text.is_empty() => Ok(Vec::new()),
+        None => {
+            let literal = lang::string_literal(new_text, false, "").ok_or_else(unwritable)?;
+            Ok(vec![mover.insert(&format!("{key} {literal}"))])
+        }
+    }
+}
+
 /// The place in `program` of the node whose span is `span`: its index
 /// among the top nodes, then among each parent's children in turn.
 pub fn node_path(program: &lang::Program, span: Span) -> Option<Vec<usize>> {
@@ -133,6 +205,20 @@ pub fn node_span(program: &lang::Program, path: &[usize]) -> Option<Span> {
     Some(nodes.get(last)?.span)
 }
 
+/// The canvas of `program`, and the node whose span is `node` after the
+/// nodes around it, outermost first.
+fn locate(program: &lang::Program, node: Span) -> Result<(&Node, Vec<&Node>), Error> {
+    let canvas = program
+        .nodes
+        .first()
+        .ok_or_else(|| Error::new(node, "the file has no `canvas`"))?;
+    let mut path = Vec::new();
+    if !find(&canvas.children, node, &mut path) {
+        return Err(Error::new(node, "no node in the file has this span"));
+    }
+    Ok((canvas, path))
+}
+
 /// Push onto `path` the node in `nodes` whose span is `span` and the
 /// nodes around it, outermost first, and say whether it was found.
 fn find<'a>(nodes: &'a [Node], span: Span, path: &mut Vec<&'a Node>) -> bool {
@@ -149,7 +235,16 @@ fn find<'a>(nodes: &'a [Node], span: Span, path: &mut Vec<&'a Node>) -> bool {
     false
 }
 
-/// What one call to [`move_edits`] reads.
+/// The property that holds a node's text.
+struct NodeText<'a> {
+    /// `text` or `label`.
+    key: &'static str,
+    /// The value and its text, when the node sets the property.
+    set: Option<(&'a Value, &'a str)>,
+}
+
+/// What one call to [`move_edits`], [`text_of`] or [`text_edits`]
+/// reads. `by` is 0 for the text.
 struct Mover<'a> {
     source: &'a str,
     canvas: &'a Node,
@@ -182,7 +277,7 @@ impl Mover<'_> {
         }
         for node in around.iter().copied().chain([self.target]) {
             let Some(name) = &node.name else { continue };
-            if let Some(action) = self.timeline_action(&name.text) {
+            if let Some(action) = self.timeline_action(&name.text, &["move", "scale"]) {
                 return Err(Error::new(
                     action.span,
                     format!(
@@ -195,8 +290,9 @@ impl Mover<'_> {
         Ok(())
     }
 
-    /// The first `move` or `scale` in the timeline that names `name`.
-    fn timeline_action(&self, name: &str) -> Option<&Property> {
+    /// The first action in the timeline whose key is one of `keys` and
+    /// that names `name`.
+    fn timeline_action(&self, name: &str, keys: &[&str]) -> Option<&Property> {
         self.canvas
             .children
             .iter()
@@ -204,7 +300,7 @@ impl Mover<'_> {
             .flat_map(|t| &t.children)
             .flat_map(|entry| &entry.properties)
             .find(|p| {
-                matches!(p.key.text.as_str(), "move" | "scale")
+                keys.contains(&p.key.text.as_str())
                     && matches!(p.values.first(), Some(Value { kind: ValueKind::Word(w), .. }) if w == name)
             })
     }
@@ -232,7 +328,7 @@ impl Mover<'_> {
                 return Err(Error::new(
                     self.target.kind.span,
                     format!(
-                        "`{key}` comes from style `{style}`, which other nodes may share; set it on the node to move it"
+                        "`{key}` comes from style `{style}`, which other nodes may share; set it on the node to change it"
                     ),
                 ));
             }
@@ -265,6 +361,57 @@ impl Mover<'_> {
             }
         }
         Ok(())
+    }
+
+    /// The node's text, or an error when it is not the node's own to
+    /// change.
+    fn text(&self, around: &[&Node]) -> Result<NodeText<'_>, Error> {
+        let span = self.target.kind.span;
+        let kind = self.target.kind.text.as_str();
+        let key = match kind {
+            "box" | "ellipse" | "text" | "math" | "code" | "caption" => "text",
+            "line" | "arrow" | "sweep" | "merge" | "brace" => "label",
+            "row" | "matrix" | "table" => {
+                return Err(Error::new(
+                    span,
+                    format!("the text of a {kind} is in its cells, which no edit picks out yet"),
+                ));
+            }
+            _ => return Err(Error::new(span, format!("a `{kind}` has no text"))),
+        };
+        if around.iter().any(|n| n.kind.text == "repeat") {
+            return Err(Error::new(
+                span,
+                "the node is drawn once for each number of a `repeat`, so its text is every copy's",
+            ));
+        }
+        if let Some(name) = &self.target.name
+            && let Some(action) = self.timeline_action(&name.text, &["text"])
+        {
+            return Err(Error::new(
+                action.span,
+                format!(
+                    "the timeline sets the text of `{}`, so it differs from one instant to the next",
+                    name.text
+                ),
+            ));
+        }
+        let Some(p) = self.property(key)? else {
+            return Ok(NodeText { key, set: None });
+        };
+        self.literal(p)?;
+        match p.values.as_slice() {
+            [
+                v @ Value {
+                    kind: ValueKind::Str(s),
+                    ..
+                },
+            ] => Ok(NodeText {
+                key,
+                set: Some((v, s.as_str())),
+            }),
+            _ => Err(p.expected("a string")),
+        }
     }
 
     fn is_let(&self, word: &str) -> bool {
@@ -427,11 +574,16 @@ impl Mover<'_> {
         (x != "0" || y != "0").then(|| format!("{x} {y}"))
     }
 
-    /// The insertion of `at DX DY` before the node's first property or
-    /// child, on its line when it shares the brace's line and on a line
-    /// of its own at the same indent when not.
+    /// The insertion of `at DX DY`, or `None` when the offset is 0.
     fn new_at(&self) -> Option<TextEdit> {
         let offsets = self.offsets()?;
+        Some(self.insert(&format!("at {offsets}")))
+    }
+
+    /// The insertion of `property;` before the node's first property or
+    /// child, on its line when it shares the brace's line and on a line
+    /// of its own at the same indent when not.
+    fn insert(&self, property: &str) -> TextEdit {
         let node = self.target;
         let open = open_brace(self.source, node);
         let first = node
@@ -444,17 +596,17 @@ impl Mover<'_> {
             Some(start) => {
                 let between = &self.source[open..start];
                 let text = match between.rfind('\n') {
-                    Some(k) => format!("at {offsets};\n{}", &between[k + 1..]),
-                    None => format!("at {offsets}; "),
+                    Some(k) => format!("{property};\n{}", &between[k + 1..]),
+                    None => format!("{property}; "),
                 };
                 (start, text)
             }
-            None => (open + 1, format!(" at {offsets}; ")),
+            None => (open + 1, format!(" {property}; ")),
         };
-        Some(TextEdit {
+        TextEdit {
             span: Span { start: at, end: at },
             text,
-        })
+        }
     }
 }
 
@@ -969,5 +1121,187 @@ mod tests {
         assert_eq!(node_span(&program, &[0, 1]), None);
         assert_eq!(node_span(&program, &[1]), None);
         assert_eq!(node_span(&program, &[]), None);
+    }
+
+    /// `src` in acre's layout, with the text of the node of object
+    /// `index` set to `text`, after checking that the result keeps that
+    /// layout, builds, and reads back `text` for the node.
+    fn retexted(src: &str, index: usize, text: &str) -> String {
+        let src = format(src).unwrap();
+        let span = scene(&src).objects[index].source;
+        let out = apply(&src, &text_edits(&src, span, text).unwrap());
+        assert_eq!(format(&out).unwrap(), out);
+        let after = scene(&out);
+        let path = node_path(&parse(&src).unwrap(), span).unwrap();
+        let node = node_span(&parse(&out).unwrap(), &path).unwrap();
+        assert_eq!(after.objects[index].source, node);
+        assert_eq!(text_of(&out, node).unwrap().as_deref(), Some(text), "{out}");
+        out
+    }
+
+    /// Whether object `index` of the scene of `src` draws a run of
+    /// `text`.
+    fn draws(src: &str, index: usize, text: &str) -> bool {
+        format!("{:?}", scene(src).objects[index].kind).contains(&format!("text: {text:?}"))
+    }
+
+    /// Why the text of the node of `src` that starts with `node` cannot
+    /// change.
+    fn text_refusal(src: &str, node: &str) -> String {
+        text_edits(src, span_of(src, node), "new")
+            .unwrap_err()
+            .message
+    }
+
+    #[test]
+    fn every_kind_with_text_takes_a_new_text() {
+        for (node, index) in [
+            ("box { at 50 50; size 80 30; text \"old\"; }", 0),
+            ("ellipse { at 50 50; size 80 30; text \"old\"; }", 0),
+            ("text { at 50 50; text \"old\"; }", 0),
+            ("line { from 10 10; to 100 40; label \"old\"; }", 0),
+            ("arrow { from 10 10; to 100 40; label \"old\"; }", 0),
+            (
+                "sweep { from 10 10; to 100 40; leave right; enter down; label \"old\"; }",
+                0,
+            ),
+            (
+                "merge { from 10 10; from 10 80; to 150 45; label \"old\"; }",
+                0,
+            ),
+            (
+                "brace { from 10 50; to 100 50; side top; label \"old\"; }",
+                0,
+            ),
+        ] {
+            let src = format!("canvas {{ size 300 300; {node} }}");
+            let out = retexted(&src, index, "say \"new\"");
+            assert!(draws(&out, index, "say \"new\""), "{out}");
+        }
+        let src = "canvas { size 300 300; math { at 50 50; text \"x^2\"; } }";
+        let out = retexted(src, 0, r"\frac{1}{2}");
+        assert!(out.contains(r#"text "\\frac{1}{2}";"#), "{out}");
+        let src = "canvas { size 300 300; panel { title \"p\"; box { size 20 20; } caption { text \"old\"; } } }";
+        let caption = scene(src)
+            .objects
+            .iter()
+            .position(|o| o.source == span_of(src, "caption"))
+            .unwrap();
+        retexted(src, caption, "new");
+    }
+
+    #[test]
+    fn a_new_text_is_escaped_as_the_lexer_reads_it() {
+        let src = "canvas { size 300 300; box { at 50 50; size 80 30; text \"old\"; } }";
+        let out = retexted(src, 0, "a \"b\" \\ c\nd");
+        assert!(out.contains(r#"text "a \"b\" \\ c\nd";"#), "{out}");
+        let out = retexted(src, 0, r"*em* \*star\* $\alpha$");
+        assert!(out.contains(r#"text "*em* \*star\* $\alpha$";"#), "{out}");
+    }
+
+    #[test]
+    fn a_block_string_stays_a_block_string() {
+        let src = "canvas {
+    size 300 300;
+    code {
+        at 10 10;
+        lang rust;
+        text \"\"\"
+            let x = 1;
+        \"\"\";
+    }
+}
+";
+        let out = retexted(src, 0, "let x = 2;\nlet y = \"3\";\n    x + y");
+        assert!(
+            out.contains(
+                "        text \"\"\"\n            let x = 2;\n            let y = \"3\";\n                x + y\n        \"\"\";\n"
+            ),
+            "{out}"
+        );
+        let out = retexted(&out, 0, "x");
+        assert!(out.contains("text \"\"\"x\"\"\";"), "{out}");
+    }
+
+    #[test]
+    fn an_unchanged_text_makes_no_edits() {
+        let src = "canvas { size 300 300; box { at 50 50; size 80 30; text \"a\\nb\"; } box { at 1 1; size 5 5; } }";
+        let s = scene(src);
+        assert_eq!(
+            text_edits(src, s.objects[0].source, "a\nb").unwrap(),
+            Vec::new()
+        );
+        assert_eq!(
+            text_edits(src, s.objects[1].source, "").unwrap(),
+            Vec::new()
+        );
+        assert_eq!(text_of(src, s.objects[1].source).unwrap(), None);
+    }
+
+    #[test]
+    fn a_node_without_text_gets_it_where_a_move_puts_an_at() {
+        let out = retexted(
+            "canvas { size 300 300; box { at 50 50; size 80 30; } }",
+            0,
+            "new",
+        );
+        assert!(out.contains("box { text \"new\"; at 50 50;"), "{out}");
+        let out = retexted(
+            "canvas { size 300 300; arrow { from 10 10; to 100 40; } }",
+            0,
+            "a\nb",
+        );
+        assert!(
+            out.contains("arrow { label \"a\\nb\"; from 10 10;"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_text_that_is_not_the_nodes_own_is_refused() {
+        for (src, node, why) in [
+            (
+                "canvas { size 300 200; let t \"x\"; box b { at 1 1; size 5 5; text t; } }",
+                "box b",
+                "`t` comes from a `let`",
+            ),
+            (
+                "canvas { size 300 200; style s { text \"x\"; } box b { style s; size 5 5; } }",
+                "box b",
+                "`text` comes from style `s`",
+            ),
+            (
+                "canvas { size 300 200; style arrow { label \"x\"; } arrow a { from 1 1; to 9 9; } }",
+                "arrow a",
+                "`label` comes from style `arrow`",
+            ),
+            (
+                "canvas { size 300 200; repeat i 0 2 { box b { at (i * 10) 1; size 5 5; text \"x\"; } } }",
+                "box b",
+                "`repeat`",
+            ),
+            (
+                "canvas { size 300 200; box b { at 1 1; size 5 5; text \"x\"; }
+                    timeline { 1s { text b \"y\"; } } }",
+                "box b",
+                "the timeline sets the text of `b`",
+            ),
+            (
+                "canvas { size 300 200; row r { at 1 1; unit 9 9; cells \"a\"; } }",
+                "row r",
+                "in its cells",
+            ),
+            (
+                "canvas { size 300 200; polygon p { points 1 1 9 1 5 9; } }",
+                "polygon p",
+                "a `polygon` has no text",
+            ),
+        ] {
+            let got = text_refusal(src, node);
+            assert!(got.contains(why), "{node}: {got}");
+        }
+        let src = "canvas { size 300 200; box b { at 1 1; size 5 5; text \"x\"; } }";
+        let err = text_edits(src, span_of(src, "box b"), "$\"$ \"\"\"").unwrap_err();
+        assert!(err.message.contains("no string literal"), "{}", err.message);
     }
 }

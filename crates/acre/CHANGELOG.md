@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::text_edits` works out the edit that sets a drawn node's
+  text, and `scene::edit::text_of` reads that text as the file writes it,
+  markup included. A node's text is its `text` on a box, an ellipse, a
+  text, a math, a code or a caption, and its `label` on a line, an arrow,
+  a sweep, a merge or a brace. The new text goes in as a string literal
+  that reads back the same, with `"`, `\` and line breaks escaped. A
+  `"""` string stays one when it can hold the new text. A node without the
+  property gets one, as `move_edits` adds an `at`. `text_edits` refuses a
+  text from a `let` or a style, a node inside a `repeat`, a node whose
+  text the timeline sets, and the cells of a row, a matrix or a table.
+- `lang::string_literal` writes a text as a `"..."` or `"""` literal that
+  reads back as that text.
 - `scene::edit::node_path` gives a node's place in a `Program`: its index
   among its siblings, and the index of each node around it.
   `scene::edit::node_span` gives the span of the node at such a path. With

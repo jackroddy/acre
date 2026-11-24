@@ -11,6 +11,7 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2, ViewportCommand,
 };
 
+use crate::field::{self, Field};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
@@ -45,6 +46,8 @@ pub struct App {
     program: Option<lang::Program>,
     /// The node clicked or dragged last, outlined until a click elsewhere.
     selection: Option<Selection>,
+    /// The field open over an object to edit its text.
+    field: Option<Field>,
     /// Counts the scenes built, so the view draws again on a new one.
     version: u64,
     /// Whether the editor heard about the current error, or that there
@@ -86,6 +89,7 @@ impl App {
             scene: None,
             program: None,
             selection: None,
+            field: None,
             version: 0,
             reported: false,
             view: View::new(),
@@ -124,6 +128,7 @@ impl App {
                 self.playback.pause(now);
                 self.playback.seek(now, 0.0);
                 self.selection = None;
+                self.field = None;
                 self.show(text);
                 self.notice = self.recent.touch(path).err();
             }
@@ -238,6 +243,7 @@ impl App {
             let path = path.map(PathBuf::from);
             if path != self.path {
                 self.selection = None;
+                self.field = None;
             }
             self.path = path;
 
@@ -297,25 +303,107 @@ impl App {
             }
         };
         self.notice = None;
-        if self.link.is_some() {
-            self.send_edits(&edits);
-            return;
-        }
-        let Some(path) = self.path.clone() else {
+        if let Err(why) = self.write(&edits) {
             self.view.end_move();
-            self.notice = Some("no file to write the move to".into());
+            self.notice = Some(why);
+        }
+    }
+
+    /// Ask the editor to make `edits`, or make them in the file and show
+    /// it again.
+    fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
+        if self.link.is_some() {
+            self.send_edits(edits);
+            return Ok(());
+        }
+        let path = self.path.clone().ok_or("no file to write the edit to")?;
+        let text = edit::apply(&self.text, edits);
+        fs::write(&path, &text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        self.modified = modified(&path);
+        self.show(text);
+        Ok(())
+    }
+
+    /// Open a field over the objects the node at `node` drew to edit its
+    /// text, and select the node, or name on the status line why it has
+    /// no text to edit.
+    fn open_field(&mut self, node: lang::Span) {
+        let Some(program) = &self.program else { return };
+        self.selection = Selection::of(program, node);
+
+        // with an error, the scene shown was built from an earlier
+        // text, so its spans do not point into `text`
+        let opened = match &self.error {
+            Some(_) => Err("fix the source's error before editing text".to_string()),
+            None => Field::open(&self.text, program, node),
+        };
+        match opened {
+            Ok(f) => {
+                self.notice = None;
+                self.field = Some(f);
+            }
+            Err(why) => self.notice = Some(why),
+        }
+    }
+
+    /// Draw the open field over its node's objects in the pane at
+    /// `rect`, and write its text once it loses the focus.
+    fn edit_field(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        let (Some(f), Some(scene), Some(program)) = (&mut self.field, &self.scene, &self.program)
+        else {
             return;
         };
-        let text = edit::apply(&self.text, &edits);
-        match fs::write(&path, &text) {
-            Ok(()) => {
-                self.modified = modified(&path);
-                self.show(text);
+        let bounds = f
+            .node(program)
+            .and_then(|n| field::bounds(scene, n, self.time));
+        let left = match bounds {
+            Some((min, max)) => {
+                let (min, max) = (
+                    self.view.to_screen(rect, min),
+                    self.view.to_screen(rect, max),
+                );
+                let width = (max.x - min.x).max(160.0);
+                let multiline = f.multiline();
+                let rows = f.text.lines().count().max(2);
+                let shown = egui::Area::new(ui.scope_id().with("text field"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(min)
+                    .show(ui.ctx(), |ui| {
+                        let edit = if multiline {
+                            egui::TextEdit::multiline(&mut f.text).desired_rows(rows)
+                        } else {
+                            egui::TextEdit::singleline(&mut f.text)
+                        };
+                        ui.add(edit.desired_width(width))
+                    });
+                let response = shown.inner;
+                if f.wants_focus() {
+                    response.request_focus();
+                }
+                f.left(response.has_focus())
             }
-            Err(e) => {
-                self.view.end_move();
-                self.notice = Some(format!("cannot write {}: {e}", path.display()));
+
+            // the node draws nothing now, so the field has nothing to
+            // sit over
+            None => true,
+        };
+        if !left {
+            return;
+        }
+        let f = self.field.take().expect("checked above");
+        let edits = match &self.error {
+            Some(_) => Err("fix the source's error before editing text".to_string()),
+            None => f.edits(&self.text, self.program.as_ref().expect("checked above")),
+        };
+        match edits {
+            Ok(edits) if edits.is_empty() => {}
+            Ok(edits) => {
+                self.notice = None;
+                if let Err(why) = self.write(&edits) {
+                    self.notice = Some(why);
+                }
             }
+            Err(why) => self.notice = Some(why),
         }
     }
 
@@ -629,14 +717,18 @@ impl eframe::App for App {
                     &marks,
                     selected,
                 );
-                self.pane = shown.pane;
+                self.pane = shown.rect.size();
                 self.hover = shown.hover;
                 if let Some(point) = shown.clicked {
                     self.go_to_object_at(point);
                 }
+                if let Some(node) = shown.double_clicked {
+                    self.open_field(node);
+                }
                 if let Some((node, by)) = shown.moved {
                     self.move_node(node, by);
                 }
+                self.edit_field(ui, shown.rect);
             });
     }
 }

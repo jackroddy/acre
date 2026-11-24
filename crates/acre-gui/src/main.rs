@@ -3,6 +3,7 @@
 
 mod app;
 mod drag;
+mod field;
 mod link;
 mod playback;
 mod recent;
