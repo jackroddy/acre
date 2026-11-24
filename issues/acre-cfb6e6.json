@@ -3,7 +3,7 @@
   "title": "Dragging a shape in acre-gui rewrites its source",
   "body": "`acre-gui` redraws the render when the text changes. The render pane takes no input. Jack wants the other direction as well: dragging or stretching a shape in the render rewrites the literal in the source that placed it.\n\n`lang::parse` keeps a `Span` on every node, property and value, and drops comments and whitespace. `scene::build` returns objects with no link back to the node that made them.\n\n## Proposal\n\nTo be designed. A note on acre-4518a5 lists what `lang` and `scene` need: a parse that keeps comments and whitespace, the span of every value in the scene, an id on every object that carries through to its primitives, and a hit test from a canvas point to an object.\n\n## Open\n\n- Each span indexes the source text, so replacing the text under one value's span may be enough to rewrite a literal without a parse that keeps whitespace. Nobody has tried it.\n- What a drag does to a value computed from other values.",
   "type": "task",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "acre-ef7221",
@@ -15,10 +15,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-09T23:27:03.909462022Z",
-  "updated_at": "2026-11-24T06:36:40.943793075Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T07:54:29.098258331Z",
+  "closed_at": "2026-11-24T07:54:29.098258331Z",
+  "close_reason": "The first version in the body of acre-ef7221 is built: aa36cc1 works out the edits (`scene::edit::move_edits`), a220913 sends them to neovim as an `edit` message, and aa7933d moves an object when it is dragged in acre-gui. The rest of the editing is listed in a note on acre-ef7221.",
+  "resolution": "done",
   "notes": [
     {
       "id": "b7d77812",
@@ -42,6 +42,9 @@
       "commit": "38a8b36",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "aa7933d",
+      "branch": "dev"
+    }
   }
 }
