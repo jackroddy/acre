@@ -1,0 +1,28 @@
+{
+  "id": "acre-357f50",
+  "title": ":AcreView in another buffer switches the open viewer to it",
+  "body": "The neovim plugin keeps at most one viewer (`view` in `editors/nvim/lua/acre/init.lua`). `M.toggle` closes it whenever one is open, so `:AcreView` in a second `.acre` buffer closes the viewer instead of showing that buffer.\n\n## Proposal\n\n`:AcreView` in the buffer the viewer shows closes it, as now. In any other buffer it moves the link there: the autocmds follow the new buffer, the old buffer's diagnostics clear, and the new buffer's text, path and cursor go to the running viewer, in the same window. acre-gui pauses at 0 when the path in a `text` message differs from the last one, as it does when it opens a file. Jack chose this over finding other viewers to reuse (by file, focus or workspace), which would need a socket per viewer and covers little more.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T22:19:52.808467197Z",
+  "updated_at": "2026-11-24T22:19:52.808467197Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "e4ab754",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
