@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:21:35.525187394Z",
-  "updated_at": "2026-11-24T06:36:24.422115508Z",
+  "updated_at": "2026-11-24T06:36:40.934121638Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "d71c7cef",
+      "at": "2026-11-24T06:36:40.934121018Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Provisional choices on 2026-11-23, per the rule in CLAUDE.md: `gap` comes out of `width`, and `stack` takes no weights.",
+      "commit": "6faae32",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "58993b6",
