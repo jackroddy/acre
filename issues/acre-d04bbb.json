@@ -3,26 +3,29 @@
   "title": "acre reference panics when its output pipe closes early",
   "body": "`acre reference` writes with `println!`, which panics when stdout closes before the output ends. Piping it into `head`, as in `acre reference row | head`, prints the first lines and then:\n\n```text\nthread 'main' panicked at library/std/src/io/stdio.rs:1166:9:\nfailed printing to stdout: Broken pipe (os error 32)\n```\n\nThe listing itself is complete up to where `head` stops, so nothing is lost but the panic message and a non-zero exit.\n\n## Proposal\n\nWrite the listing through a locked `stdout` with `writeln!`, and end quietly when a write fails with `ErrorKind::BrokenPipe`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T22:53:48.593871336Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-23T19:00:43.041034171Z",
-  "updated_at": "2026-11-24T22:38:48.593871336Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T22:41:23.011338631Z",
+  "closed_at": "2026-11-24T22:41:23.011338631Z",
+  "close_reason": "Fixed in 8408529: write_reference and quiet_on_broken_pipe in crates/acre-cli/src/main.rs; acre reference and acre fmt - exit 0 on a closed pipe.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "b009f84",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8408529",
+      "branch": "dev"
+    }
   }
 }
