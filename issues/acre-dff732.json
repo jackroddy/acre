@@ -3,7 +3,7 @@
   "title": "A sweep's shaft misses the middle of its head where the curve bends",
   "body": "`Connector::draw_sweep` in `crates/acre/src/scene/connector.rs` places a sweep's head and shaft by two rules. The head's tip sits at the end point, and the middle of its back sits one head length back along the end direction. The shaft is the curve cut by `sub_cubic` at the point `param_at_distance` finds one head length from the tip along the curve.\n\nWhere the curve bends within that last head length, the two points differ. The shaft then ends beside the middle of the head's back, or short of it with a gap. The sufr pipeline figure shows both on sharply bent sweeps, such as arrows that converge on a narrow target.\n\n## Proposal\n\nMove each end that carries a head back by the head's cut, along that end's direction, and compute the handles between the moved ends with the same ways. Draw that cubic whole. The shaft then ends at the middle of the head's back and arrives along the head's axis. `param_at_distance` and `sub_cubic` go.",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T04:37:59.463837069Z",
-  "updated_at": "2026-11-24T04:37:59.463837069Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T04:39:27.15350541Z",
+  "closed_at": "2026-11-24T04:39:27.15350541Z",
+  "close_reason": "Fixed in 58993b6 on dev, as proposed.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "ac5c69e",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "58993b6",
+      "branch": "dev"
+    }
   }
 }
