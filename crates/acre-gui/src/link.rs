@@ -3,28 +3,38 @@
 //! stdout out of it.
 //!
 //! ```text
-//! in   {"type":"text","text":"canvas { ... }","path":"/a/b.acre"}
+//! in   {"type":"text","text":"canvas { ... }","path":"/a/b.acre","tick":7}
 //! in   {"type":"cursor","offset":120}
 //! out  {"type":"goto","offset":96}
+//! out  {"type":"edit","tick":7,"edits":[{"start":20,"end":22,"text":"40"}]}
 //! out  {"type":"error","offset":40,"message":"`box` needs `at`"}
 //! out  {"type":"ok"}
 //! ```
 //!
-//! Offsets count bytes from the start of the text. acre-gui closes when
-//! stdin closes.
+//! Offsets count bytes from the start of the text. A `tick` names one
+//! version of the text: an `edit` holds ranges in the text of its tick,
+//! and the editor drops an edit whose tick is no longer its own. acre-gui
+//! closes when stdin closes.
 
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 
+use acre::scene::edit::TextEdit;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Incoming {
-    /// The whole source, and the file it belongs to if it has one.
-    Text { text: String, path: Option<String> },
+    /// The whole source, the file it belongs to if it has one, and the
+    /// editor's tick for this version of it.
+    Text {
+        text: String,
+        path: Option<String>,
+        #[serde(default)]
+        tick: u64,
+    },
     /// Where the editor's cursor is.
     Cursor { offset: usize },
 }
@@ -38,6 +48,26 @@ pub enum Outgoing {
     Error { offset: usize, message: String },
     /// The source has no error.
     Ok,
+    /// Make these changes to the source of `tick`.
+    Edit { tick: u64, edits: Vec<Replace> },
+}
+
+/// The text that replaces bytes `start..end` of the source.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Replace {
+    pub start: usize,
+    pub end: usize,
+    pub text: String,
+}
+
+impl From<&TextEdit> for Replace {
+    fn from(edit: &TextEdit) -> Self {
+        Replace {
+            start: edit.span.start,
+            end: edit.span.end,
+            text: edit.text.clone(),
+        }
+    }
 }
 
 /// The editor's end of the link: what it sent, and a way to answer.
@@ -94,7 +124,19 @@ mod tests {
             text,
             Incoming::Text {
                 text: "canvas {}".into(),
-                path: None
+                path: None,
+                tick: 0
+            }
+        );
+        let ticked: Incoming =
+            serde_json::from_str(r#"{"type":"text","text":"","path":"/a.acre","tick":12}"#)
+                .unwrap();
+        assert_eq!(
+            ticked,
+            Incoming::Text {
+                text: "".into(),
+                path: Some("/a.acre".into()),
+                tick: 12
             }
         );
         let cursor: Incoming = serde_json::from_str(r#"{"type":"cursor","offset":3}"#).unwrap();
@@ -106,6 +148,18 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Outgoing::Ok).unwrap(),
             r#"{"type":"ok"}"#
+        );
+        let edit = Outgoing::Edit {
+            tick: 12,
+            edits: vec![Replace {
+                start: 3,
+                end: 5,
+                text: "at 1 \"2\"".into(),
+            }],
+        };
+        assert_eq!(
+            serde_json::to_string(&edit).unwrap(),
+            r#"{"type":"edit","tick":12,"edits":[{"start":3,"end":5,"text":"at 1 \"2\""}]}"#
         );
     }
 }

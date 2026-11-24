@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use acre::lang;
+use acre::scene::edit::TextEdit;
 use acre::scene::{self, Scene, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
@@ -10,7 +11,7 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2, ViewportCommand,
 };
 
-use crate::link::{Incoming, Link, Outgoing};
+use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::playback::{self, Playback};
 use crate::recent::Recent;
 use crate::view::View;
@@ -34,6 +35,8 @@ pub struct App {
     /// The editor that sends the source, when acre-gui runs with
     /// `--stdio`. acre-gui then watches no file.
     link: Option<Link>,
+    /// The editor's tick for `text`.
+    tick: u64,
     error: Option<lang::Error>,
     /// The last scene that built, kept while the source has an error.
     scene: Option<Scene>,
@@ -73,6 +76,7 @@ impl App {
             last_check: Instant::now(),
             files: Vec::new(),
             link,
+            tick: 0,
             error: None,
             scene: None,
             version: 0,
@@ -206,15 +210,19 @@ impl App {
         let mut open = true;
         for message in link.received() {
             match message {
-                Some(Incoming::Text { text, path }) => newest = Some((text, path)),
+                Some(Incoming::Text { text, path, tick }) => newest = Some((text, path, tick)),
                 Some(Incoming::Cursor { offset }) => self.cursor = Some(offset),
                 None => open = false,
             }
         }
 
         // only the newest text matters when several came at once
-        if let Some((text, path)) = newest {
+        if let Some((text, path, tick)) = newest {
             self.path = path.map(PathBuf::from);
+
+            // an undo can bring back the text already shown under a
+            // new tick, and an edit must carry the new one
+            self.tick = tick;
             if text != self.text || self.version == 0 {
                 self.show(text);
             }
@@ -232,6 +240,16 @@ impl App {
             self.reported = true;
         }
         open
+    }
+
+    /// Ask the editor to make `edits` to the source it last sent.
+    #[expect(dead_code, reason = "dragging an object will call it")]
+    fn send_edits(&self, edits: &[TextEdit]) {
+        let Some(link) = &self.link else { return };
+        link.send(&Outgoing::Edit {
+            tick: self.tick,
+            edits: edits.iter().map(Replace::from).collect(),
+        });
     }
 
     /// The boxes of the objects the node under the editor's cursor drew.

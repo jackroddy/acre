@@ -23,3 +23,16 @@ the path.
 | `cmd` | `{ "acre-gui", "--stdio" }` | the viewer and its arguments |
 | `render` | `"change"` | `"change"` draws as you type, `"save"` on each write |
 | `debounce` | `150` | milliseconds of quiet before a change is sent |
+
+## Tests
+
+`tests/edit.lua` checks the plugin's side of the link with a stand-in viewer.
+`tests/viewer.lua` runs the real viewer from `target/release/acre-gui`. It
+opens a window and needs a display. Run each from the repository root:
+
+```sh
+nvim --clean --headless -l editors/nvim/tests/edit.lua
+nvim --clean --headless -l editors/nvim/tests/viewer.lua
+```
+
+A failed check prints `FAIL` and makes neovim exit with status 1.
