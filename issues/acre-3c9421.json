@@ -3,20 +3,20 @@
   "title": "acre reference leaves containers out of what a container holds",
   "body": "`acre reference` ends each container's entry with a `holds` line. For `group`, `stack`, `grid` and `panel` that line stops at `ruler`, and leaves out `group`, `stack`, `grid`, `panel` and `repeat`. acre accepts a stack inside a stack and a group inside a group, so the line is wrong. A reader of the reference concludes that containers do not nest and lays a figure out flat.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "acre-4ed6a0",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-25T00:09:10.423616939Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T23:40:04.164807659Z",
-  "updated_at": "2026-11-24T23:55:55.758146915Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T23:55:55.768982073Z",
+  "closed_at": "2026-11-24T23:55:55.768982073Z",
+  "close_reason": "Not a live bug: holds lines were already complete. Commit a6b5a48 adds a_container_holds_exactly_the_drawn_kinds_the_builder_accepts (scene/build.rs) and derives the unknown-node error list from schema::node(\"canvas\").",
+  "resolution": "done",
   "notes": [
     {
       "id": "df566093",
@@ -32,6 +32,9 @@
       "commit": "29eef0c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a6b5a48",
+      "branch": "dev"
+    }
   }
 }
