@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T06:58:01.444333169Z",
+  "updated_at": "2026-11-24T06:58:10.757005911Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -266,9 +266,10 @@
       "id": "72e89498",
       "at": "2026-11-24T06:58:01.44433098Z",
       "author": "Jack Roddy/0c799e42",
-      "text": "A `row` takes `width W` and `weights N...` (acre-4c2d4f, commit 89a8bc0). Each cell gets a share of W in proportion to its weight, in order, and `weights DATA COL` takes the weights from a column of a `data` file. `gap` comes out of each cell's share. A weighted row takes its height from `unit` and ignores the unit's width, as the issue's proposal wrote it with `unit 0 24`. `span` on a weighted row or on one of its cells is an error, since each weight belongs to one cell. `width` without `weights` is an error, and so is `weights` without `width`. `stack` takes no weights. The syntax is provisional, as all syntax is until the rework.",
+      "text": "A `row` takes `width W` and `weights N...` (acre-4c2d4f, commit 89a8bc0). Each cell gets a share of W in proportion to its weight, in order. `weights DATA COL` takes the weights from a column of a `data` file. `gap` comes out of each cell's share. A weighted row takes its height from `unit` and ignores the unit's width, as the issue's proposal wrote it with `unit 0 24`. Each weight belongs to one cell, so `span` on a weighted row or on one of its cells is an error. `width` and `weights` go together, and either one alone is an error. `stack` takes no weights. The syntax is provisional, as all syntax is until the rework.",
       "commit": "89a8bc0",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-11-24T06:58:10.757005611Z"
     }
   ],
   "stamps": {
