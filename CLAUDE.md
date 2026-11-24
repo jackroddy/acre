@@ -53,8 +53,16 @@ scenes gets no editor and no window.
 
 ## The viewer's keys
 
-acre-gui has two key bindings. Space plays and pauses, and Left and Right
-step one frame. Do not add another key binding unless I ask for that key.
+acre-gui takes these keys and no others:
+
+- Space plays and pauses.
+- With nothing selected, Left and Right step one frame.
+- With a selection, the arrow keys move it.
+- Delete deletes the selection.
+- Ctrl+C copies the selection, and Ctrl+V pastes it.
+- In a text field, Shift+Enter starts a new line.
+
+Do not add another key binding unless I ask for that key.
 
 ## Running acre
 
