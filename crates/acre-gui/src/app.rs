@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use acre::lang;
-use acre::scene::edit::TextEdit;
+use acre::scene::edit::{self, TextEdit};
 use acre::scene::{self, Scene, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
@@ -126,6 +126,7 @@ impl App {
     /// Show `text` as the source: build its scene, and keep the last one
     /// that built if it has an error.
     fn show(&mut self, text: String) {
+        self.view.end_move();
         self.text = text;
         match lang::parse(&self.text).and_then(|program| self.build(&program)) {
             Ok(scene) => {
@@ -218,6 +219,9 @@ impl App {
 
         // only the newest text matters when several came at once
         if let Some((text, path, tick)) = newest {
+            // the editor sends its text after an edit it makes or
+            // drops alike, so a drag it dropped snaps back here
+            self.view.end_move();
             self.path = path.map(PathBuf::from);
 
             // an undo can bring back the text already shown under a
@@ -243,13 +247,57 @@ impl App {
     }
 
     /// Ask the editor to make `edits` to the source it last sent.
-    #[expect(dead_code, reason = "dragging an object will call it")]
     fn send_edits(&self, edits: &[TextEdit]) {
         let Some(link) = &self.link else { return };
         link.send(&Outgoing::Edit {
             tick: self.tick,
             edits: edits.iter().map(Replace::from).collect(),
         });
+    }
+
+    /// Move the node at `node` by `by` canvas pixels: ask the editor to
+    /// make the edits, or make them in the file and show it again. A
+    /// refusal snaps the node back and names the reason on the status
+    /// line.
+    fn move_node(&mut self, node: lang::Span, by: scene::Point) {
+        // with an error, the scene shown was built from an earlier
+        // text, so its spans do not point into `text`
+        let edits = match &self.error {
+            Some(_) => Err("fix the source's error before moving things".to_string()),
+            None => edit::move_edits(&self.text, node, by.x, by.y).map_err(|e| {
+                let (line, col) = e.line_col(&self.text);
+                format!("cannot move: {line}:{col}: {}", e.message)
+            }),
+        };
+        let edits = match edits {
+            Ok(edits) => edits,
+            Err(why) => {
+                self.view.end_move();
+                self.notice = Some(why);
+                return;
+            }
+        };
+        self.notice = None;
+        if self.link.is_some() {
+            self.send_edits(&edits);
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            self.view.end_move();
+            self.notice = Some("no file to write the move to".into());
+            return;
+        };
+        let text = edit::apply(&self.text, &edits);
+        match fs::write(&path, &text) {
+            Ok(()) => {
+                self.modified = modified(&path);
+                self.show(text);
+            }
+            Err(e) => {
+                self.view.end_move();
+                self.notice = Some(format!("cannot write {}: {e}", path.display()));
+            }
+        }
     }
 
     /// The boxes of the objects the node under the editor's cursor drew.
@@ -538,11 +586,14 @@ impl eframe::App for App {
                 let marks = self.marks();
                 let shown =
                     self.view
-                        .show(ui, self.scene.as_ref(), self.version, self.time, &marks);
+                        .show(ui, self.scene.as_mut(), self.version, self.time, &marks);
                 self.pane = shown.pane;
                 self.hover = shown.hover;
                 if let Some(point) = shown.clicked {
                     self.go_to_object_at(point);
+                }
+                if let Some((node, by)) = shown.moved {
+                    self.move_node(node, by);
                 }
             });
     }

@@ -9,11 +9,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A drag with the primary button that starts on an object moves the object.
+  While the pointer moves, the viewer draws the object at the pointer's
+  offset with an outline. On release the viewer works out the source edits
+  for the move. With `--stdio` it sends them to the editor as an `edit`.
+  Without, it writes them to the file and shows the result. When acre cannot
+  move the object, the object goes back and the status line gives the reason.
+  A drag that starts on empty canvas pans as before. A drag with the middle
+  button always pans. A click still goes to the node under the pointer.
 - With `--stdio`, a `text` message carries a `tick`. The tick is the
   editor's number for that version of the source. A new outgoing message
   `edit` holds a list of `{start, end, text}` byte ranges in the source of a
   tick. The editor makes the edit only while its own tick still matches.
-  Nothing in the viewer sends an `edit` yet.
 - The viewer reads the data files a drawing names with `data`. A path is
   relative to the drawing's file. The viewer builds the drawing again when
   one of them changes.

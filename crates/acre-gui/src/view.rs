@@ -1,10 +1,14 @@
 use std::time::{Duration, Instant};
 
+use acre::lang::Span;
 use acre::render;
-use acre::scene::{Point, Scene};
+use acre::scene::{Animation, Point, Scene, Track};
 use eframe::egui::{
-    self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
+    self, Color32, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, TextureHandle,
+    TextureOptions, Vec2, pos2,
 };
+
+use crate::drag::{Drag, Release};
 
 const MIN_ZOOM: f32 = 0.05;
 const MAX_ZOOM: f32 = 40.0;
@@ -35,6 +39,11 @@ pub struct View {
     drawn: Option<Drawn>,
     /// When the person last panned or zoomed.
     moved: Option<Instant>,
+    /// The primary press in the pane, until it is let go.
+    drag: Option<Drag>,
+    /// A node let go of after a drag, and how far, drawn there until
+    /// the source it was moved in comes back.
+    held: Option<(Span, Point)>,
 }
 
 /// What the person did in the pane this frame.
@@ -44,6 +53,9 @@ pub struct Shown {
     pub hover: Option<Point>,
     /// The canvas point clicked.
     pub clicked: Option<Point>,
+    /// The node dragged and let go of this frame, and how far it moved
+    /// in canvas pixels.
+    pub moved: Option<(Span, Point)>,
 }
 
 /// The view the texture was drawn for.
@@ -57,6 +69,8 @@ struct Drawn {
     origin: Vec2,
     scene: u64,
     time: f64,
+    /// The node drawn moved by a drag, and how far.
+    preview: Option<(Span, Point)>,
 }
 
 impl Drawn {
@@ -84,7 +98,15 @@ impl View {
             texture: None,
             drawn: None,
             moved: None,
+            drag: None,
+            held: None,
         }
+    }
+
+    /// Stop drawing the node let go of after a drag where it was moved
+    /// to.
+    pub fn end_move(&mut self) {
+        self.held = None;
     }
 
     pub fn zoom(&self) -> f32 {
@@ -114,13 +136,15 @@ impl View {
         self.moved = Some(Instant::now());
     }
 
-    /// Lay the pane out in `ui`, take the person's zoom and pan, and draw
-    /// `scene`, whose version is `version`, at time `t`, with an outline
-    /// around each box in `marks`, given in canvas pixels.
+    /// Lay the pane out in `ui`, take the person's zoom, pan and drag,
+    /// and draw `scene`, whose version is `version`, at time `t`, with an
+    /// outline around each box in `marks`, given in canvas pixels. While
+    /// a node is dragged, its objects are drawn where it is dragged to
+    /// and outlined instead.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
-        scene: Option<&Scene>,
+        scene: Option<&mut Scene>,
         version: u64,
         t: f64,
         marks: &[(Point, Point)],
@@ -130,16 +154,42 @@ impl View {
             pane: rect.size(),
             hover: None,
             clicked: None,
+            moved: None,
         };
         let Some(scene) = scene else {
+            self.drag = None;
             return shown;
         };
         let canvas = Vec2::new(scene.canvas.width as f32, scene.canvas.height as f32);
 
+        let (pressed, down, pointer) = ui.input(|i| {
+            (
+                i.pointer.primary_pressed(),
+                i.pointer.primary_down(),
+                i.pointer.interact_pos(),
+            )
+        });
+
+        // before this frame's pan and zoom, so the press lands on what
+        // the last frame showed
+        if pressed
+            && response.contains_pointer()
+            && let Some(at) = pointer
+        {
+            let node = scene
+                .object_at(self.to_canvas(rect, at), t)
+                .map(|i| scene.objects[i].source)
+                .filter(|s| s.start < s.end);
+            self.drag = Some(Drag::new(node, at));
+        }
+
         if response.double_clicked() {
             self.fit = true;
         }
-        if response.dragged() {
+        let pans = self.drag.as_ref().is_some_and(Drag::pans);
+        if response.dragged_by(PointerButton::Middle)
+            || (pans && response.dragged_by(PointerButton::Primary))
+        {
             self.origin += response.drag_delta();
             self.fit = false;
             self.moved = Some(Instant::now());
@@ -166,6 +216,46 @@ impl View {
             self.origin = (rect.size() - canvas * self.zoom) / 2.0;
         }
 
+        if let Some(drag) = &mut self.drag
+            && let Some(at) = pointer
+        {
+            drag.follow(at, self.zoom);
+        }
+        if !down && let Some(drag) = self.drag.take() {
+            match drag.release() {
+                Release::Click(at) => shown.clicked = Some(self.to_canvas(rect, at)),
+                Release::Move { node, by } => {
+                    self.held = Some((node, by));
+                    shown.moved = Some((node, by));
+
+                    // the caller ends the move or shows the moved
+                    // source after this frame is drawn
+                    ui.ctx().request_repaint();
+                }
+                Release::Pan => {}
+            }
+        }
+        let preview = self.drag.as_ref().and_then(Drag::moving).or(self.held);
+        let lifted: Vec<usize> = match preview {
+            Some((node, by)) => {
+                let inside = |s: Span| node.start <= s.start && s.end <= node.end;
+                let lifted: Vec<usize> = (0..scene.objects.len())
+                    .filter(|&i| inside(scene.objects[i].source))
+                    .collect();
+
+                // the last group is applied last, so an extra one moves
+                // the objects by `by` on the canvas whatever their own
+                // groups scale them by
+                let mut shift = Animation::new(Point::ZERO);
+                shift.offset = Track::Constant(by);
+                for &i in &lifted {
+                    scene.objects[i].groups.push(shift.clone());
+                }
+                lifted
+            }
+            None => Vec::new(),
+        };
+
         let ppp = ui.ctx().pixels_per_point();
         let wanted = Drawn {
             pane: rect.size(),
@@ -175,6 +265,7 @@ impl View {
             origin: self.origin,
             scene: version,
             time: t,
+            preview,
         };
         let painter = ui.painter_at(rect);
         let mut cover = self.drawn.map(|d| self.texture_rect(rect, &d));
@@ -190,6 +281,7 @@ impl View {
                     || d.time != t
                     || d.pane != wanted.pane
                     || d.pixels_per_point != ppp
+                    || d.preview != wanted.preview
                     || (d != wanted && settled)
                     || !cover.is_some_and(|c| c.contains_rect(rect))
             }
@@ -205,6 +297,13 @@ impl View {
         }
         let to_screen =
             |p: Point| rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom;
+        let lifted_marks: Vec<(Point, Point)>;
+        let marks = if preview.is_some() {
+            lifted_marks = lifted.iter().filter_map(|&i| scene.bounds(i, t)).collect();
+            &lifted_marks
+        } else {
+            marks
+        };
         for &(min, max) in marks {
             let mark = Rect::from_min_max(to_screen(min), to_screen(max)).expand(3.0);
             painter.rect_stroke(
@@ -215,15 +314,18 @@ impl View {
             );
         }
 
-        let to_canvas = |p: Pos2| {
-            let v = (p - rect.min - self.origin) / self.zoom;
-            Point::new(v.x as f64, v.y as f64)
-        };
-        shown.hover = response.hover_pos().map(to_canvas);
-        if response.clicked() {
-            shown.clicked = response.interact_pointer_pos().map(to_canvas);
+        for &i in &lifted {
+            scene.objects[i].groups.pop();
         }
+
+        shown.hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
         shown
+    }
+
+    /// The canvas point at screen point `p` in a pane at `rect`.
+    fn to_canvas(&self, rect: Rect, p: Pos2) -> Point {
+        let v = (p - rect.min - self.origin) / self.zoom;
+        Point::new(v.x as f64, v.y as f64)
     }
 
     /// Draw `scene` into the texture for the view `wanted`, with the
@@ -285,6 +387,7 @@ mod tests {
             origin,
             scene: 0,
             time: 0.0,
+            preview: None,
         }
     }
 
