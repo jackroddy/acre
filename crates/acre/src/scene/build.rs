@@ -1449,7 +1449,7 @@ fn shape(node: &Node, names: &Names, offset: Point) -> Result<Shape, Error> {
 fn polygon(node: &Node, names: &Names, offset: Point) -> Result<Polygon, Error> {
     let props = Props::new(node, &keys("polygon"), false)?;
     let p = props.require("points")?;
-    let points = points(p, names, offset)?;
+    let points = points(&props, p, names, offset)?;
     if points.len() < 3 {
         return Err(Error::new(
             p.span,
@@ -1470,7 +1470,7 @@ fn polygon(node: &Node, names: &Names, offset: Point) -> Result<Polygon, Error> 
 fn polyline(node: &Node, names: &Names, offset: Point) -> Result<Polyline, Error> {
     let props = Props::new(node, &keys("polyline"), false)?;
     let p = props.require("points")?;
-    let mut points = points(p, names, offset)?;
+    let mut points = points(&props, p, names, offset)?;
     if points.len() < 2 {
         return Err(Error::new(p.span, "a `polyline` needs at least two points"));
     }
@@ -1487,15 +1487,32 @@ fn polyline(node: &Node, names: &Names, offset: Point) -> Result<Polyline, Error
     })
 }
 
-/// The points `points` lists as `X Y X Y ...`, or takes from a table
-/// as `DATA XCOL YCOL`, from `offset`.
-fn points(p: &Property, names: &Names, offset: Point) -> Result<Vec<Point>, Error> {
+/// The points `p`, a `points`, lists as `X Y X Y ...`, or takes from a
+/// table as `DATA XCOL YCOL` and maps to pixels by `units` and `origin`,
+/// from `offset`.
+fn points(props: &Props, p: &Property, names: &Names, offset: Point) -> Result<Vec<Point>, Error> {
+    let pair = |key: &str, default: [f64; 2]| match props.get(key) {
+        Some(q) => q.numbers::<2>(),
+        None => Ok(default),
+    };
     if let Some(Value {
         kind: ValueKind::Word(name),
         span,
     }) = p.values.first()
     {
-        return data_table(names, name, *span)?.points(p, offset);
+        let [sx, sy] = pair("units", [1.0, 1.0])?;
+        let [ox, oy] = pair("origin", [0.0, 0.0])?;
+        let data = data_table(names, name, *span)?.points(p)?;
+        return Ok(data
+            .into_iter()
+            .map(|d| offset + Point::new((d.x - ox) * sx, (d.y - oy) * sy))
+            .collect());
+    }
+    if let Some(q) = props.get("units").or(props.get("origin")) {
+        return Err(Error::new(
+            q.key.span,
+            format!("`{}` goes with `points DATA XCOL YCOL`", q.key.text),
+        ));
     }
     let mut numbers = Vec::with_capacity(p.values.len());
     for v in &p.values {
@@ -1653,10 +1670,20 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
         }
     }
     if let Some(p) = props.get("cells") {
-        for v in &p.values {
-            match &v.kind {
-                ValueKind::Str(text) => push(text, span, None)?,
-                _ => return Err(Error::new(v.span, "`cells` takes strings")),
+        if let Some(Value {
+            kind: ValueKind::Word(name),
+            span: at,
+        }) = p.values.first()
+        {
+            for text in data_table(names, name, *at)?.column_texts(p)? {
+                push(text, span, None)?;
+            }
+        } else {
+            for v in &p.values {
+                match &v.kind {
+                    ValueKind::Str(text) => push(text, span, None)?,
+                    _ => return Err(Error::new(v.span, "`cells` takes strings")),
+                }
             }
         }
     }
@@ -2333,8 +2360,9 @@ fn math(node: &Node, names: &Names, offset: Point) -> Result<Text, Error> {
     })
 }
 
-/// The texts of a table: one `row` line of strings per row, with each
-/// string set at its column's x and aligned to it.
+/// The texts of a table: one `row` line of strings per row, or one row
+/// per line of a data file, with each string set at its column's x and
+/// aligned to it.
 fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> {
     let (rows, rest): (Vec<&Property>, Vec<&Property>) =
         node.properties.iter().partition(|p| p.key.text == "row");
@@ -2380,20 +2408,50 @@ fn table(node: &Node, names: &Names, offset: Point) -> Result<Vec<Text>, Error> 
     let font = props.font_or(names.font, &names.fonts)?;
     let color = props.color_or("color", Color::BLACK)?;
 
-    let mut out = Vec::new();
-    for (k, row) in rows.iter().enumerate() {
-        if row.values.len() > xs.len() {
+    // each cell's text, with the span an error in its markup points at
+    let mut lines: Vec<Vec<(&str, Span)>> = Vec::new();
+    for row in &rows {
+        let (data, cells) = match row.values.first() {
+            Some(Value {
+                kind: ValueKind::Word(name),
+                span,
+            }) => (Some((name, *span)), &row.values[1..]),
+            _ => (None, &row.values[..]),
+        };
+        if cells.len() > xs.len() {
             return Err(Error::new(
-                row.values[xs.len()].span,
+                cells[xs.len()].span,
                 format!("the table has {} columns", xs.len()),
             ));
         }
-        for (column, v) in row.values.iter().enumerate() {
-            let ValueKind::Str(text) = &v.kind else {
-                return Err(Error::new(v.span, "a table's cells are strings"));
-            };
+        match data {
+            Some((name, span)) => {
+                for texts in data_table(names, name, span)?.texts(row)? {
+                    lines.push(
+                        texts
+                            .into_iter()
+                            .zip(cells)
+                            .map(|(t, v)| (t, v.span))
+                            .collect(),
+                    );
+                }
+            }
+            None => lines.push(
+                cells
+                    .iter()
+                    .map(|v| match &v.kind {
+                        ValueKind::Str(text) => Ok((text.as_str(), v.span)),
+                        _ => Err(Error::new(v.span, "a table's cells are strings")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+        }
+    }
+    let mut out = Vec::new();
+    for (k, line) in lines.iter().enumerate() {
+        for (column, &(text, span)) in line.iter().enumerate() {
             let runs = markup::runs(text, font, color, &names.colors)
-                .map_err(|message| Error::new(v.span, message))?;
+                .map_err(|message| Error::new(span, message))?;
             out.push(Text {
                 origin: origin + Point::new(xs[column], k as f64 * height),
                 label: Label {
@@ -3720,6 +3778,50 @@ mod tests {
     }
 
     #[test]
+    fn a_table_takes_rows_from_data_columns_in_turn() {
+        let src = r#"canvas { size 100 100;
+            data d { file "d.csv"; }
+            table { at 10 20; columns 0 50; row-height 30;
+                row "name" "n"; row d name n; } }"#;
+        let s = scene_data(src, &[b"n,name\n2,*x*\n1,y\n"]).unwrap();
+        let placed: Vec<(Point, String)> = s
+            .objects
+            .iter()
+            .map(|o| match &o.kind {
+                Kind::Text(t) => (t.origin, t.label.text()),
+                other => panic!("expected a text, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            placed,
+            [
+                (Point::new(10.0, 20.0), "name".into()),
+                (Point::new(60.0, 20.0), "n".into()),
+                (Point::new(10.0, 50.0), "x".into()),
+                (Point::new(60.0, 50.0), "2".into()),
+                (Point::new(10.0, 80.0), "y".into()),
+                (Point::new(60.0, 80.0), "1".into()),
+            ]
+        );
+        let err = |row: &str| {
+            let src = format!(
+                "canvas {{ size 9 9;\n data d {{ file \"d.csv\"; }}\n table {{ columns 0; row {row}; }} }}"
+            );
+            scene_data(&src, &[b"n,name\n2,x\n"]).unwrap_err()
+        };
+        assert_eq!(err("d n name"), (3, 29, "the table has 1 columns".into()));
+        assert_eq!(
+            err("d"),
+            (
+                3,
+                21,
+                "`row DATA COL...` takes column names after the data name".into()
+            )
+        );
+        assert_eq!(err("e n"), (3, 25, "no `data` is named `e`".into()));
+    }
+
+    #[test]
     fn each_object_knows_its_node_and_a_point_finds_the_smallest() {
         let src = "canvas { size 100 100;
                 box big { at 0 0; size 100 100; }
@@ -3957,6 +4059,52 @@ mod tests {
         };
         let widths: Vec<f64> = row.cells.iter().map(|c| c.width).collect();
         assert_eq!(widths, [60.0, 30.0]);
+    }
+
+    #[test]
+    fn a_row_takes_its_cells_from_a_data_column() {
+        let src = r#"canvas { size 300 100;
+            data d { file "d.tsv"; }
+            row r { at 0 0; unit 20 10; cells d name; } }"#;
+        let s = scene_data(src, &[b"name\tn\nx\t2\n\t5\ny\t1\n"]).unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        let cells: Vec<(f64, Option<String>)> = row
+            .cells
+            .iter()
+            .map(|c| (c.left, c.label.as_ref().map(|l| l.text())))
+            .collect();
+        assert_eq!(
+            cells,
+            [
+                (0.0, Some("x".into())),
+                (20.0, None),
+                (40.0, Some("y".into()))
+            ]
+        );
+        let err = |cells: &str| {
+            let src = format!(
+                "canvas {{ size 9 9;\n data d {{ file \"d.tsv\"; }}\n row {{ unit 9 9; cells {cells}; }} }}"
+            );
+            scene_data(&src, &[b"name\tn\nx\t2\n"]).unwrap_err()
+        };
+        assert_eq!(
+            err("d name n"),
+            (
+                3,
+                18,
+                "`cells DATA COL` takes one column name after the data name".into()
+            )
+        );
+        assert_eq!(
+            err("d m"),
+            (
+                3,
+                26,
+                "`d.tsv` has no column `m`; its columns are name, n".into()
+            )
+        );
     }
 
     #[test]
@@ -4481,6 +4629,34 @@ mod tests {
             panic!("expected a polyline");
         };
         assert_eq!(l.points, [Point::new(2.0, 1.0), Point::new(4.0, 3.0)]);
+    }
+
+    #[test]
+    fn data_points_map_to_pixels_by_units_and_origin() {
+        let src = "canvas { size 200 200;
+            data d { file \"d.tsv\"; }
+            group { at 10 100; polyline { points d x y; units 20 -10; origin 1990 0; } } }";
+        let s = scene_data(src, &[b"x\ty\n1990\t0\n1992\t3\n"]).unwrap();
+        let Kind::Polyline(l) = &s.objects[0].kind else {
+            panic!("expected a polyline");
+        };
+        assert_eq!(l.points, [Point::new(10.0, 100.0), Point::new(50.0, 70.0)]);
+    }
+
+    #[test]
+    fn units_and_origin_go_with_data_points() {
+        let err = |body: &str| {
+            let src = format!("canvas {{ size 9 9;\n polygon {{ points 0 0 5 0 5 5; {body} }} }}");
+            scene(&src).unwrap_err()
+        };
+        assert_eq!(
+            err("units 2 2;"),
+            (2, 32, "`units` goes with `points DATA XCOL YCOL`".into())
+        );
+        assert_eq!(
+            err("origin 1 1;"),
+            (2, 32, "`origin` goes with `points DATA XCOL YCOL`".into())
+        );
     }
 
     #[test]

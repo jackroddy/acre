@@ -182,8 +182,8 @@ fn parse(path: &str, bytes: &[u8], separator: char) -> Result<Table, String> {
 
 impl Table {
     /// The points `p` takes as `points DATA XCOL YCOL`, one per row with
-    /// X from column XCOL and Y from column YCOL, from `offset`.
-    pub(super) fn points(&self, p: &Property, offset: Point) -> Result<Vec<Point>, Error> {
+    /// X from column XCOL and Y from column YCOL, in data units.
+    pub(super) fn points(&self, p: &Property) -> Result<Vec<Point>, Error> {
         let [_, x, y] = p.values.as_slice() else {
             return Err(Error::new(
                 p.span,
@@ -193,7 +193,10 @@ impl Table {
         let (x, y) = (self.column(x)?, self.column(y)?);
         let mut out = Vec::with_capacity(self.rows.len());
         for (n, cells) in &self.rows {
-            out.push(offset + Point::new(self.number(*n, cells, x)?, self.number(*n, cells, y)?));
+            out.push(Point::new(
+                self.number(*n, cells, x)?,
+                self.number(*n, cells, y)?,
+            ));
         }
         Ok(out)
     }
@@ -215,6 +218,49 @@ impl Table {
             .iter()
             .map(|(n, cells)| self.number(*n, cells, column))
             .collect()
+    }
+
+    /// The texts `p` takes as `cells DATA COL`, one per row from column
+    /// COL.
+    pub(super) fn column_texts(&self, p: &Property) -> Result<Vec<&str>, Error> {
+        let [_, column] = p.values.as_slice() else {
+            return Err(Error::new(
+                p.span,
+                format!(
+                    "`{} DATA COL` takes one column name after the data name",
+                    p.key.text
+                ),
+            ));
+        };
+        let (i, _, _) = self.column(column)?;
+        Ok(self
+            .rows
+            .iter()
+            .map(|(_, cells)| cells[i].as_str())
+            .collect())
+    }
+
+    /// The texts `p` takes as `row DATA COL...`, one list per row with
+    /// the cell of each column COL in turn.
+    pub(super) fn texts(&self, p: &Property) -> Result<Vec<Vec<&str>>, Error> {
+        if p.values.len() < 2 {
+            return Err(Error::new(
+                p.span,
+                format!(
+                    "`{} DATA COL...` takes column names after the data name",
+                    p.key.text
+                ),
+            ));
+        }
+        let columns = p.values[1..]
+            .iter()
+            .map(|v| self.column(v).map(|(i, _, _)| i))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(self
+            .rows
+            .iter()
+            .map(|(_, cells)| columns.iter().map(|&i| cells[i].as_str()).collect())
+            .collect())
     }
 
     /// The cells `p` gives text as `cells DATA RCOL CCOL TEXTCOL`, one

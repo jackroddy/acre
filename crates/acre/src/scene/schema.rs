@@ -125,6 +125,17 @@ const POINTS: Property = prop(
     "the points in turn, in the group's coordinates; or one per row of the `data` named DATA, X from column XCOL and Y from column YCOL",
 );
 
+const UNITS: Property = prop(
+    "units",
+    "SX SY",
+    "with `points DATA XCOL YCOL`, the pixels one data unit spans along x and along y; a negative number turns that axis around; the default is 1 1",
+);
+const ORIGIN: Property = prop(
+    "origin",
+    "X Y",
+    "with `points DATA XCOL YCOL`, the data point that lands on the group's origin; the default is 0 0",
+);
+
 const SHAPE: &[Property] = &[
     AT,
     PLACE,
@@ -399,7 +410,11 @@ pub const NODES: &[NodeKind] = &[
             ),
             prop("gap", "N", "the space between cells"),
             RADIUS,
-            prop("cells", "\"TEXT\"...", "one cell per string"),
+            prop(
+                "cells",
+                "\"TEXT\"... | DATA COL",
+                "one cell per string, or one per row of a data column",
+            ),
             prop("chars", "\"TEXT\"", "one cell per character"),
             prop(
                 "palette",
@@ -510,6 +525,8 @@ pub const NODES: &[NodeKind] = &[
         about: "a closed shape through its points, filled inside",
         properties: &[
             POINTS,
+            UNITS,
+            ORIGIN,
             FILL,
             STROKE,
             STROKE_WIDTH,
@@ -529,6 +546,8 @@ pub const NODES: &[NodeKind] = &[
         about: "an open path through its points",
         properties: &[
             POINTS,
+            UNITS,
+            ORIGIN,
             STROKE,
             STROKE_WIDTH,
             DASH,
@@ -688,8 +707,8 @@ pub const NODES: &[NodeKind] = &[
             FONT,
             prop(
                 "row",
-                "\"TEXT\"...",
-                "one row, a string per column; repeat for each row",
+                "\"TEXT\"... | DATA COL...",
+                "one row, a string per column, or one row per row of the `data` named DATA, with the cell of each column COL in turn; repeat for each row",
             ),
             TAG,
             TAG_SIZE,
@@ -970,7 +989,7 @@ pub const NODES: &[NodeKind] = &[
     },
     NodeKind {
         name: "data",
-        about: "a table of numbers from a file, which `points` takes columns of; it draws nothing",
+        about: "a table of numbers and text from a file, which `points`, `weights`, a row's or a matrix's `cells` and a table's `row` take columns of; it draws nothing",
         properties: &[prop(
             "file",
             "\"PATH\"",

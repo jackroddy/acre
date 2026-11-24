@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A row takes `cells DATA COL`, one cell per row of a data column. A table
+  takes `row DATA COL...`, one table row per row of the data file, with the
+  cell of each column COL in turn. A table may mix these with `row
+  "TEXT"...` lines, and the rows keep the order of the lines. A table's
+  cells from data take markup as a quoted string does.
+- A `polygon` or `polyline` with `points DATA XCOL YCOL` takes `units SX
+  SY` and `origin X Y`. A data point (X, Y) lands at ((X - OX) × SX, (Y -
+  OY) × SY) in the group's coordinates. A negative unit turns that axis
+  around. The defaults are `units 1 1` and `origin 0 0`, so a drawing
+  without them draws as before. `units` or `origin` with numbers in
+  `points` is an error.
+
 - `scene::edit::move_edits` works out the edits to a file's text that move
   a drawn node by an offset in pixels. `scene::edit::apply` makes them. The
   offset goes onto the node's `at X Y`, onto the DX DY of an `at` from a
