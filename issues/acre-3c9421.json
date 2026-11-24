@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-25T00:09:10.423616939Z",
   "defer_until": null,
   "created_at": "2026-11-24T23:40:04.164807659Z",
-  "updated_at": "2026-11-24T23:54:10.423616939Z",
+  "updated_at": "2026-11-24T23:55:55.758146915Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "df566093",
+      "at": "2026-11-24T23:55:55.758146175Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "The reported bug did not reproduce on dev at 8d5c911: every container's holds line already lists group, stack, grid, panel and repeat, since DRAWN carried them from the commit that added repeat. Added a test in scene/build.rs that builds a canvas per container and drawn kind and checks the builder accepts it exactly when listed, and made the unknown-node error read the canvas list from the schema. Commit a6b5a48.",
+      "commit": "a6b5a48",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "29eef0c",
