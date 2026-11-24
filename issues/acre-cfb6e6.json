@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-09T23:27:03.909462022Z",
-  "updated_at": "2026-11-24T06:36:24.511497573Z",
+  "updated_at": "2026-11-24T06:36:40.943793075Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -26,6 +26,14 @@
       "author": "Jack Roddy/cd2d1020",
       "text": "acre-gui no longer holds the source since 934e4ef: neovim edits it through the plugin in editors/nvim. A drag would have to send an edit back over the --stdio link, as a new message the plugin applies to the buffer, not rewrite text inside acre-gui.",
       "commit": "6866c55",
+      "branch": "dev"
+    },
+    {
+      "id": "bb1c7c13",
+      "at": "2026-11-24T06:36:40.943792495Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack accepted the plan in the body of acre-ef7221 on 2026-11-23. Version 1 refuses a drag on a computed value (a `let`, a `( ... )` expression, a `style`), a stack or grid child, a repeat copy and an object a timeline moves, which settles the open question on acre-4518a5 for now.",
+      "commit": "6faae32",
       "branch": "dev"
     }
   ],
