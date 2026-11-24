@@ -7,7 +7,7 @@ use super::data::{self, Table};
 use super::expand::expand;
 use super::markup;
 use super::schema;
-use super::timeline::{self, TextAction};
+use super::timeline::{self, Later, TextAction};
 use super::{
     Brace, Canvas, Color, Connector, Font, HAlign, Head, Kind, Label, LabelSide, Matrix,
     MatrixCell, Merge, Object, Point, Polygon, Polyline, Route, Row, RowCell, Ruler, Run, Scene,
@@ -205,7 +205,7 @@ pub fn build(
         }
     }
 
-    let mut objects = add_canvas_objects(canvas, &names, Point::ZERO)?;
+    let (mut objects, mut places) = add_canvas_objects(canvas, &names, Point::ZERO)?;
 
     // an `auto` side is the box around what is drawn plus the margin
     // on both sides, so the drawing moves to start at the margin
@@ -221,10 +221,12 @@ pub fn build(
             sides[1] = (max.y - min.y + 2.0 * margin).ceil();
             offset.y = margin - min.y;
         }
-        objects = add_canvas_objects(canvas, &names, offset)?;
+        (objects, places) = add_canvas_objects(canvas, &names, offset)?;
     }
 
-    let last = timeline::apply(canvas, &mut objects, &fonts)?;
+    let mut laters = Vec::new();
+    shown_later(canvas, &places, &mut laters)?;
+    let last = timeline::apply(canvas, &mut objects, &fonts, &laters)?;
     let duration = match props.get("duration") {
         Some(p) => {
             let d = match p.values.as_slice() {
@@ -262,12 +264,13 @@ pub fn build(
     })
 }
 
-/// The objects of the canvas node, drawn with its origin at `offset`.
+/// The objects of the canvas node, drawn with its origin at `offset`,
+/// and the slot of each child of a stack or a grid.
 fn add_canvas_objects<'a>(
     canvas: &'a Node,
     names: &Names<'a>,
     offset: Point,
-) -> Result<Vec<Object>, Error> {
+) -> Result<(Vec<Object>, Places), Error> {
     // named shapes and rows, so that a node may name any of them
     // wherever it sits in the file
     let mut names = names.clone();
@@ -281,7 +284,67 @@ fn add_canvas_objects<'a>(
         measuring: false,
     };
     add_objects(&canvas.children, offset, &pass, &mut counts, &mut objects)?;
-    Ok(objects)
+    Ok((objects, places))
+}
+
+/// Every child of a stack in `parent` and below that sets `space shown`,
+/// where `places` holds the slot of each child of a stack.
+fn shown_later<'a>(
+    parent: &'a Node,
+    places: &Places,
+    out: &mut Vec<Later<'a>>,
+) -> Result<(), Error> {
+    let stack = parent.kind.text == "stack";
+    let across = stack && stack_across(&Props::new(parent, &keys("stack"), true)?)?;
+    for (k, child) in parent.children.iter().enumerate() {
+        if let Some(space) = child.properties.iter().find(|p| p.key.text == "space") {
+            match space.word()? {
+                "always" => {}
+                "shown" if stack => {
+                    let after = &parent.children[k + 1..];
+                    let shift = match after.first() {
+                        Some(next) => {
+                            let d = places[&next.span.start] - places[&child.span.start];
+                            if across {
+                                Point::new(d.x, 0.0)
+                            } else {
+                                Point::new(0.0, d.y)
+                            }
+                        }
+                        None => Point::ZERO,
+                    };
+                    out.push(Later {
+                        node: child,
+                        space,
+                        shift,
+                        after,
+                    });
+                }
+                "shown" => {
+                    return Err(Error::new(
+                        space.span,
+                        "`space shown` is for a child of a stack",
+                    ));
+                }
+                _ => return Err(Error::new(space.span, "`space` is always or shown")),
+            }
+        }
+        shown_later(child, places, out)?;
+    }
+    Ok(())
+}
+
+/// Whether the stack whose properties are `props` runs right rather
+/// than down.
+fn stack_across(props: &Props) -> Result<bool, Error> {
+    match props.get("direction") {
+        None => Ok(false),
+        Some(p) => match p.word()? {
+            "down" => Ok(false),
+            "right" => Ok(true),
+            _ => Err(Error::new(p.span, "`direction` is down or right")),
+        },
+    }
 }
 
 /// The width and height `size` gives, `None` for each `auto`.
@@ -966,14 +1029,7 @@ fn lay_out<'a>(
     };
 
     if node.kind.text == "stack" {
-        let across = match props.get("direction") {
-            None => false,
-            Some(p) => match p.word()? {
-                "down" => false,
-                "right" => true,
-                _ => return Err(Error::new(p.span, "`direction` is down or right")),
-            },
-        };
+        let across = stack_across(&props)?;
         let gap = props.number_or("gap", 0.0)?;
         let sizes = node
             .children
@@ -3194,7 +3250,7 @@ mod tests {
                 17,
                 "`box` has no property `colour`; it takes at, place, size, fill, stroke, \
                  stroke-width, dash, radius, text, text-size, text-color, font, width, \
-                 padding, text-align, tag, tag-size, tag-color, tag-font, anchor, style"
+                 padding, text-align, tag, tag-size, tag-color, tag-font, anchor, space, style"
                     .into()
             )
         );

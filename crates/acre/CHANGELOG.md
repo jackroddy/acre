@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A child of a stack with `space shown` takes its space only once the
+  timeline shows it. Layout still puts every child in its slot. Until the
+  child's first `show` or `fade NAME in`, acre draws the children after it
+  back by its size and the stack's gap, so the hidden child leaves no gap.
+  As that action starts, they jump to their slots. A later `hide` does not
+  give the space back. `space always` is the default, and a style can carry
+  `space`. A node with `space shown` sits directly in a stack, and its first
+  change of opacity in the timeline is a `show` or `fade NAME in`. A node placed with `at` from one of
+  the children after it stays at that child's slot.
 - Every drawn node but `caption` takes `tag "TEXT"` or `tag auto`. acre sets
   the tag 8 pixels left of the box around what the node draws, centered on
   it vertically. `tag auto` gives the next letter, (a), (b) and on, counting

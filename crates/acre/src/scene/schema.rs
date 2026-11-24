@@ -113,6 +113,11 @@ const ANCHOR: Property = prop(
     "center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right",
     "the point of its box that stays put when a timeline scales it; the default is center",
 );
+const SPACE: Property = prop(
+    "space",
+    "always | shown",
+    "when a child of a stack takes its space: always, the default, or from when the timeline first shows it; until then the children after it draw back by its size and the gap, and they jump to their slots as the `show` or `fade NAME in` that shows it starts",
+);
 
 const POINTS: Property = prop(
     "points",
@@ -153,6 +158,7 @@ const SHAPE: &[Property] = &[
     TAG_COLOR,
     TAG_FONT,
     ANCHOR,
+    SPACE,
     STYLE,
 ];
 
@@ -212,6 +218,7 @@ const SWEEP: &[Property] = &[
     TAG_COLOR,
     TAG_FONT,
     ANCHOR,
+    SPACE,
     STYLE,
 ];
 
@@ -258,6 +265,7 @@ const CONNECTOR: &[Property] = &[
     TAG_COLOR,
     TAG_FONT,
     ANCHOR,
+    SPACE,
     STYLE,
 ];
 
@@ -306,6 +314,7 @@ const MERGE: &[Property] = &[
     TAG_COLOR,
     TAG_FONT,
     ANCHOR,
+    SPACE,
     STYLE,
 ];
 
@@ -421,6 +430,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &["cell"],
@@ -461,6 +471,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &["cell"],
@@ -508,6 +519,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -536,6 +548,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -600,6 +613,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -624,6 +638,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -651,6 +666,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -680,6 +696,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -710,6 +727,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -739,6 +757,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -757,6 +776,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
         ],
         children: DRAWN,
     },
@@ -801,6 +821,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: DRAWN,
@@ -826,6 +847,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: DRAWN,
@@ -851,6 +873,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: DRAWN,
@@ -897,6 +920,7 @@ pub const NODES: &[NodeKind] = &[
             TAG_COLOR,
             TAG_FONT,
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],
@@ -912,6 +936,7 @@ pub const NODES: &[NodeKind] = &[
             FONT,
             prop("gap", "N", "the space above it"),
             ANCHOR,
+            SPACE,
             STYLE,
         ],
         children: &[],

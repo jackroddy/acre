@@ -69,6 +69,18 @@ pub(super) struct TextAction {
     pub span: Span,
 }
 
+/// A child of a stack that sets `space shown`, and so takes its space
+/// only from when the timeline first shows it.
+pub(super) struct Later<'a> {
+    pub node: &'a Node,
+    pub space: &'a Property,
+    /// How far back the children after it draw until it shows: its
+    /// size along the stack and the gap.
+    pub shift: Point,
+    /// The children of the stack after it.
+    pub after: &'a [Node],
+}
+
 /// The node kinds a timeline changes as one, with everything inside.
 const GROUPS: [&str; 4] = ["group", "panel", "stack", "grid"];
 
@@ -89,13 +101,22 @@ struct Action {
 /// of it when it is a row.
 type Run<'a> = ((&'a str, Option<usize>, Channel), Vec<Action>);
 
-/// Apply the canvas's `timeline` to `objects`, and return the time of
-/// its last change, or 0 without one.
-pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Result<f64, Error> {
+/// Apply the canvas's `timeline` to `objects`, and to the children
+/// after each of `laters`, and return the time of its last change, or 0
+/// without one.
+pub(super) fn apply(
+    canvas: &Node,
+    objects: &mut [Object],
+    fonts: &Fonts,
+    laters: &[Later],
+) -> Result<f64, Error> {
     let mut nodes = HashMap::new();
     named(&canvas.children, true, &mut nodes)?;
     let mut timelines = canvas.children.iter().filter(|n| n.kind.text == "timeline");
     let Some(timeline) = timelines.next() else {
+        if let Some(later) = laters.first() {
+            return Err(unshown(later));
+        }
         return Ok(0.0);
     };
     if let Some(extra) = timelines.next() {
@@ -118,6 +139,10 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
     let (runs, last) = runs(timeline, &nodes)?;
     let mut runs = by_cell(runs, &nodes, objects)?;
     in_time_order(&mut runs)?;
+    let mut closing = Vec::new();
+    for later in laters {
+        closing.extend(close_up(later, &runs, &nodes)?);
+    }
     let mut groups: Vec<Group> = Vec::new();
     for ((name, cell, channel), actions) in runs {
         let node = nodes[name].expect("`target` lets through only names one node has");
@@ -178,6 +203,9 @@ pub(super) fn apply(canvas: &Node, objects: &mut [Object], fonts: &Fonts) -> Res
         }
     }
 
+    // after the groups the timeline animates, so that a child that is
+    // itself one scales about its own slot before it closes up
+    groups.extend(closing);
     // a group nested in another spans less of the source, so sorting by
     // length puts the inner one first
     groups.sort_by_key(|g| g.node.span.end - g.node.span.start);
@@ -384,6 +412,59 @@ impl<'a> Group<'a> {
             animation: Animation::new(pivot),
         })
     }
+}
+
+/// The groups that draw the children after `later` back by its shift
+/// until the action that first shows it starts.
+fn close_up<'a>(
+    later: &Later<'a>,
+    runs: &[Run],
+    nodes: &HashMap<&str, Option<&Node>>,
+) -> Result<Vec<Group<'a>>, Error> {
+    let opacity = runs.iter().find(|((name, cell, channel), _)| {
+        cell.is_none()
+            && *channel == Channel::Opacity
+            && nodes[name].is_some_and(|n| n.span == later.node.span)
+    });
+    let Some((_, actions)) = opacity else {
+        return Err(unshown(later));
+    };
+    if !actions[0].reveals {
+        return Err(unshown(later));
+    }
+    // the children jump to their slots as a fade in starts, since
+    // sliding with the fade would draw them under the node fading in
+    let start = actions[0].start;
+    let open = Action {
+        start,
+        end: start,
+        easing: Easing::Hold,
+        ..actions[0].clone()
+    };
+    let offset = track(Point::ZERO - later.shift, &[open], |_| Point::ZERO);
+    Ok(later
+        .after
+        .iter()
+        .map(|node| {
+            let mut inside = Vec::new();
+            sources(node, &mut inside);
+            Group {
+                node,
+                inside,
+                animation: Animation {
+                    offset: offset.clone(),
+                    ..Animation::new(Point::ZERO)
+                },
+            }
+        })
+        .collect())
+}
+
+fn unshown(later: &Later) -> Error {
+    Error::new(
+        later.space.span,
+        "`space shown` needs a name the timeline first shows with `show` or `fade NAME in`",
+    )
 }
 
 /// Set the track that `channel` names of cell `cell` of `row`, the row
@@ -1797,6 +1878,66 @@ mod tests {
         assert_eq!(
             err("timeline { 1s { text a \"4\"; } 1s { text a \"5\"; } }"),
             "this changes the text of `a` at 1s, as another `text` does"
+        );
+    }
+
+    #[test]
+    fn children_after_a_space_shown_child_close_up_until_it_shows() {
+        let s = canvas(
+            "stack { at 0 0; gap 10;
+                box { size 50 20; }
+                box b { size 50 30; space shown; }
+                box c { size 50 40; space shown; }
+                box { size 50 20; }
+            }
+            timeline { 1s { show b; } 2s to 4s ease linear { fade c in; } }",
+        );
+        let top = |i: usize, t: f64| rect(&s, i, t).0.y;
+        assert_eq!(top(3, 0.0), 30.0);
+        assert_eq!([top(1, 1.0), top(3, 1.0)], [30.0, 70.0]);
+        assert_eq!(
+            [top(3, 1.99), top(2, 3.0), top(3, 2.0)],
+            [70.0, 70.0, 120.0]
+        );
+    }
+
+    #[test]
+    fn a_stack_across_closes_up_across_and_a_last_child_moves_nothing() {
+        let s = canvas(
+            "stack { at 0 0; direction right; gap 5; align center;
+                box b { size 20 40; space shown; }
+                box { size 30 20; }
+                box c { size 30 20; space shown; }
+            }
+            timeline { 1s { show b; show c; } }",
+        );
+        assert_eq!(rect(&s, 1, 0.0).0, Point::new(0.0, 10.0));
+        assert_eq!(rect(&s, 1, 1.0).0, Point::new(25.0, 10.0));
+        assert_eq!(rect(&s, 2, 1.0).0, Point::new(60.0, 10.0));
+    }
+
+    #[test]
+    fn space_shown_needs_a_stack_and_a_first_show() {
+        let err = |body: &str| {
+            let src = format!("canvas {{ size 600 400; {body} }}");
+            build(&parse(&src).unwrap(), &[], &[]).unwrap_err().message
+        };
+        let unshown =
+            "`space shown` needs a name the timeline first shows with `show` or `fade NAME in`";
+        assert_eq!(
+            err("box b { size 5 5; space shown; } timeline { 1s { show b; } }"),
+            "`space shown` is for a child of a stack"
+        );
+        assert_eq!(err("stack { box b { size 5 5; space shown; } }"), unshown);
+        assert_eq!(
+            err(
+                "stack { box b { size 5 5; space shown; } } timeline { 1s { hide b; } 2s { show b; } }"
+            ),
+            unshown
+        );
+        assert_eq!(
+            err("stack { box { size 5 5; space soon; } }"),
+            "`space` is always or shown"
         );
     }
 }
