@@ -146,6 +146,18 @@ const HEAD_SIZE: Property = prop(
     "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
 );
 
+const LABEL_SIDE: Property = prop(
+    "label-side",
+    "above | left | right | on",
+    "which side of the line the label sits on; left and right are as seen going from `from` to `to`, and above is the side that faces up; on centers it on the line, which breaks around it, leaving the same gap a label beside the line keeps",
+);
+
+const LABEL_AT: Property = prop(
+    "label-at",
+    "F",
+    "how far along the line the label sits, from 0 at `from` to 1 at `to`; the default is 0.5",
+);
+
 const SWEEP: &[Property] = &[
     FROM,
     TO,
@@ -173,6 +185,12 @@ const SWEEP: &[Property] = &[
         "what it draws at `from`",
     ),
     HEAD_SIZE,
+    LABEL,
+    LABEL_SIDE,
+    LABEL_AT,
+    TEXT_SIZE,
+    TEXT_COLOR,
+    FONT,
     ANCHOR,
     STYLE,
 ];
@@ -205,16 +223,8 @@ const CONNECTOR: &[Property] = &[
     ),
     HEAD_SIZE,
     LABEL,
-    prop(
-        "label-side",
-        "above | left | right",
-        "which side of the line the label sits on; left and right are as seen going from `from` to `to`, and above is the side that faces up",
-    ),
-    prop(
-        "label-at",
-        "F",
-        "how far along the line the label sits, from 0 at `from` to 1 at `to`; the default is 0.5",
-    ),
+    LABEL_SIDE,
+    LABEL_AT,
     prop(
         "side",
         "top | bottom | left | right",

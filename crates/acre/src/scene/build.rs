@@ -1803,15 +1803,7 @@ fn connector(
         tail: props.choice("tail", Head::None, &HEADS)?,
         head_size: props.number("head-size")?,
         label: props.label("label", "text-size", "text-color", names)?,
-        label_side: props.choice(
-            "label-side",
-            LabelSide::Above,
-            &[
-                ("above", LabelSide::Above),
-                ("left", LabelSide::Left),
-                ("right", LabelSide::Right),
-            ],
-        )?,
+        label_side: props.choice("label-side", LabelSide::Above, &LABEL_SIDES)?,
         label_at: props.number_or("label-at", 0.5)?,
     })
 }
@@ -1848,9 +1840,9 @@ fn sweep(node: &Node, names: &Names, offset: Point) -> Result<Connector, Error> 
         head: props.choice("head", Head::Triangle, &HEADS)?,
         tail: props.choice("tail", Head::None, &HEADS)?,
         head_size: props.number("head-size")?,
-        label: None,
-        label_side: LabelSide::Above,
-        label_at: 0.5,
+        label: props.label("label", "text-size", "text-color", names)?,
+        label_side: props.choice("label-side", LabelSide::Above, &LABEL_SIDES)?,
+        label_at: props.number_or("label-at", 0.5)?,
     })
 }
 
@@ -1876,6 +1868,13 @@ const DIRS: [(&str, Dir); 4] = [
     ("down", Dir::Down),
     ("left", Dir::Left),
     ("right", Dir::Right),
+];
+
+const LABEL_SIDES: [(&str, LabelSide); 4] = [
+    ("above", LabelSide::Above),
+    ("left", LabelSide::Left),
+    ("right", LabelSide::Right),
+    ("on", LabelSide::On),
 ];
 
 const HEADS: [(&str, Head); 4] = [
@@ -3260,15 +3259,18 @@ mod tests {
     }
 
     #[test]
-    fn a_sweep_reads_its_ways_and_heads() {
+    fn a_sweep_reads_its_ways_heads_and_label() {
         let s = scene(
             "canvas { size 100 100;
                 box a { at 60 60; size 10 10; }
-                sweep { from 0 0; to a top; leave down; head-size 4; } }",
+                sweep { from 0 0; to a top; leave down; head-size 4;
+                    label \"x\"; label-side on; label-at 0.25; } }",
         )
         .unwrap();
         match &s.objects[1].kind {
             Kind::Connector(c) => {
+                assert!(c.label.is_some());
+                assert_eq!((c.label_side, c.label_at), (LabelSide::On, 0.25));
                 assert_eq!(
                     c.route,
                     Route::Sweep {

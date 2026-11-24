@@ -64,6 +64,8 @@ pub enum LabelSide {
     Left,
     /// The right of the way from start to end.
     Right,
+    /// Centered on the line, which breaks around it.
+    On,
 }
 
 /// A line from `from` to `to` along a route, with a head at either
@@ -225,29 +227,49 @@ impl Connector {
         if path.len() < 2 {
             return;
         }
+        let (i, at, along) = point_at(&path, self.label_at);
+        let label = self
+            .label
+            .as_ref()
+            .map(|label| self.place_label(label, at, along));
+        // the box the line breaks around, the label's own padded by
+        // the gap a label beside the line keeps from it
+        let gap = match &label {
+            Some((_, half)) if self.label_side == LabelSide::On => {
+                let pad = *half + Point::new(LABEL_GAP, LABEL_GAP);
+                Some((at - pad, at + pad))
+            }
+            _ => None,
+        };
         if let Route::Sweep { .. } = self.route {
             let length: f64 = path.windows(2).map(|w| length(w[1] - w[0])).sum();
-            self.draw_sweep(length, out);
-            return;
+            self.draw_sweep(length, gap, out);
+        } else if let Some((min, max)) = gap {
+            let after = leave_box([at].iter().chain(&path[i + 1..]), min, max);
+            let mut before = leave_box([at].iter().chain(path[..=i].iter().rev()), min, max);
+            before.reverse();
+            let stroke = self.stroke;
+            draw_shaft(&before, stroke, Head::None, self.tail, self.head_size, out);
+            draw_shaft(&after, stroke, self.head, Head::None, self.head_size, out);
+        } else {
+            draw_shaft(
+                &path,
+                self.stroke,
+                self.head,
+                self.tail,
+                self.head_size,
+                out,
+            );
         }
-        draw_shaft(
-            &path,
-            self.stroke,
-            self.head,
-            self.tail,
-            self.head_size,
-            out,
-        );
-        if let Some(label) = &self.label {
-            let (at, along) = point_at(&path, self.label_at);
-            out.push(self.place_label(label, at, along));
+        if let Some((text, _)) = label {
+            out.push(text);
         }
     }
 
     /// Draw a sweep's shaft as one cubic that ends where each head
-    /// begins, with the heads along the sweep's ways. `length` is the
-    /// curve's length, about.
-    fn draw_sweep(&self, length: f64, out: &mut Vec<Primitive>) {
+    /// begins, with the heads along the sweep's ways and a break where
+    /// it crosses the box `gap`. `length` is the curve's length, about.
+    fn draw_sweep(&self, length: f64, gap: Option<(Point, Point)>, out: &mut Vec<Primitive>) {
         let heads = [self.head, self.tail]
             .iter()
             .filter(|h| **h != Head::None)
@@ -260,13 +282,26 @@ impl Connector {
         let from = self.from + leave * cut(self.tail, size, avail);
         let to = self.to - arrive * cut(self.head, size, avail);
         let (c1, c2) = sweep_handles(from, to, leave, arrive);
-        out.push(Primitive::Cubic {
-            from,
-            c1,
-            c2,
-            to,
-            stroke: self.stroke,
-        });
+        let cubic = [from, c1, c2, to];
+        let pieces = match gap.and_then(|(min, max)| cubic_gap(cubic, min, max)) {
+            Some((t0, t1)) => [
+                (t0 > 0.0, split(cubic, t0).0),
+                (t1 < 1.0, split(cubic, t1).1),
+            ]
+            .into_iter()
+            .filter_map(|(drawn, piece)| drawn.then_some(piece))
+            .collect(),
+            None => vec![cubic],
+        };
+        for [from, c1, c2, to] in pieces {
+            out.push(Primitive::Cubic {
+                from,
+                c1,
+                c2,
+                to,
+                stroke: self.stroke,
+            });
+        }
         draw_head(self.head, self.to, arrive, self.stroke, size, avail, out);
         draw_head(
             self.tail,
@@ -404,18 +439,21 @@ impl Connector {
         (c1, c2)
     }
 
-    /// The label placed with its box clear of the line by `LABEL_GAP`.
+    /// The label placed with its box clear of the line by `LABEL_GAP`,
+    /// or centered on `at` when it sits on the line, and the half size
+    /// of its box.
     ///
     /// `along` is the direction of the line at `at`. The box is
     /// centered on the point `LABEL_GAP` plus the box's half extent
     /// along the normal away from `at`.
-    fn place_label(&self, label: &Label, at: Point, along: Point) -> Primitive {
+    fn place_label(&self, label: &Label, at: Point, along: Point) -> (Primitive, Point) {
         let left = Point::new(along.y, -along.x);
         let normal = match self.label_side {
             LabelSide::Left => left,
             LabelSide::Right => left * -1.0,
             LabelSide::Above if left.y < -1e-9 || (left.y.abs() <= 1e-9 && left.x > 0.0) => left,
             LabelSide::Above => left * -1.0,
+            LabelSide::On => Point::ZERO,
         };
         // the box runs from the first line's ascent down to the
         // baseline, so a descender may hang past it as it always has
@@ -428,10 +466,16 @@ impl Connector {
         );
         let (min, max) = layout.extent(Point::ZERO, HAlign::Center, VAlign::Baseline);
         let (half_w, ascent) = ((max.x - min.x) / 2.0, -min.y);
-        let reach = LABEL_GAP + normal.x.abs() * half_w + normal.y.abs() * ascent / 2.0;
+        let reach = match self.label_side {
+            LabelSide::On => 0.0,
+            _ => LABEL_GAP + normal.x.abs() * half_w + normal.y.abs() * ascent / 2.0,
+        };
         let center = at + normal * reach;
         let origin = Point::new(center.x - (min.x + max.x) / 2.0, center.y + ascent / 2.0);
-        label.at(origin, HAlign::Center, VAlign::Baseline)
+        (
+            label.at(origin, HAlign::Center, VAlign::Baseline),
+            Point::new(half_w, ascent / 2.0),
+        )
     }
 }
 
@@ -604,20 +648,104 @@ fn shorten_end(path: &mut Vec<Point>, mut by: f64) {
     }
 }
 
-/// The point a fraction `f` of the way along `path` by length, and
-/// the unit direction of the segment it lies on.
-fn point_at(path: &[Point], f: f64) -> (Point, Point) {
+/// The point a fraction `f` of the way along `path` by length, the
+/// index of the segment it lies on, and that segment's unit direction.
+fn point_at(path: &[Point], f: f64) -> (usize, Point, Point) {
     let total: f64 = path.windows(2).map(|w| length(w[1] - w[0])).sum();
     let mut left = f.clamp(0.0, 1.0) * total;
     for (i, w) in path.windows(2).enumerate() {
         let seg = length(w[1] - w[0]);
         if left <= seg || i == path.len() - 2 {
             let dir = (w[1] - w[0]) * (1.0 / seg);
-            return (w[0] + dir * left.min(seg), dir);
+            return (i, w[0] + dir * left.min(seg), dir);
         }
         left -= seg;
     }
     unreachable!("a path has two points")
+}
+
+/// The rest of `path`, which starts inside the box from `min` to
+/// `max`, from where it first leaves the box, or nothing when it
+/// never leaves.
+fn leave_box<'a>(path: impl Iterator<Item = &'a Point>, min: Point, max: Point) -> Vec<Point> {
+    let exit = |p: f64, d: f64, lo: f64, hi: f64| {
+        if d > 0.0 {
+            (hi - p) / d
+        } else if d < 0.0 {
+            (lo - p) / d
+        } else {
+            f64::INFINITY
+        }
+    };
+    let mut rest = Vec::new();
+    let mut prev: Option<Point> = None;
+    for &p in path {
+        match prev {
+            Some(a) if rest.is_empty() => {
+                let d = p - a;
+                let t = exit(a.x, d.x, min.x, max.x).min(exit(a.y, d.y, min.y, max.y));
+                if t < 1.0 {
+                    rest.push(a + d * t);
+                    rest.push(p);
+                }
+            }
+            Some(_) => rest.push(p),
+            None => {}
+        }
+        prev = Some(p);
+    }
+    rest
+}
+
+/// The parameters at which `cubic` enters and leaves the box from
+/// `min` to `max` around the point of the curve nearest the box's
+/// center, or none when that point lies outside the box.
+fn cubic_gap(cubic: [Point; 4], min: Point, max: Point) -> Option<(f64, f64)> {
+    const STEPS: usize = 64;
+    let at = |t: f64| {
+        let u = 1.0 - t;
+        cubic[0] * (u * u * u)
+            + cubic[1] * (3.0 * u * u * t)
+            + cubic[2] * (3.0 * u * t * t)
+            + cubic[3] * (t * t * t)
+    };
+    let inside = |t: f64| {
+        let p = at(t);
+        p.x > min.x && p.x < max.x && p.y > min.y && p.y < max.y
+    };
+    let center = (min + max) * 0.5;
+    let middle = (0..=STEPS)
+        .map(|i| i as f64 / STEPS as f64)
+        .min_by(|a, b| length(at(*a) - center).total_cmp(&length(at(*b) - center)))?;
+    if !inside(middle) {
+        return None;
+    }
+    // step out each way to the first point outside, then halve the
+    // last step 30 times to find where the curve crosses its edge
+    let crossing = |step: f64| {
+        let mut t = middle;
+        while (0.0..=1.0).contains(&(t + step)) && inside(t + step) {
+            t += step;
+        }
+        let (mut a, mut b) = (t, (t + step).clamp(0.0, 1.0));
+        for _ in 0..30 {
+            let m = (a + b) / 2.0;
+            if inside(m) { a = m } else { b = m }
+        }
+        b
+    };
+    Some((crossing(-1.0 / STEPS as f64), crossing(1.0 / STEPS as f64)))
+}
+
+/// `cubic` split at parameter `t` into the curve before and the curve
+/// after.
+fn split(cubic: [Point; 4], t: f64) -> ([Point; 4], [Point; 4]) {
+    let lerp = |a: Point, b: Point| a + (b - a) * t;
+    let [p0, p1, p2, p3] = cubic;
+    let (ab, bc, cd) = (lerp(p0, p1), lerp(p1, p2), lerp(p2, p3));
+    let (abc, bcd) = (lerp(ab, bc), lerp(bc, cd));
+    let mid = lerp(abc, bcd);
+    ([p0, ab, abc, mid], [mid, bcd, cd, p3])
 }
 
 #[cfg(test)]
@@ -1151,5 +1279,104 @@ mod tests {
             panic!("expected a label");
         };
         assert!((origin.x - 25.0).abs() < 1e-9);
+    }
+
+    /// The first and last point of each stretch of shaft drawn.
+    fn shaft_ends(c: &Connector) -> Vec<(Point, Point)> {
+        let mut out = Vec::new();
+        c.draw(&mut out);
+        out.iter()
+            .filter_map(|p| match p {
+                Primitive::Line { from, to, .. } | Primitive::Cubic { from, to, .. } => {
+                    Some((*from, *to))
+                }
+                Primitive::Polyline { points, .. } => Some((points[0], points[points.len() - 1])),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The label's box padded by the gap the line breaks around it.
+    fn break_box(c: &Connector) -> (Point, Point) {
+        let (min, max) = label_box(c);
+        let pad = Point::new(LABEL_GAP, LABEL_GAP);
+        (min - pad, max + pad)
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn a_label_on_a_straight_line_breaks_it_around_the_label() {
+        let c = labeled(connector((0.0, 100.0), (200.0, 100.0)), LabelSide::On);
+        let (min, max) = break_box(&c);
+        assert!(close((min.x + max.x) / 2.0, 100.0));
+        assert!(close((min.y + max.y) / 2.0, 100.0));
+        let ends = shaft_ends(&c);
+        assert_eq!(ends.len(), 2);
+        assert_eq!(ends[0].0, Point::new(0.0, 100.0));
+        assert!(close(ends[0].1.x, min.x));
+        assert!(close(ends[1].0.x, max.x));
+        assert_eq!(ends[1].1, Point::new(200.0, 100.0));
+    }
+
+    #[test]
+    fn a_label_on_an_elbow_breaks_the_segment_it_sits_on() {
+        // the elbow runs (0, 0), (100, 0), (100, 100), (200, 100), so
+        // halfway along is the middle of its upright segment
+        let mut c = labeled(connector((0.0, 0.0), (200.0, 100.0)), LabelSide::On);
+        c.route = Route::Elbow;
+        c.head = Head::Triangle;
+        let (min, max) = break_box(&c);
+        let ends = shaft_ends(&c);
+        assert_eq!(ends.len(), 2);
+        assert_eq!(ends[0].0, Point::ZERO);
+        assert!(close(ends[0].1.x, 100.0) && close(ends[0].1.y, min.y));
+        assert!(close(ends[1].0.x, 100.0) && close(ends[1].0.y, max.y));
+        let mut out = Vec::new();
+        c.draw(&mut out);
+        assert!(out.iter().any(|p| matches!(p,
+            Primitive::Polygon { points, .. } if points[0] == Point::new(200.0, 100.0))));
+    }
+
+    #[test]
+    fn a_label_on_a_sweep_breaks_its_curve_at_the_label_box() {
+        let mut c = labeled(connector((0.0, 0.0), (200.0, 100.0)), LabelSide::On);
+        c.route = Route::Sweep {
+            leave: Some(Dir::Right),
+            enter: Some(Dir::Right),
+        };
+        let (min, max) = break_box(&c);
+        let on_edge = |p: Point| {
+            let within = |v: f64, lo: f64, hi: f64| v > lo - 1e-6 && v < hi + 1e-6;
+            within(p.x, min.x, max.x)
+                && within(p.y, min.y, max.y)
+                && [p.x - min.x, max.x - p.x, p.y - min.y, max.y - p.y]
+                    .iter()
+                    .any(|d| d.abs() < 1e-6)
+        };
+        let ends = shaft_ends(&c);
+        assert_eq!(ends.len(), 2);
+        assert_eq!(ends[0].0, Point::ZERO);
+        assert!(on_edge(ends[0].1), "{:?}", ends[0].1);
+        assert!(on_edge(ends[1].0), "{:?}", ends[1].0);
+        assert!(ends[0].1.x < ends[1].0.x);
+    }
+
+    #[test]
+    fn a_break_follows_the_line_when_its_ends_move() {
+        let c = labeled(connector((0.0, 100.0), (200.0, 100.0)), LabelSide::On);
+        let (min, _) = break_box(&c);
+        let half = 100.0 - min.x;
+        let doubled = Motion {
+            pivot: Point::new(0.0, 100.0),
+            scale: 2.0,
+            offset: Point::ZERO,
+        };
+        let moved = c.followed([Motion::NONE, doubled]);
+        let ends = shaft_ends(&moved);
+        assert!(close(ends[0].1.x, 200.0 - half));
+        assert!(close(ends[1].0.x, 200.0 + half));
     }
 }

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `label-side on` sets a connector's label centered on its line at
+  `label-at`. acre breaks the line around the label's box and leaves on each
+  side the gap that a label beside a line keeps from it. On an elbow the
+  break falls on the segment that holds the label. The break moves with the
+  line when a timeline moves or scales its ends. `LabelSide::On` is the new
+  variant.
+- `sweep` takes `label`, `label-side`, `label-at`, `text-size`, `text-color`
+  and `font`, as `arrow` does.
 - `at NAME SIDE F` puts a node at the point F of the way along a side of the
   thing NAME names. F runs from 0 to 1, left to right on the top and bottom
   and top to bottom on the left and right. Two numbers after F move the point.
