@@ -280,6 +280,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A `row` is as tall as its tallest note needs. When a note would reach past
+  the bottom of `unit`, every cell of the row grows until the note fits. A
+  stack places the next node below the taller row, and braces and arrows meet
+  its new edge.
+- In a `row` where any cell has a note, every cell's text sits where the text
+  of a cell with a note sits, so the texts of the row line up. `Row` has a new
+  field, `noted`, that records this.
 - `scene::build` takes a third argument, the bytes of each file
   `scene::data_files` lists, in that order.
 - At the time of its first keyframe, a `Track` takes the last keyframe at that

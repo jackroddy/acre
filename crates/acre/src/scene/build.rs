@@ -1288,7 +1288,8 @@ fn row(node: &Node, names: &Names, offset: Point) -> Result<Row, Error> {
     }
     Ok(Row {
         origin,
-        unit: Point::new(unit_w, unit_h),
+        unit: Point::new(unit_w, super::row::height(unit_h, &cells)),
+        noted: cells.iter().any(|c| c.note.is_some()),
         gap: props.number_or("gap", 0.0)?,
         radius: props.number_or("radius", 0.0)?,
         cells,
@@ -2738,7 +2739,7 @@ mod tests {
             r#"canvas { size 200 100;
                 palette dna { symbol "A" #ff0000 "01"; }
                 row r {
-                    at 10 20; unit 10 30; span 2; palette dna; notes show;
+                    at 10 20; unit 10 30; span 2; palette dna; notes show; note-size 8;
                     cells "A" "C";
                     cell { span 1; fill none; }
                 }
@@ -3184,6 +3185,57 @@ mod tests {
         assert_eq!(caption.origin.y, frame.origin.y + frame.size.y + 4.0);
         assert_eq!(frame.size.x, 300.0);
         assert_eq!(heading(6).1, "aside");
+    }
+
+    #[test]
+    fn a_row_is_as_tall_as_its_tallest_note_reaches() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                stack r { at 0 0; gap 0;
+                    row r { unit 20 20; note-size 30; cell { text "a"; } cell { note "x"; } }
+                    box b { size 10 10; }
+                }
+                row low { at 0 200; unit 20 60; note-size 10; cell { note "x"; } } }"#,
+        )
+        .unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        let height = row.unit.y;
+        assert!(height > 20.0);
+        let (_, max) = s.bounds(0, 0.0).unwrap();
+        assert!((max.y - height).abs() < 1e-9, "{max:?} {height}");
+        let Kind::Shape(b) = &s.objects[1].kind else {
+            panic!("expected a box");
+        };
+        assert_eq!(b.origin.y, height);
+        let Kind::Row(low) = &s.objects[2].kind else {
+            panic!("expected a row");
+        };
+        assert_eq!(low.unit.y, 60.0);
+    }
+
+    #[test]
+    fn a_row_with_a_note_lines_up_every_label() {
+        let s = scene(
+            r#"canvas { size 400 400;
+                row r { unit 20 40; cell { text "a"; } cell { text "b"; note "x"; } } }"#,
+        )
+        .unwrap();
+        let Kind::Row(row) = &s.objects[0].kind else {
+            panic!("expected a row");
+        };
+        let mut prims = Vec::new();
+        row.draw(&mut prims);
+        let ys: Vec<f64> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text { origin, runs, .. } if runs[0].text != "x" => Some(origin.y),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ys.len(), 2);
+        assert_eq!(ys[0], ys[1]);
     }
 
     #[test]

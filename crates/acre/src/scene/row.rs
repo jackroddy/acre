@@ -1,6 +1,6 @@
 use super::Target;
 use super::diagram::Label;
-use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign};
+use super::primitive::{Color, HAlign, Point, Primitive, Stroke, VAlign, bounds};
 
 /// A horizontal run of cells on a grid of equal units, for words of
 /// bits, arrays and strings. A cell covers a whole number of units.
@@ -10,6 +10,9 @@ pub struct Row {
     pub origin: Point,
     /// The width of one unit and the height of the row.
     pub unit: Point,
+    /// Whether any cell has a note, which raises every cell's label so
+    /// the labels of the row line up.
+    pub noted: bool,
     /// The space left between neighbouring cells.
     pub gap: f64,
     /// The radius of each cell's rounded corners.
@@ -33,6 +36,33 @@ pub struct RowCell {
     /// Small text under the label, one character to a unit when it has
     /// as many characters as the cell has units.
     pub note: Option<Label>,
+}
+
+/// Where a note's middle sits, as a share of the cell's height.
+const NOTE_Y: f64 = 0.78;
+
+/// Where a label's middle sits in a row with notes, as a share of the
+/// cell's height.
+const NOTED_LABEL_Y: f64 = 0.4;
+
+/// The height of a row of `cells` on units `unit` tall: the unit, or
+/// taller when the tallest note would reach past the bottom of a cell.
+pub(crate) fn height(unit: f64, cells: &[RowCell]) -> f64 {
+    let below = cells
+        .iter()
+        .filter_map(|c| c.note.as_ref())
+        .filter_map(|n| {
+            bounds(
+                &n.fonts,
+                &[n.at(Point::ZERO, HAlign::Center, VAlign::Middle)],
+            )
+        })
+        .map(|(_, max)| max.y)
+        .fold(0.0, f64::max);
+    // `below` is how far a note reaches under its middle, and
+    // the note's bottom meets the cell's at
+    //   NOTE_Y * h + below = h
+    unit.max(below / (1.0 - NOTE_Y))
 }
 
 impl Row {
@@ -64,9 +94,10 @@ impl Row {
             });
         }
         let center = origin + size * 0.5;
-        let label_y = match &cell.note {
-            Some(_) => origin.y + size.y * 0.4,
-            None => center.y,
+        let label_y = if self.noted {
+            origin.y + size.y * NOTED_LABEL_Y
+        } else {
+            center.y
         };
         if let Some(label) = &cell.label {
             out.push(label.at(
@@ -76,7 +107,7 @@ impl Row {
             ));
         }
         if let Some(note) = &cell.note {
-            let y = origin.y + size.y * 0.78;
+            let y = origin.y + size.y * NOTE_Y;
             let text = note.text();
             let chars = text.chars().count();
             if chars == cell.span && chars > 1 {
@@ -113,6 +144,7 @@ mod tests {
         let row = Row {
             origin: Point::new(10.0, 20.0),
             unit: Point::new(16.0, 40.0),
+            noted: false,
             gap: 2.0,
             radius: 0.0,
             cells: vec![cell(0, 3), cell(3, 1)],
