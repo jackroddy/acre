@@ -51,6 +51,8 @@ pub struct Shown {
 struct Drawn {
     pane: Vec2,
     pixels_per_point: f32,
+    /// The longest side, in pixels, the GPU takes for a texture.
+    max_side: f32,
     zoom: f32,
     origin: Vec2,
     scene: u64,
@@ -58,9 +60,18 @@ struct Drawn {
 }
 
 impl Drawn {
-    /// How far past each edge of the pane the texture reaches, in points.
+    /// How far past each edge of the pane the texture reaches, in points,
+    /// cut back so the texture fits within `max_side`.
     fn overdraw(&self) -> Vec2 {
-        (self.pane * OVERDRAW).round()
+        let room = (Vec2::splat(self.max_side / self.pixels_per_point) - self.pane) / 2.0;
+        (self.pane * OVERDRAW).min(room.max(Vec2::ZERO)).floor()
+    }
+
+    /// Texture pixels per point: the screen's, or fewer when the pane
+    /// alone is wider or taller than `max_side` pixels.
+    fn texture_pixels_per_point(&self) -> f32 {
+        let area = self.pane + self.overdraw() * 2.0;
+        self.pixels_per_point.min(self.max_side / area.max_elem())
     }
 }
 
@@ -159,6 +170,7 @@ impl View {
         let wanted = Drawn {
             pane: rect.size(),
             pixels_per_point: ppp,
+            max_side: ui.ctx().input(|i| i.max_texture_side) as f32,
             zoom: self.zoom,
             origin: self.origin,
             scene: version,
@@ -219,10 +231,11 @@ impl View {
     fn draw(&mut self, ctx: &egui::Context, scene: &Scene, wanted: Drawn) -> bool {
         let overdraw = wanted.overdraw();
         let area = wanted.pane + overdraw * 2.0;
-        let ppp = wanted.pixels_per_point;
+        let ppp = wanted.texture_pixels_per_point();
+        let max_side = wanted.max_side as usize;
         let pixels = [
-            (area.x * ppp).round() as usize,
-            (area.y * ppp).round() as usize,
+            ((area.x * ppp).round() as usize).min(max_side),
+            ((area.y * ppp).round() as usize).min(max_side),
         ];
         if pixels[0] == 0 || pixels[1] == 0 {
             return false;
@@ -267,6 +280,7 @@ mod tests {
         Drawn {
             pane: Vec2::new(400.0, 200.0),
             pixels_per_point: 1.0,
+            max_side: 8192.0,
             zoom,
             origin,
             scene: 0,
@@ -300,5 +314,33 @@ mod tests {
         let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
         assert_eq!(cover.min, pos2(-200.0, -100.0));
         assert_eq!(cover.size(), Vec2::new(1200.0, 600.0));
+    }
+
+    fn texture_side(d: &Drawn) -> f32 {
+        ((d.pane + d.overdraw() * 2.0) * d.texture_pixels_per_point())
+            .round()
+            .max_elem()
+    }
+
+    #[test]
+    fn a_wide_pane_gives_up_overdraw_to_fit_the_gpu() {
+        // 3217 points at 2 pixels a point, 1.5x for overdraw, is 9651
+        // pixels; 8192 leaves 879 points to share between the two edges
+        let mut d = drawn(1.0, Vec2::ZERO);
+        d.pane = Vec2::new(3217.0, 1200.0);
+        d.pixels_per_point = 2.0;
+        assert_eq!(d.overdraw(), Vec2::new(439.0, 300.0));
+        assert_eq!(d.texture_pixels_per_point(), 2.0);
+        assert!(texture_side(&d) <= 8192.0);
+    }
+
+    #[test]
+    fn a_pane_wider_than_the_gpu_draws_at_fewer_pixels() {
+        let mut d = drawn(1.0, Vec2::ZERO);
+        d.pane = Vec2::new(5000.0, 1200.0);
+        d.pixels_per_point = 2.0;
+        assert_eq!(d.overdraw().x, 0.0);
+        assert!(d.texture_pixels_per_point() < 2.0);
+        assert_eq!(texture_side(&d), 8192.0);
     }
 }
