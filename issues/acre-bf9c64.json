@@ -1,0 +1,28 @@
+{
+  "id": "acre-bf9c64",
+  "title": "A glyph set in a fallback font loses its run's bold weight",
+  "body": "The heading \"stage 3: buckets → partitions → groups\" in the sufr pipeline figure in `sufr-figures` is set in `sans-bold`. That face has no `→`, so acre sets the arrows from a fallback font. They come out thinner and smaller than the bold words around them. The fallback order from acre-60d212 starts with `sans`, so the arrows probably come from the regular face. That has not been checked in the code.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T06:21:35.607811632Z",
+  "updated_at": "2026-11-24T06:21:35.607811632Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "58993b6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
