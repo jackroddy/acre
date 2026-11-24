@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:09:48.2255595Z",
+  "updated_at": "2026-11-24T07:14:26.324035141Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -285,6 +285,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "From acre-85e0c3, provisional: `at NAME SIDE F [DX DY]` puts a node at the point F of the way along a side of NAME, with F from 0 to 1, left to right on `top` and `bottom` and top to bottom on `left` and `right`. A row's cell takes `ROW N SIDE F` and a matrix's cell `MATRIX R C SIDE F`. In `at` the F is required, because `at NAME SIDE DX DY` would read DX as F. `from`, `to` and a `marker`'s `at` take `SIDE F` after a name, and a side alone still means its middle. On an ellipse the point lies on the outline. `place center | SIDE | CORNER` on box, ellipse, row, matrix, code, text and math names the point of the node's own box that `at` puts down. Without it a node sits by its top-left corner, or text and math by the point of their top edge that `align` names, so no existing figure moves. `place` is separate from `anchor`, which still names the point a timeline scales about. Table, ruler, group, panel, stack and grid take `SIDE F` in `at` but no `place`.",
       "commit": "8611c9b",
+      "branch": "dev"
+    },
+    {
+      "id": "291e9d6b",
+      "at": "2026-11-24T07:14:26.324032591Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "`label-side on` sets a connector's label centered on its line at `label-at`, and the line breaks around the label's box with the same gap a label beside a line keeps (`LABEL_GAP`), with no property for the gap. `sweep` takes `label`, `label-side`, `label-at`, `text-size`, `text-color` and `font` as `arrow` does. Example: `arrow { from ranks bottom; to key top; label \"prefix encoder\"; label-side on; }`. The syntax is provisional. It landed in 859da28 for acre-64fcb3.",
+      "commit": "859da28",
       "branch": "dev"
     }
   ],
