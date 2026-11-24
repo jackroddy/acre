@@ -3,7 +3,7 @@
   "title": "A tool palette in acre-gui creates boxes, ellipses, text, lines, arrows, polygons and polylines",
   "body": "Gestures as in `tmp-claude/2026-11-23-overnight/create-research.md`: one-shot tools in the toolbar; drag corner to corner for a box or ellipse, with snapping; a click places a text and opens its edit field; a drag from one object to another makes a line or arrow, ending by name on a shape (naming it if needed) and at a point elsewhere; clicks add polygon and polyline points, the first point closes a polygon, Done and Cancel finish. Each creation is one edit and selects the new node. A right-click menu on an object offers Delete and Duplicate.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:47:29.597958899Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.22859145Z",
-  "updated_at": "2026-11-24T20:32:29.597958899Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:38:09.11224008Z",
+  "closed_at": "2026-11-24T20:38:09.11224008Z",
+  "close_reason": "Landed in a428352 on dev. `tool.rs` in acre-gui holds the gesture rules: `Tool`, `click_path`, `corners`, `end_at` and `line_edits`. `Drag::create` draws without moving or selecting. `View::snap_point` snaps a new corner or point, and `View::context_menu` offers Delete and Duplicate. `App::add` builds the edited source before it calls `App::write`, and `App::select_added` selects the new node once the editor answers.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3818184",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a428352",
+      "branch": "dev"
+    }
   }
 }
