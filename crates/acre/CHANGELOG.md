@@ -257,6 +257,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gives the font that sets a character.
 - `Scene::missing_glyphs` lists each character in the scene's text that no
   font has.
+- `head-size N` on `arrow`, `line` and `polyline` sets the length of a
+  triangle or open head and the diameter of a dot, in pixels, at both ends.
+  Without it a triangle stays `8 + 3 × stroke-width` long and a dot
+  `5 + 3 × stroke-width` across. The shaft's length still caps both.
 
 ### Changed
 

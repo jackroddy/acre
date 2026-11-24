@@ -1097,6 +1097,7 @@ fn polyline(node: &Node, names: &Names, offset: Point) -> Result<Polyline, Error
         stroke,
         head: props.choice("head", Head::None, &HEADS)?,
         tail: props.choice("tail", Head::None, &HEADS)?,
+        head_size: props.number("head-size")?,
     })
 }
 
@@ -1512,6 +1513,7 @@ fn connector(
         )?,
         head: props.choice("head", default_head, &HEADS)?,
         tail: props.choice("tail", Head::None, &HEADS)?,
+        head_size: props.number("head-size")?,
         label: props.label("label", "text-size", "text-color", names)?,
         label_side: props.choice(
             "label-side",
@@ -2337,6 +2339,10 @@ impl<'a> Props<'a> {
                 format!("`{}` needs `{key}`", self.node.kind.text),
             )
         })
+    }
+
+    fn number(&self, key: &str) -> Result<Option<f64>, Error> {
+        self.get(key).map(|p| Ok(p.numbers::<1>()?[0])).transpose()
     }
 
     fn number_or(&self, key: &str, default: f64) -> Result<f64, Error> {
@@ -3215,7 +3221,7 @@ mod tests {
             "canvas { size 100 100;
                 line { from 0 0; to 50 50; }
                 arrow { from 0 0; to 50 50; route curve; head dot; tail open;
-                    label \"x\"; label-side right; label-at 0.25; } }",
+                    head-size 4; label \"x\"; label-side right; label-at 0.25; } }",
         )
         .unwrap();
         let connector = |i: usize| match &s.objects[i].kind {
@@ -3236,6 +3242,7 @@ mod tests {
         );
         assert_eq!(arrow.label_side, LabelSide::Right);
         assert_eq!(arrow.label_at, 0.25);
+        assert_eq!((line.head_size, arrow.head_size), (None, Some(4.0)));
         assert_eq!(
             connector_head("arrow { from 0 0; to 5 5; }"),
             Head::Triangle

@@ -145,6 +145,11 @@ const CONNECTOR: &[Property] = &[
         "none | triangle | open | dot",
         "what it draws at `from`",
     ),
+    prop(
+        "head-size",
+        "N",
+        "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
+    ),
     LABEL,
     prop(
         "label-side",
@@ -342,6 +347,11 @@ pub const NODES: &[NodeKind] = &[
                 "tail",
                 "none | triangle | open | dot",
                 "what it draws at the first point",
+            ),
+            prop(
+                "head-size",
+                "N",
+                "the length of a triangle or open head and the diameter of a dot, in pixels; without it, a triangle is 8 + 3 × stroke-width long and a dot 5 + 3 × stroke-width across",
             ),
             ANCHOR,
             STYLE,

@@ -55,6 +55,9 @@ pub struct Connector {
     pub head: Head,
     /// The head at `from`.
     pub tail: Head,
+    /// The length of a triangle or open head and the diameter of a
+    /// dot, when set.
+    pub head_size: Option<f64>,
     pub label: Option<Label>,
     pub label_side: LabelSide,
     /// How far along the route the label sits, from 0 at `from` to 1
@@ -194,7 +197,14 @@ impl Connector {
         if path.len() < 2 {
             return;
         }
-        draw_shaft(&path, self.stroke, self.head, self.tail, out);
+        draw_shaft(
+            &path,
+            self.stroke,
+            self.head,
+            self.tail,
+            self.head_size,
+            out,
+        );
         if let Some(label) = &self.label {
             let (at, along) = point_at(&path, self.label_at);
             out.push(self.place_label(label, at, along));
@@ -356,6 +366,7 @@ pub(super) fn draw_shaft(
     stroke: Stroke,
     head: Head,
     tail: Head,
+    head_size: Option<f64>,
     out: &mut Vec<Primitive>,
 ) {
     if path.len() < 2 {
@@ -370,10 +381,11 @@ pub(super) fn draw_shaft(
     let end_dir = (last - prev) * (1.0 / length(last - prev));
     let start_dir = (first - second) * (1.0 / length(first - second));
 
+    let size = HeadSize::new(stroke, head_size);
     let mut shaft = path.to_vec();
-    shorten_end(&mut shaft, cut(head, stroke, avail));
+    shorten_end(&mut shaft, cut(head, size, avail));
     shaft.reverse();
-    shorten_end(&mut shaft, cut(tail, stroke, avail));
+    shorten_end(&mut shaft, cut(tail, size, avail));
     shaft.reverse();
     if let [from, to] = shaft[..] {
         out.push(Primitive::Line { from, to, stroke });
@@ -383,25 +395,40 @@ pub(super) fn draw_shaft(
             stroke,
         });
     }
-    draw_head(head, last, end_dir, stroke, avail, out);
-    draw_head(tail, first, start_dir, stroke, avail, out);
+    draw_head(head, last, end_dir, stroke, size, avail, out);
+    draw_head(tail, first, start_dir, stroke, size, avail, out);
 }
 
-/// The distance a head takes off the end of the shaft.
-fn cut(head: Head, stroke: Stroke, avail: f64) -> f64 {
-    match head {
-        Head::None | Head::Open => 0.0,
-        Head::Triangle => head_len(stroke, avail),
-        Head::Dot => dot_radius(stroke).min(avail / 2.0),
+/// The size of a connector's heads before the shaft's length caps them.
+#[derive(Debug, Clone, Copy)]
+struct HeadSize {
+    /// The length of a triangle or open head.
+    len: f64,
+    dot_radius: f64,
+}
+
+impl HeadSize {
+    fn new(stroke: Stroke, head_size: Option<f64>) -> HeadSize {
+        match head_size {
+            Some(size) => HeadSize {
+                len: size,
+                dot_radius: size / 2.0,
+            },
+            None => HeadSize {
+                len: 8.0 + 3.0 * stroke.width,
+                dot_radius: 2.5 + 1.5 * stroke.width,
+            },
+        }
     }
 }
 
-fn head_len(stroke: Stroke, avail: f64) -> f64 {
-    (8.0 + 3.0 * stroke.width).min(avail)
-}
-
-fn dot_radius(stroke: Stroke) -> f64 {
-    2.5 + 1.5 * stroke.width
+/// The distance a head takes off the end of the shaft.
+fn cut(head: Head, size: HeadSize, avail: f64) -> f64 {
+    match head {
+        Head::None | Head::Open => 0.0,
+        Head::Triangle => size.len.min(avail),
+        Head::Dot => size.dot_radius.min(avail / 2.0),
+    }
 }
 
 /// Draw `head` with its tip at `tip`, on a line that arrives going
@@ -411,10 +438,11 @@ fn draw_head(
     tip: Point,
     dir: Point,
     stroke: Stroke,
+    size: HeadSize,
     avail: f64,
     out: &mut Vec<Primitive>,
 ) {
-    let len = head_len(stroke, avail);
+    let len = size.len.min(avail);
     let back = tip - dir * len;
     let side = Point::new(-dir.y, dir.x) * (len * 0.45);
     match head {
@@ -429,7 +457,7 @@ fn draw_head(
             stroke: Stroke::solid(stroke.color, stroke.width),
         }),
         Head::Dot => {
-            let r = dot_radius(stroke).min(avail / 2.0);
+            let r = size.dot_radius.min(avail / 2.0);
             out.push(Primitive::Ellipse {
                 center: tip - dir * r,
                 radius: Point::new(r, r),
@@ -491,6 +519,7 @@ mod tests {
             route: Route::Straight,
             head: Head::Triangle,
             tail: Head::None,
+            head_size: None,
             label: None,
             label_side: LabelSide::Above,
             label_at: 0.5,
@@ -547,6 +576,30 @@ mod tests {
                 assert_eq!(points[0], Point::new(100.0, 0.0));
             }
             other => panic!("expected a line and a head, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn head_size_sets_a_triangle_length_and_a_dot_diameter() {
+        let mut c = connector((0.0, 0.0), (100.0, 0.0));
+        c.head_size = Some(6.0);
+        c.tail = Head::Dot;
+        let mut out = Vec::new();
+        c.draw(&mut out);
+        match &out[..] {
+            [
+                Primitive::Line { from, to, .. },
+                Primitive::Polygon { points, .. },
+                Primitive::Ellipse { radius, .. },
+            ] => {
+                let near =
+                    |p: Point, x: f64, y: f64| (p.x - x).abs() < 1e-9 && (p.y - y).abs() < 1e-9;
+                assert!(near(*to, 94.0, 0.0), "{to:?}");
+                assert!(near(points[1], 94.0, 2.7), "{:?}", points[1]);
+                assert!(near(*from, 3.0, 0.0), "{from:?}");
+                assert!(near(*radius, 3.0, 3.0), "{radius:?}");
+            }
+            other => panic!("expected a line, a head and a dot, got {other:?}"),
         }
     }
 

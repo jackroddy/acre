@@ -121,6 +121,9 @@ pub struct Polyline {
     pub head: Head,
     /// The head at the first point.
     pub tail: Head,
+    /// The length of a triangle or open head and the diameter of a
+    /// dot, when set.
+    pub head_size: Option<f64>,
 }
 
 impl Polygon {
@@ -135,7 +138,14 @@ impl Polygon {
 
 impl Polyline {
     pub fn draw(&self, out: &mut Vec<Primitive>) {
-        connector::draw_shaft(&self.points, self.stroke, self.head, self.tail, out);
+        connector::draw_shaft(
+            &self.points,
+            self.stroke,
+            self.head,
+            self.tail,
+            self.head_size,
+            out,
+        );
     }
 }
 

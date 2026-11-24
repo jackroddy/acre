@@ -700,6 +700,7 @@ mod tests {
             route: Route::Straight,
             head: Head::None,
             tail: Head::None,
+            head_size: None,
             label: None,
             label_side: LabelSide::Above,
             label_at: 0.5,
