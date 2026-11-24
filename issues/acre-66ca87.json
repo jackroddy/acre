@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T06:31:10.400090683Z",
-  "updated_at": "2026-11-24T07:49:08.007875538Z",
+  "updated_at": "2026-11-24T22:27:45.097716519Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "On a220913 a run with the real viewer passed, though only part of this issue could be automated. `editors/nvim/tests/viewer.lua` runs `nvim --headless` with the plugin's own `start()`, which starts `target/release/acre-gui --stdio`. The test checks three things:\n\n- A broken buffer gets an error diagnostic at the right line and column.\n- Fixing the buffer clears the diagnostic.\n- Breaking it again brings the diagnostic back.\n\n`editors/nvim/tests/edit.lua` checks how the plugin handles an `edit` message, against a stand-in viewer.\n\nThese still need a person in decade:\n\n- where the viewer's window goes\n- rendering as you type: headless neovim never fires `TextChanged`, so the test sent the text through `BufWritePost`\n- a click on the render moving neovim's cursor\n\nThe test's window opened on the desktop, not in a decade pane. Nobody looked at the render or clicked it.",
       "commit": "a220913",
+      "branch": "dev"
+    },
+    {
+      "id": "dcfc0356",
+      "at": "2026-11-24T22:27:45.097715589Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack checked these by hand in decade on 2026-11-24, with the plugin loaded from editors/nvim and the release viewer at 64c7b3b. The viewer window opens where it should, and the render follows as he types. `:AcreView` in a second buffer moves the open viewer to it, `:b#` and `:AcreView` move it back, and `:AcreView` in the shown buffer closes it. Still to check: a click moving the cursor, an error as a diagnostic, a drag editing the buffer with one undo, a double-click text edit, and edits made while typing.",
+      "commit": "64c7b3b",
       "branch": "dev"
     }
   ],
