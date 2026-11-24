@@ -3,7 +3,7 @@
   "title": "head-size sets the size of a connector's heads",
   "body": "Today a connector's heads have a fixed size. In `crates/acre/src/scene/connector.rs`, `head_len` makes a triangle or open head `8 + 3 × stroke-width` pixels long, and `dot_radius` gives a dot a radius of `2.5 + 1.5 × stroke-width`. The shaft's length caps both. `arrow`, `line` and `polyline` all draw their heads through `draw_shaft`, so none of them can change the size.\n\nA figure with many thin arrows close together needs smaller heads. The sufr pipeline figure in `sufr-figures` draws about 100 arrows at stroke width 1.2 into a row of 8 px slots. Their 11.6 px heads overlap into a solid band.\n\n## Proposal\n\n`arrow`, `line` and `polyline` take `head-size N`, in pixels. It sets the length of a triangle or open head, and the diameter of a dot, at both `head` and `tail`. Without it the sizes stay as they are. The shaft's length still caps them.\n\n## Rejected\n\n- A scale factor such as `head-scale 0.5`. It would keep dots and triangles in proportion without a unit, but every other size in acre is in pixels.\n- Relying on `stroke-width`. A thinner stroke shrinks the head only a little. At width 0.5 a triangle is still 9.5 px long.",
   "type": "feature",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T03:54:16.039702263Z",
-  "updated_at": "2026-11-24T03:54:16.039702263Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T03:56:33.172220442Z",
+  "closed_at": "2026-11-24T03:56:33.172220442Z",
+  "close_reason": "Landed in 283ff9d on dev, as proposed.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "a541e3c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "283ff9d",
+      "branch": "dev"
+    }
   }
 }
