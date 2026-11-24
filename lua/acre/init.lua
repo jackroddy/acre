@@ -1,6 +1,7 @@
 -- The acre viewer for a buffer: acre-gui started with --stdio, sent
 -- the buffer's text and cursor as JSON lines, and answering with the
--- source's error and with clicks on the render.
+-- source's error, with clicks on the render, and with edits to the
+-- source.
 
 local M = {}
 
@@ -36,6 +37,7 @@ local function send_text()
     type = "text",
     text = table.concat(lines, "\n") .. "\n",
     path = vim.api.nvim_buf_get_name(buf),
+    tick = vim.api.nvim_buf_get_changedtick(buf),
   })
 end
 
@@ -61,6 +63,52 @@ local function position(buf, offset)
   return row, offset - vim.api.nvim_buf_get_offset(buf, row - 1)
 end
 
+-- the row and column, both 0-based, of byte `offset`
+local function place(buf, offset)
+  local row, col = position(buf, offset)
+  return row - 1, col
+end
+
+-- make `edits`, each {start, end, text} in bytes of the text sent,
+-- as one undo step
+local function apply(buf, edits)
+  local rows = vim.api.nvim_buf_line_count(buf)
+  local last = vim.api.nvim_buf_get_lines(buf, rows - 1, rows, true)[1]
+  local final_newline = vim.api.nvim_buf_get_offset(buf, rows - 1) + #last
+  local changes = {}
+  for _, edit in ipairs(edits) do
+    local start, finish, text = edit.start, edit["end"], edit.text
+    -- no buffer position follows the newline that ends the text, so a
+    -- range reaching past it ends before it and takes one less newline
+    if finish > final_newline then
+      finish = final_newline
+      text = text:gsub("\n$", "")
+      if start > final_newline then
+        start = final_newline
+        text = "\n" .. text
+      end
+    end
+    local start_row, start_col = place(buf, start)
+    local end_row, end_col = place(buf, finish)
+    table.insert(changes, {
+      at = start,
+      args = { start_row, start_col, end_row, end_col, vim.split(text, "\n", { plain = true }) },
+    })
+  end
+  -- the last range first, so the offsets of the earlier ones still hold
+  table.sort(changes, function(a, b)
+    return a.at > b.at
+  end)
+  vim.api.nvim_buf_call(buf, function()
+    -- starts a new undo step, so an edit that comes in insert mode
+    -- does not join what was typed
+    vim.cmd("let &l:undolevels = &l:undolevels")
+  end)
+  for _, change in ipairs(changes) do
+    vim.api.nvim_buf_set_text(buf, unpack(change.args))
+  end
+end
+
 local function receive(message)
   local buf = view.buf
   if message.type == "goto" then
@@ -83,6 +131,16 @@ local function receive(message)
     })
   elseif message.type == "ok" then
     vim.diagnostic.reset(ns, buf)
+  elseif message.type == "edit" then
+    -- an edit made for an older text would land in the wrong place,
+    -- so it is dropped and the viewer is sent the text as it is
+    if message.tick == vim.api.nvim_buf_get_changedtick(buf) then
+      local ok, err = pcall(apply, buf, message.edits)
+      if not ok then
+        vim.notify("acre: cannot make the edit: " .. err, vim.log.levels.ERROR)
+      end
+    end
+    send_text()
   end
 end
 
@@ -169,5 +227,6 @@ end
 
 -- for tests
 M._position = position
+M._receive = receive
 
 return M
