@@ -1,0 +1,30 @@
+{
+  "id": "acre-0cb9cf",
+  "title": "Dragging snaps to other objects and to an optional grid",
+  "body": "Dragging in acre-gui moves an object by the raw pointer offset, rounded to whole pixels by `scene::edit::move_edits`.\n\n## Proposal\n\n- While dragging, the left edge, centre and right edge of the dragged box snap to those of other objects, and so do the top, middle and bottom. A snap reaches about 6 screen pixels, so it feels the same at any zoom, and moving past that frees the object at once.\n- A thin guide line shows each snap that holds, so no snap is hidden.\n- A `Grid` toggle in the toolbar draws a faint grid, off by default, and snaps the box's top-left corner to it when no alignment snap holds. A number field beside it sets the spacing in canvas pixels, 10 by default.\n- A `Snap` toggle in the toolbar turns snapping off. No modifier key, since the viewer takes no new key bindings.\n- The snap logic is plain code with unit tests, apart from egui.",
+  "type": "feature",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": "acre-ef7221",
+  "blocked_by": [
+    "acre-ea7d58"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-24T18:41:30.081141052Z",
+  "updated_at": "2026-11-24T18:41:30.081141052Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "4c45d30",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
