@@ -3,7 +3,7 @@
   "title": "Dragging on empty canvas selects every node in the box",
   "body": "Selection in acre-gui holds one node (`selection.rs`, 12eb9d6), and a drag on empty canvas pans.\n\n## Proposal\n\n- The selection holds any number of nodes, each by tree path.\n- A drag on empty canvas draws a box and selects every top-level drawn node whose objects lie inside it. Panning moves to a middle-button drag, which already pans.\n- A click selects one node; a click on empty canvas clears.\n- Dragging any selected node moves all of them, as one set of edits, with snapping on their joint box.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:32:10.714247924Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.208619815Z",
-  "updated_at": "2026-11-24T20:17:10.714247924Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:21:51.910971308Z",
+  "closed_at": "2026-11-24T20:21:51.910971308Z",
+  "close_reason": "Landed in 7565686 on dev. `Selection` in `crates/acre-gui/src/selection.rs` holds several nodes by path. `selection::in_box` picks the outermost nodes whose objects all lie inside a box dragged on empty canvas. `selection::dragged` and `selection::move_edits` move every selected node as one edit list. A primary drag on empty canvas no longer pans. acre-a64d4d covers selected nodes that follow each other by name.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3818184",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "7565686",
+      "branch": "dev"
+    }
   }
 }
