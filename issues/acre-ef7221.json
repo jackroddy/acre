@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T06:36:24.36691482Z",
-  "updated_at": "2026-11-24T06:36:24.36691482Z",
+  "updated_at": "2026-11-24T07:54:29.108754471Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "5f504120",
+      "at": "2026-11-24T07:54:29.108753981Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Dragging an object to move it works as of aa7933d, and acre-cfb6e6 is closed. Still to do for this milestone:\n\n- resize handles that stretch a shape's `size`\n- dragging a vertex of `points`\n- dragging one end of a connector\n- reordering the children of a stack by dragging\n- the hand checks in acre-66ca87, which now include a drag in the real viewer with and without the neovim link",
+      "commit": "aa7933d",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "6faae32",
