@@ -16,6 +16,24 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- With the Line or Arrow tool, a box, ellipse, polygon, polyline, row,
+  matrix or code under the pointer shows nine dots: its centre, the
+  middles of its sides and its corners. An ellipse's corner dots sit
+  where the diagonals of its box cross the ellipse, which is where acre
+  ends a line there. An end within 8 screen points of a dot snaps to it
+  and writes `a top`, `a top-left` or, for the centre, the bare `a`.
+  Elsewhere within 8 points of the outline, the end writes `a top F` for
+  the nearest side, with F rounded to 2 decimals, and a dot marks the
+  spot. Inside the thing and away from its outline, the end writes the
+  bare name, which ends on the edge facing the other end. Polygons and
+  polylines take the dots of the box around them, as their ends do. A
+  copy a `repeat` draws shows no dots.
+- One selected line or arrow shows a handle on each end. While a handle
+  is dragged, the thing under the pointer shows the same dots. On
+  release acre-gui rewrites that end's `from` or `to`. The same edit
+  names the thing when it has no name. An end dropped on empty canvas
+  becomes a point. An end inside a `repeat`, or one given by a style, a `let` or
+  `( ... )`, is refused. A `merge`'s ends have no handles.
 - With two or more nodes selected, the toolbar shows Left, Centre, Right,
   Top, Middle and Bottom. Each lines up the selected nodes on that edge or
   centre of the box around them all. With three or more, Space across and

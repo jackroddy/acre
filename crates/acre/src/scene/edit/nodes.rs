@@ -11,9 +11,9 @@ use std::collections::HashSet;
 
 use super::{Moved, Mover, TextEdit, apply, locate, number, open_brace, places};
 use crate::lang::{self, Error, Node, Program, Span, Value, ValueKind};
-use crate::scene::Point;
 use crate::scene::build;
 use crate::scene::expand::RESERVED;
+use crate::scene::{Point, Side};
 
 /// A node a viewer draws, in source coordinates.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,12 +27,58 @@ pub enum NewNode {
     Polyline { points: Vec<Point> },
 }
 
-/// Where a new line or arrow ends: a point, or the edge of the thing a
-/// name names.
+/// Where an end of a line or an arrow sits: a point, the edge of the
+/// thing a name names that faces the other end, or a spot on that thing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EndAt {
     Point(Point),
     Name(String),
+    On(String, Spot),
+}
+
+/// A spot on the box of a thing an end names.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Spot {
+    /// The middle of a side, as in `a top`.
+    Side(Side),
+    /// A corner, as in `a top-left`.
+    Corner { top: bool, left: bool },
+    /// The point F of the way along a side, left to right or top to
+    /// bottom, as in `a top 0.25`.
+    Along(Side, f64),
+}
+
+impl EndAt {
+    /// The end as it is written after `from` or `to`, such as `a top-left`
+    /// or `40 60`, with every number rounded to two decimals.
+    pub fn text(&self) -> String {
+        match self {
+            EndAt::Point(p) => point_text(p),
+            EndAt::Name(name) => name.clone(),
+            EndAt::On(name, Spot::Side(side)) => format!("{name} {}", side_word(*side)),
+            EndAt::On(name, Spot::Corner { top, left }) => {
+                let y = if *top { "top" } else { "bottom" };
+                let x = if *left { "left" } else { "right" };
+                format!("{name} {y}-{x}")
+            }
+            EndAt::On(name, Spot::Along(side, f)) => {
+                format!("{name} {} {}", side_word(*side), number(*f, places(*f)))
+            }
+        }
+    }
+}
+
+fn side_word(side: Side) -> &'static str {
+    match side {
+        Side::Top => "top",
+        Side::Bottom => "bottom",
+        Side::Left => "left",
+        Side::Right => "right",
+    }
+}
+
+fn point_text(p: &Point) -> String {
+    format!("{} {}", number(p.x, places(p.x)), number(p.y, places(p.y)))
 }
 
 impl NewNode {
@@ -44,29 +90,33 @@ impl NewNode {
     ///
     /// If no string literal reads back as the text of a text.
     pub fn text(&self) -> Result<String, Error> {
-        let point =
-            |p: &Point| format!("{} {}", number(p.x, places(p.x)), number(p.y, places(p.y)));
-        let end = |e: &EndAt| match e {
-            EndAt::Point(p) => point(p),
-            EndAt::Name(name) => name.clone(),
-        };
-        let points = |ps: &[Point]| ps.iter().map(point).collect::<Vec<_>>().join(" ");
+        let points = |ps: &[Point]| ps.iter().map(point_text).collect::<Vec<_>>().join(" ");
         Ok(match self {
             NewNode::Box { at, size } => {
-                format!("box {{ at {}; size {}; }}", point(at), point(size))
+                format!(
+                    "box {{ at {}; size {}; }}",
+                    point_text(at),
+                    point_text(size)
+                )
             }
             NewNode::Ellipse { at, size } => {
-                format!("ellipse {{ at {}; size {}; }}", point(at), point(size))
+                format!(
+                    "ellipse {{ at {}; size {}; }}",
+                    point_text(at),
+                    point_text(size)
+                )
             }
             NewNode::Text { at, text } => {
                 let literal = lang::string_literal(text, false, "").ok_or_else(|| {
                     Error::new(Span::default(), "no string literal holds this text")
                 })?;
-                format!("text {{ at {}; text {literal}; }}", point(at))
+                format!("text {{ at {}; text {literal}; }}", point_text(at))
             }
-            NewNode::Line { from, to } => format!("line {{ from {}; to {}; }}", end(from), end(to)),
+            NewNode::Line { from, to } => {
+                format!("line {{ from {}; to {}; }}", from.text(), to.text())
+            }
             NewNode::Arrow { from, to } => {
-                format!("arrow {{ from {}; to {}; }}", end(from), end(to))
+                format!("arrow {{ from {}; to {}; }}", from.text(), to.text())
             }
             NewNode::Polygon { points: ps } => format!("polygon {{ points {}; }}", points(ps)),
             NewNode::Polyline { points: ps } => format!("polyline {{ points {}; }}", points(ps)),

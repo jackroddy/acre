@@ -1,6 +1,7 @@
 //! acre-gui: a viewer for acre drawings. It renders a file and follows
 //! its changes, or renders what an editor sends it over stdin.
 
+mod anchor;
 mod app;
 mod arrange;
 mod drag;

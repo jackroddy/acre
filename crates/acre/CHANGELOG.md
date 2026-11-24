@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::end_edits` works out the edit that puts the `from` or
+  `to` of a line or an arrow at a new end. It refuses another kind of
+  node, a node inside a `repeat`, and an end given by a style, a `let` or
+  `( ... )`. It does not check that the file still builds, so the caller
+  can add the edit that names the thing the end goes on.
+- `scene::edit::EndAt::On` puts an end at a spot on a named thing, and
+  `scene::edit::Spot` names the spot: a side's middle, a corner, or a
+  point F of the way along a side. `EndAt::text` writes an end as it
+  goes after `from` or `to`, such as `a top-left` or `a right 0.25`.
+  A `match` on `EndAt` needs an arm for the new variant.
 - `scene::edit::arrange_edits` works out the edits that move each of
   several nodes by an offset of its own, as one list of edits. An `at`
   that names another arranged node, or a thing inside one, gets its `DX

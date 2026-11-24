@@ -1,6 +1,8 @@
 use acre::lang::{Node, Program, Span};
+use acre::scene::Point;
 use acre::scene::edit::{self, EndAt, NewNode, TextEdit};
-use acre::scene::{Point, Scene};
+
+use crate::anchor::{self, Anchor, Outline};
 
 /// The size in pixels of a box or an ellipse placed by a click.
 pub const CLICKED_SIZE: Point = Point::new(80.0, 48.0);
@@ -60,7 +62,7 @@ impl Tool {
             Tool::Box | Tool::Ellipse => "drag corner to corner, or click for one 80 by 48",
             Tool::Text => "click to place a text and edit it",
             Tool::Line | Tool::Arrow => {
-                "drag from one end to the other; an end on a shape joins it"
+                "drag from one end to the other; an end on a dot or an edge of a shape joins it there, and one inside joins its nearest edge"
             }
             Tool::Polygon => "click each point, and click the first point again to close",
             Tool::Polyline => "click each point, and click the last point again to end",
@@ -130,29 +132,25 @@ pub fn added_path(program: &Program) -> Vec<usize> {
     vec![0, index]
 }
 
-/// Where an end of a new line or arrow goes.
+/// Where an end of a line or arrow goes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum End {
-    /// On the edge of the node with this span.
-    Node(Span),
+    /// On a thing, at a spot or on the edge facing the other end.
+    Node(Anchor),
     /// At a point in canvas pixels.
     Point(Point),
 }
 
-/// The end at canvas point `at` in `scene` at time `t`: the node that
-/// drew the object there when an end can name it, and `snapped`, the
-/// point `at` snaps to, when not.
-pub fn end_at(program: &Program, scene: &Scene, at: Point, snapped: Point, t: f64) -> End {
-    scene
-        .object_at(at, t)
-        .map(|i| scene.objects[i].source)
-        .filter(|&s| attachable(program, s).is_some())
-        .map_or(End::Point(snapped), End::Node)
+/// The end at canvas point `at`: the anchor there on the things of
+/// `outlines` within `reach` canvas pixels, and `snapped`, the point
+/// `at` snaps to, when there is none.
+pub fn end_at(outlines: &[Outline], at: Point, snapped: Point, reach: f64) -> End {
+    anchor::anchor_at(outlines, at, reach).map_or(End::Point(snapped), End::Node)
 }
 
 /// The node whose span is `span` when a line can end on it by name: a
 /// shape, row, matrix or code that no `repeat` draws copies of.
-fn attachable(program: &Program, span: Span) -> Option<&Node> {
+pub fn attachable(program: &Program, span: Span) -> Option<&Node> {
     let path = edit::node_path(program, span)?;
     let mut nodes = &program.nodes[..];
     let mut node = None;
@@ -165,6 +163,41 @@ fn attachable(program: &Program, span: Span) -> Option<&Node> {
         node = Some(n);
     }
     node.filter(|n| ATTACHABLE.contains(&n.kind.text.as_str()))
+}
+
+/// `end` as `source`, which parses as `program`, writes it, with the
+/// edits that name the thing it is on added to `edits` when it has no
+/// name yet. A point end is in canvas pixels, and `origin` is where the
+/// source's 0 0 falls on the canvas.
+fn end_text(
+    source: &str,
+    program: &Program,
+    end: End,
+    origin: Point,
+    edits: &mut Vec<TextEdit>,
+) -> Result<EndAt, acre::lang::Error> {
+    let anchor = match end {
+        End::Point(p) => return Ok(EndAt::Point(p - origin)),
+        End::Node(anchor) => anchor,
+    };
+    let span = anchor.outline.node;
+    let node = attachable(program, span)
+        .ok_or_else(|| acre::lang::Error::new(span, "no node can end it there"))?;
+    let name = match &node.name {
+        Some(name) => name.text.clone(),
+        None => {
+            // over the source with the names given so far, so two new
+            // names differ
+            let named = edit::apply(source, edits);
+            let name = edit::fresh_name(&named, &node.kind.text)?;
+            edits.extend(edit::name_edits(source, span, &name)?);
+            name
+        }
+    };
+    Ok(match anchor.spot {
+        None => EndAt::Name(name),
+        Some(spot) => EndAt::On(name, spot),
+    })
 }
 
 /// The edits to `source`, which parses as `program`, that add a line, or
@@ -182,7 +215,7 @@ pub fn line_edits(
 ) -> Result<Vec<TextEdit>, String> {
     let what = if arrow { "arrow" } else { "line" };
     match (from, to) {
-        (End::Node(a), End::Node(b)) if a == b => {
+        (End::Node(a), End::Node(b)) if a.outline.node == b.outline.node && a.spot == b.spot => {
             return Err(format!("an {what} needs two different things to join"));
         }
         (End::Point(a), End::Point(b)) if a == b => {
@@ -192,28 +225,8 @@ pub fn line_edits(
     }
     let fail = |e: acre::lang::Error| format!("cannot add the {what}: {}", e.message);
     let mut edits = Vec::new();
-    let mut ends = Vec::new();
-    for end in [from, to] {
-        let end_at = match end {
-            End::Point(p) => EndAt::Point(p - origin),
-            End::Node(span) => {
-                let node = attachable(program, span).ok_or("no node can end it there")?;
-                match &node.name {
-                    Some(name) => EndAt::Name(name.text.clone()),
-                    None => {
-                        // over the source with the names given so far,
-                        // so two new names differ
-                        let named = edit::apply(source, &edits);
-                        let name = edit::fresh_name(&named, &node.kind.text).map_err(fail)?;
-                        edits.extend(edit::name_edits(source, span, &name).map_err(fail)?);
-                        EndAt::Name(name)
-                    }
-                }
-            }
-        };
-        ends.push(end_at);
-    }
-    let [from, to]: [EndAt; 2] = ends.try_into().expect("two ends");
+    let from = end_text(source, program, from, origin, &mut edits).map_err(fail)?;
+    let to = end_text(source, program, to, origin, &mut edits).map_err(fail)?;
     let node = if arrow {
         NewNode::Arrow { from, to }
     } else {
@@ -221,6 +234,28 @@ pub fn line_edits(
     };
     let text = node.text().map_err(fail)?;
     edits.extend(edit::insert_edits(source, &text).map_err(fail)?);
+    Ok(edits)
+}
+
+/// The edits to `source`, which parses as `program`, that put end
+/// `which`, 0 for `from` and 1 for `to`, of the line or arrow whose span
+/// is `line` at `end`, and name the thing it is on when that has no
+/// name yet. A point end is in canvas pixels, and `origin` is where the
+/// source's 0 0 falls on the canvas. The error is the reason for the
+/// status line.
+pub fn end_edits(
+    source: &str,
+    program: &Program,
+    line: Span,
+    which: usize,
+    end: End,
+    origin: Point,
+) -> Result<Vec<TextEdit>, String> {
+    let fail = |e: acre::lang::Error| format!("cannot move the end: {}", e.message);
+    let mut edits = Vec::new();
+    let at = end_text(source, program, end, origin, &mut edits).map_err(fail)?;
+    let key = if which == 0 { "from" } else { "to" };
+    edits.extend(edit::end_edits(source, line, key, &at).map_err(fail)?);
     Ok(edits)
 }
 
@@ -238,9 +273,10 @@ mod tests {
     fn ends(src: &str, from: Point, to: Point) -> (End, End) {
         let program = parse(src).unwrap();
         let scene = scene::build(&program, &[], &[]).unwrap();
+        let outlines = anchor::outlines(&program, &scene, 0.0);
         (
-            end_at(&program, &scene, from, from, 0.0),
-            end_at(&program, &scene, to, to, 0.0),
+            end_at(&outlines, from, from, 8.0),
+            end_at(&outlines, to, to, 8.0),
         )
     }
 
@@ -277,6 +313,35 @@ mod tests {
         assert_eq!(to, End::Point(Point::new(150.0, 60.0)));
         let (copy, _) = ends(SRC, Point::new(105.0, 15.0), Point::ZERO);
         assert_eq!(copy, End::Point(Point::new(105.0, 15.0)));
+    }
+
+    #[test]
+    fn an_end_on_a_dot_or_an_edge_names_its_spot() {
+        let (from, to) = ends(SRC, Point::new(11.0, 49.0), Point::new(241.0, 110.0));
+        let out = drawn(SRC, from, to).unwrap();
+        assert!(
+            out.contains("arrow { from box1 bottom-left; to b right 0.25; }"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_moved_end_names_the_thing_it_lands_on() {
+        let src = "canvas { size 300 200; box { at 10 10; size 40 40; } \
+                   box b { at 200 100; size 40 40; } line { from 0 0; to b; } }";
+        let program = parse(src).unwrap();
+        let line = program.nodes[0].children[2].span;
+        let (on_box, _) = ends(src, Point::new(30.0, 10.0), Point::ZERO);
+        let edits = end_edits(src, &program, line, 0, on_box, Point::ZERO).unwrap();
+        let out = edit::apply(src, &edits);
+        assert!(out.contains("box box1 { at 10 10;"), "{out}");
+        assert!(out.contains("line { from box1 top; to b; }"), "{out}");
+        scene::build(&parse(&out).unwrap(), &[], &[]).unwrap();
+
+        let free = End::Point(Point::new(70.0, 20.5));
+        let edits = end_edits(src, &program, line, 1, free, Point::new(10.0, 10.0)).unwrap();
+        let out = edit::apply(src, &edits);
+        assert!(out.contains("line { from 0 0; to 60 10.5; }"), "{out}");
     }
 
     #[test]

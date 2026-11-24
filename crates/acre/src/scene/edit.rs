@@ -13,15 +13,17 @@
 //! shifts its span. [`insert_edits`], [`delete_edits`], [`copy_text`]
 //! and [`paste_edits`] add, delete and copy whole nodes.
 //! [`property_values`] reads a node's `fill`, `stroke` and the like, and
-//! [`property_edits`] sets them.
+//! [`property_edits`] sets them, and [`end_edits`] moves an end of a
+//! line or an arrow.
 
 mod nodes;
 mod properties;
 
 pub use nodes::{
-    EndAt, NewNode, copy_text, delete_edits, fresh_name, insert_edits, name_edits, paste_edits,
+    EndAt, NewNode, Spot, copy_text, delete_edits, fresh_name, insert_edits, name_edits,
+    paste_edits,
 };
-pub use properties::{Origin, Setting, property_edits, property_values};
+pub use properties::{Origin, Setting, end_edits, property_edits, property_values};
 
 use super::Point;
 use super::build::at_named;

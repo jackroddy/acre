@@ -1,7 +1,7 @@
 //! The source edits that set a property such as `fill` on nodes, and
 //! the reading of where each node's value comes from.
 
-use super::nodes::removal;
+use super::nodes::{EndAt, removal};
 use super::{Mover, TextEdit, apply, locate, own};
 use crate::lang::{self, Error, Node, Span, Value, ValueKind};
 use crate::scene::{build, schema};
@@ -213,6 +213,63 @@ pub fn property_edits(
     Ok(edits)
 }
 
+/// The edits to `source` that put end `key`, `from` or `to`, of the line
+/// or arrow whose span is `node` at `end`. The edits do not check that
+/// the file still builds, since a name `end` gives may come from other
+/// edits made with them, such as [`name_edits`](super::name_edits).
+///
+/// # Errors
+///
+/// If `source` does not parse, no node has the span `node`, it is no
+/// line or arrow, or the end is not its own to change: it is drawn once
+/// for each number of a `repeat`, or the end comes from a style, a `let`
+/// or `( ... )`.
+pub fn end_edits(source: &str, node: Span, key: &str, end: &EndAt) -> Result<Vec<TextEdit>, Error> {
+    let program = lang::parse(source)?;
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+    let kind = target.kind.text.as_str();
+    if !matches!(kind, "line" | "arrow") || !matches!(key, "from" | "to") {
+        return Err(Error::new(
+            target.kind.span,
+            format!("a `{kind}` has no end `{key}` to move"),
+        ));
+    }
+    if around.iter().any(|n| n.kind.text == "repeat") {
+        return Err(Error::new(
+            target.kind.span,
+            "the node is drawn once for each number of a `repeat`, so its ends are every copy's",
+        ));
+    }
+    let Some(p) = own(target, key) else {
+        return Err(Error::new(
+            target.kind.span,
+            format!("the `{key}` comes from a style, which other nodes may share; edit it by hand"),
+        ));
+    };
+    let mover = Mover {
+        source,
+        canvas,
+        target,
+        by: [0.0; 2],
+        moved: &[],
+        paste: false,
+    };
+    mover.literal(p)?;
+    let span = match (p.values.first(), p.values.last()) {
+        (Some(first), Some(last)) => Span {
+            start: first.span.start,
+            end: last.span.end,
+        },
+        _ => return Err(p.expected("an end")),
+    };
+    let text = end.text();
+    if source[span.start..span.end] == text {
+        return Ok(Vec::new());
+    }
+    Ok(vec![TextEdit { span, text }])
+}
+
 /// An error unless `value` is empty or reads as the values of one
 /// property, and nothing more.
 fn check_values(target: &Node, key: &str, value: &str) -> Result<(), Error> {
@@ -237,6 +294,7 @@ fn check_values(target: &Node, key: &str, value: &str) -> Result<(), Error> {
 mod tests {
     use super::*;
     use crate::lang::{format, parse};
+    use crate::scene::Point;
 
     /// The span of the node of `src` that starts with `node`.
     fn span_of(src: &str, node: &str) -> Span {
@@ -418,5 +476,59 @@ mod tests {
         let src = "canvas { size 100 100; box a { size 5 5; } line l { from 0 0; to 5 5; } }";
         let spans = [span_of(src, "box a"), span_of(src, "line l")];
         assert!(property_edits(src, &spans, "fill", "#000000").is_err());
+    }
+
+    /// `src` with end `key` of the node that starts with `node` at `end`,
+    /// after checking that the result keeps acre's layout and builds.
+    fn ended(src: &str, node: &str, key: &str, end: EndAt) -> String {
+        let out = apply(src, &end_edits(src, span_of(src, node), key, &end).unwrap());
+        assert_eq!(format(&out).unwrap(), out, "from\n{src}");
+        build(&parse(&out).unwrap(), &[], &[]).unwrap();
+        out
+    }
+
+    #[test]
+    fn an_end_takes_a_side_a_corner_a_point_along_or_a_point() {
+        use crate::scene::Side;
+        use crate::scene::edit::Spot;
+        let src = "canvas {\n    size 100 100;\n    box a { at 10 10; size 20 20; }\n    \
+                   arrow { from a; to 80 80; }\n}\n";
+        let on = |spot| EndAt::On("a".into(), spot);
+        let out = ended(src, "arrow", "from", on(Spot::Side(Side::Top)));
+        assert!(out.contains("arrow { from a top; to 80 80; }"), "{out}");
+        let corner = Spot::Corner {
+            top: false,
+            left: true,
+        };
+        let out = ended(src, "arrow", "from", on(corner));
+        assert!(
+            out.contains("arrow { from a bottom-left; to 80 80; }"),
+            "{out}"
+        );
+        let out = ended(src, "arrow", "from", on(Spot::Along(Side::Right, 0.254)));
+        assert!(out.contains("from a right 0.25; to"), "{out}");
+        let out = ended(src, "arrow", "from", EndAt::Point(Point::new(5.0, 7.5)));
+        assert!(out.contains("arrow { from 5 7.5; to 80 80; }"), "{out}");
+        let same = end_edits(src, span_of(src, "arrow"), "from", &EndAt::Name("a".into()));
+        assert_eq!(same.unwrap(), []);
+    }
+
+    #[test]
+    fn an_end_not_the_lines_own_is_refused() {
+        let end = EndAt::Point(Point::new(1.0, 1.0));
+        let refused = |src: &str, node: &str, key: &str| {
+            end_edits(src, span_of(src, node), key, &end)
+                .unwrap_err()
+                .message
+        };
+        let src = "canvas { size 100 100; let p 5 5; line { from p; to 9 9; } }";
+        assert!(refused(src, "line", "from").contains("`p` comes from a `let`"));
+        let src = "canvas { size 100 100; style line { from 0 0; } line { to 9 9; } }";
+        assert!(refused(src, "line { to", "from").contains("comes from a style"));
+        let src = "canvas { size 100 100; repeat i 0 2 { line { from 0 0; to 9 9; } } }";
+        assert!(refused(src, "line", "to").contains("`repeat`"));
+        let src = "canvas { size 100 100; box a { size 5 5; } line { from 0 0; to 9 9; } }";
+        assert!(refused(src, "box", "to").contains("no end"));
+        assert!(refused(src, "line", "label").contains("no end"));
     }
 }

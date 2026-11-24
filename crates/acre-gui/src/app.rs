@@ -12,9 +12,10 @@ use eframe::egui::{
     ViewportCommand,
 };
 
+use crate::anchor;
 use crate::arrange::{self, Arrange};
 use crate::field::{self, Field};
-use crate::handle::{self, Reshape};
+use crate::handle::{self, Reshape, Target};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
@@ -335,10 +336,11 @@ impl App {
         }
     }
 
-    /// Resize a box or an ellipse, or move a vertex, as a handle was
-    /// dragged, or name on the status line why not.
+    /// Resize a box or an ellipse, move a vertex, or move an end of a
+    /// line, as a handle was dragged, or name on the status line why not.
     fn reshape(&mut self, reshape: Reshape) {
         let edits = match reshape {
+            Reshape::End { node, end, to } => return self.move_end(node, end, to),
             Reshape::Resize { node, from, to } => {
                 self.on_source("resize", |text| edit::resize_edits(text, node, from, to))
             }
@@ -352,6 +354,30 @@ impl App {
             } else {
                 self.write(&edits)
             }
+        });
+        self.notice = written.err();
+    }
+
+    /// Put end `end`, 0 for `from` and 1 for `to`, of the line or arrow
+    /// at `node` on the thing at canvas point `to`, as the Line tool puts
+    /// an end there, or at `to` snapped, or name on the status line why
+    /// not.
+    fn move_end(&mut self, node: lang::Span, end: usize, to: scene::Point) {
+        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+            return;
+        };
+        let reach = self.view.anchor_reach();
+        let at = tool::end_at(&self.view.outlines, to, self.snapped(to), reach);
+        let edits = match &self.error {
+            Some(_) => Err("fix the source's error before moving an end".to_string()),
+            None => tool::end_edits(&self.text, program, node, end, at, scene.origin),
+        };
+        let written = edits.and_then(|edits| {
+            if edits.is_empty() {
+                return Ok(());
+            }
+            self.check(&edits, "move the end")?;
+            self.write(&edits)
         });
         self.notice = written.err();
     }
@@ -885,7 +911,8 @@ impl App {
         let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
             return;
         };
-        let end = |p| tool::end_at(program, scene, p, self.snapped(p), self.time);
+        let reach = self.view.anchor_reach();
+        let end = |p| tool::end_at(&self.view.outlines, p, self.snapped(p), reach);
         let (from, to) = (end(from), end(to));
         let edits = match &self.error {
             Some(_) => Err("fix the source's error before you add a node".to_string()),
@@ -929,7 +956,7 @@ impl App {
     /// on the status line why not.
     fn add(&mut self, edits: Result<Vec<TextEdit>, String>, open_field: bool) {
         let added = edits.and_then(|edits| {
-            self.check(&edits)?;
+            self.check(&edits, "add the node")?;
             let program = self.program.as_ref().ok_or("no drawing to add to")?;
             let path = tool::added_path(program);
             self.write(&edits)?;
@@ -950,8 +977,8 @@ impl App {
     }
 
     /// Whether the source with `edits` made parses and builds, and the
-    /// error for the status line when not.
-    fn check(&mut self, edits: &[TextEdit]) -> Result<(), String> {
+    /// error for the status line when not, which says it cannot `verb`.
+    fn check(&mut self, edits: &[TextEdit], verb: &str) -> Result<(), String> {
         if self.nudge.waiting() {
             return Err("wait for the editor to take the last edit".to_string());
         }
@@ -964,7 +991,7 @@ impl App {
         self.files = files;
         built.map_err(|e| {
             let (line, col) = e.line_col(&text);
-            format!("cannot add the node: {line}:{col}: {}", e.message)
+            format!("cannot {verb}: {line}:{col}: {}", e.message)
         })
     }
 
@@ -1189,6 +1216,14 @@ impl eframe::App for App {
                         handle::target(program, scene, self.selection.spans())
                     }
                     _ => None,
+                };
+                let ends = matches!(self.view.tool, Tool::Line | Tool::Arrow)
+                    || matches!(self.view.target, Some(Target::Line { .. }));
+                self.view.outlines = match (&self.program, &self.scene) {
+                    (Some(program), Some(scene)) if ends => {
+                        anchor::outlines(program, scene, self.time)
+                    }
+                    _ => Vec::new(),
                 };
                 let shown = self.view.show(
                     ui,

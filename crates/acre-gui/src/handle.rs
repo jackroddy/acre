@@ -25,6 +25,8 @@ pub enum Target {
         points: Vec<Point>,
         open: bool,
     },
+    /// A line or an arrow, and where it starts and ends.
+    Line { node: Span, ends: [Point; 2] },
 }
 
 /// Where along one axis a box's handle sits, and so which edge it drags.
@@ -42,6 +44,8 @@ pub enum Grip {
     Box([Edge; 2]),
     /// The handle on a vertex, by its index.
     Vertex(usize),
+    /// The handle on an end of a line, 0 at `from` and 1 at `to`.
+    End(usize),
 }
 
 /// The change a drag of a handle makes.
@@ -55,11 +59,14 @@ pub enum Reshape {
     },
     /// Vertex `index` of `node` moves by `by`.
     Vertex { node: Span, index: usize, by: Point },
+    /// End `end` of the line `node`, 0 for `from` and 1 for `to`, is let
+    /// go of at `to`, to go on the thing there or at that point.
+    End { node: Span, end: usize, to: Point },
 }
 
 /// The node that shows handles when `selected` holds exactly one node
-/// of `program`, a box, an ellipse, a polygon or a polyline, drawn in
-/// `scene`.
+/// of `program`, a box, an ellipse, a polygon, a polyline, a line or an
+/// arrow, drawn in `scene`.
 pub fn target(program: &Program, scene: &Scene, selected: &[Span]) -> Option<Target> {
     let &[node] = selected else {
         return None;
@@ -89,6 +96,10 @@ pub fn target(program: &Program, scene: &Scene, selected: &[Span]) -> Option<Tar
             points: p.points.clone(),
             open: true,
         }),
+        ("line" | "arrow", Kind::Connector(c)) => Some(Target::Line {
+            node,
+            ends: [c.from, c.to],
+        }),
         _ => None,
     }
 }
@@ -96,12 +107,15 @@ pub fn target(program: &Program, scene: &Scene, selected: &[Span]) -> Option<Tar
 impl Target {
     pub fn node(&self) -> Span {
         match self {
-            Target::Box { node, .. } | Target::Path { node, .. } => *node,
+            Target::Box { node, .. } | Target::Path { node, .. } | Target::Line { node, .. } => {
+                *node
+            }
         }
     }
 
     /// Each handle and where it sits: eight on a box, at its corners and
-    /// the middles of its sides, and one on each vertex of a path.
+    /// the middles of its sides, one on each vertex of a path, and one on
+    /// each end of a line.
     pub fn handles(&self) -> Vec<(Grip, Point)> {
         match self {
             Target::Box { bounds, .. } => {
@@ -118,6 +132,7 @@ impl Target {
                 .enumerate()
                 .map(|(i, &p)| (Grip::Vertex(i), p))
                 .collect(),
+            Target::Line { ends, .. } => vec![(Grip::End(0), ends[0]), (Grip::End(1), ends[1])],
         }
     }
 
@@ -137,6 +152,7 @@ impl Target {
         match (self, grip) {
             (Target::Box { bounds, .. }, Grip::Box(sides)) => Some(on_box(*bounds, sides)),
             (Target::Path { points, .. }, Grip::Vertex(i)) => points.get(i).copied(),
+            (Target::Line { ends, .. }, Grip::End(i)) => ends.get(i).copied(),
             _ => None,
         }
     }
@@ -157,6 +173,11 @@ impl Target {
                     by,
                 })
             }
+            (Target::Line { node, ends }, Grip::End(end)) if end < 2 => Some(Reshape::End {
+                node: *node,
+                end,
+                to: ends[end] + by,
+            }),
             _ => None,
         }
     }
@@ -191,7 +212,7 @@ fn resized(b: Bounds, sides: [Edge; 2], to: Point) -> Bounds {
 pub fn axes(grip: Grip) -> [bool; 2] {
     match grip {
         Grip::Box(sides) => sides.map(|e| e != Edge::Middle),
-        Grip::Vertex(_) => [true, true],
+        Grip::Vertex(_) | Grip::End(_) => [true, true],
     }
 }
 
@@ -284,6 +305,20 @@ mod tests {
         ));
         assert_eq!(target_of(src, "text t"), None);
         assert_eq!(target_of(src, "group"), None);
+        let src = "canvas { size 300 200; box a { at 10 10; size 20 20; } \
+                   arrow { from 100 50; to a right; } }";
+        let Some(line @ Target::Line { ends, .. }) = target_of(src, "arrow") else {
+            panic!("the arrow has handles");
+        };
+        assert_eq!(ends, [Point::new(100.0, 50.0), Point::new(30.0, 20.0)]);
+        assert_eq!(
+            line.grip_at(Point::new(31.0, 21.0), 3.0),
+            Some(Grip::End(1))
+        );
+        assert!(matches!(
+            line.reshape(Grip::End(0), Point::new(5.0, -5.0)),
+            Some(Reshape::End { end: 0, to, .. }) if to == Point::new(105.0, 45.0)
+        ));
     }
 
     #[test]

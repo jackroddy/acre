@@ -8,6 +8,7 @@ use eframe::egui::{
     Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
 };
 
+use crate::anchor::{self, Anchor, Outline};
 use crate::drag::{Drag, Release};
 use crate::handle::{self, Edge, Grip, Reshape, Target};
 use crate::selection;
@@ -60,6 +61,9 @@ pub struct View {
     pub path: Vec<Point>,
     /// The one selected node that shows handles.
     pub target: Option<Target>,
+    /// The things an end of a line can go on, while one is drawn or
+    /// moved.
+    pub outlines: Vec<Outline>,
 }
 
 /// What the person did in the pane this frame.
@@ -143,6 +147,7 @@ impl View {
             tool: Tool::Select,
             path: Vec::new(),
             target: None,
+            outlines: Vec::new(),
         }
     }
 
@@ -190,7 +195,9 @@ impl View {
     /// other than Select, a press draws a new node, outlined as it goes.
     /// A right-click on an object opens its menu. With the Select tool,
     /// the node in `target` shows handles, and a drag on one draws the outline it
-    /// makes, snapped.
+    /// makes, snapped. With the Line and Arrow tools, and while the end of
+    /// a line is dragged, the thing under the pointer shows the dots an
+    /// end snaps to.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -301,6 +308,7 @@ impl View {
         }
         if let Some(drag) = &mut self.drag
             && let Some((target, grip, by)) = drag.gripping()
+            && !matches!(grip, Grip::End(_))
             && let Some(at) = target.grip_point(grip)
         {
             let others: Vec<Bounds> = others(scene, target.node(), t);
@@ -458,7 +466,18 @@ impl View {
         guides.extend(self.draw_preview(&painter, rect, scene, t, hover));
         if let Some(target) = target {
             let gripped = self.drag.as_ref().and_then(Drag::gripping);
-            let dragged = gripped.and_then(|(gripped, grip, by)| reshaped(gripped, grip, by));
+            let dragged = gripped.and_then(|(gripped, grip, by)| {
+                let Grip::End(_) = grip else {
+                    return reshaped(gripped, grip, by);
+                };
+                let from = gripped.grip_point(grip)?;
+                let (to, anchor, snaps) = self.end_point(scene, from + by, t);
+                if let Some(anchor) = anchor {
+                    self.draw_anchor(&painter, rect, &anchor);
+                }
+                guides.extend(snaps);
+                reshaped(gripped, grip, to - from)
+            });
             self.draw_handles(&painter, rect, dragged.as_ref().unwrap_or(target));
             let grip = match (gripped, hover) {
                 (Some((_, grip, _)), _) => Some(grip),
@@ -550,10 +569,30 @@ impl View {
         let stroke = Stroke::new(1.5, Color32::from_rgb(0x7a, 0xa2, 0xf7));
         let to_screen = |p: Point| self.to_screen(rect, p);
         let mut guides = Vec::new();
+        let line = matches!(self.tool, Tool::Line | Tool::Arrow);
+        if line
+            && self.drag.is_none()
+            && let Some(hover) = hover
+            && let (_, Some(anchor), _) = self.end_point(scene, hover, t)
+        {
+            self.draw_anchor(painter, rect, &anchor);
+        }
         if let Some((from, to)) = self.drag.as_ref().and_then(Drag::creating) {
-            let (from, _) = self.snap_point(scene, self.to_canvas(rect, from), t);
-            let (to, snaps) = self.snap_point(scene, self.to_canvas(rect, to), t);
-            guides = snaps;
+            let (from, to) = (self.to_canvas(rect, from), self.to_canvas(rect, to));
+            let (from, to) = if line {
+                let (from, from_anchor, _) = self.end_point(scene, from, t);
+                let (to, to_anchor, snaps) = self.end_point(scene, to, t);
+                for anchor in [from_anchor, to_anchor].iter().flatten() {
+                    self.draw_anchor(painter, rect, anchor);
+                }
+                guides = snaps;
+                (from, to)
+            } else {
+                let (from, _) = self.snap_point(scene, from, t);
+                let (to, snaps) = self.snap_point(scene, to, t);
+                guides = snaps;
+                (from, to)
+            };
             let (a, b) = (to_screen(from), to_screen(to));
             match self.tool {
                 Tool::Box => {
@@ -593,6 +632,36 @@ impl View {
         guides
     }
 
+    /// Where an end of a line at canvas point `p` goes at time `t`: on
+    /// the anchor there, or at `p` snapped as [`View::snap_point`] snaps
+    /// it, with the guides of its snaps.
+    fn end_point(&self, scene: &Scene, p: Point, t: f64) -> (Point, Option<Anchor>, Vec<Guide>) {
+        match anchor::anchor_at(&self.outlines, p, self.anchor_reach()) {
+            Some(anchor) => (anchor.at, Some(anchor), Vec::new()),
+            None => {
+                let (at, guides) = self.snap_point(scene, p, t);
+                (at, None, guides)
+            }
+        }
+    }
+
+    /// How far, in canvas pixels, the pointer reaches to an anchor.
+    pub fn anchor_reach(&self) -> f64 {
+        (anchor::REACH / self.zoom) as f64
+    }
+
+    /// Draw the dots of the thing `anchor` is on, and mark the spot it
+    /// takes, which may lie between the dots.
+    fn draw_anchor(&self, painter: &egui::Painter, rect: Rect, anchor: &Anchor) {
+        let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
+        for (_, at) in anchor.outline.dots() {
+            let at = self.to_screen(rect, at);
+            painter.circle_filled(at, 3.0, Color32::WHITE);
+            painter.circle_stroke(at, 3.0, Stroke::new(1.0, blue));
+        }
+        painter.circle_filled(self.to_screen(rect, anchor.at), 4.5, blue);
+    }
+
     /// Draw the outline of `target` and a square on each of its handles.
     fn draw_handles(&self, painter: &egui::Painter, rect: Rect, target: &Target) {
         let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
@@ -617,6 +686,9 @@ impl View {
                 } else {
                     Shape::closed_line(points, stroke)
                 });
+            }
+            Target::Line { ends, .. } => {
+                painter.line_segment(ends.map(to_screen), stroke);
             }
         }
         for (_, at) in target.handles() {
@@ -761,6 +833,7 @@ fn reshaped(target: &Target, grip: Grip, by: Point) -> Option<Target> {
         (Target::Path { points, .. }, Reshape::Vertex { index, by, .. }) => {
             points[index] = points[index] + by
         }
+        (Target::Line { ends, .. }, Reshape::End { end, to, .. }) => ends[end] = to,
         _ => return None,
     }
     Some(out)
@@ -773,7 +846,7 @@ fn cursor(grip: Grip) -> CursorIcon {
         Grip::Box([_, Edge::Middle]) => CursorIcon::ResizeHorizontal,
         Grip::Box([x, y]) if x == y => CursorIcon::ResizeNwSe,
         Grip::Box(_) => CursorIcon::ResizeNeSw,
-        Grip::Vertex(_) => CursorIcon::Move,
+        Grip::Vertex(_) | Grip::End(_) => CursorIcon::Move,
     }
 }
 
