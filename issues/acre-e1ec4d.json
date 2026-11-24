@@ -3,7 +3,7 @@
   "title": "The arrow keys, Delete and Ctrl+C/Ctrl+V act on the selection",
   "body": "Jack allowed these keys on 2026-11-24 (see CLAUDE.md).\n\n## Proposal\n\n- With a selection, each arrow key press moves it 1 pixel through `move_edits`; with none, Left and Right step a frame as before.\n- Delete deletes the selected nodes through `delete_edits`, or shows why not.\n- Ctrl+C puts the selected nodes' source on the clipboard; Ctrl+V pastes acre source from the clipboard through `paste_edits` and selects the pasted nodes.\n- Shift+Enter in the text field starts a new line.\n- None fire while a text field has focus, except Shift+Enter inside it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": "acre-ef7221",
@@ -13,19 +13,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-24T20:42:20.113599283Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T20:07:01.218527408Z",
-  "updated_at": "2026-11-24T20:27:20.113599283Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-24T20:31:51.64323684Z",
+  "closed_at": "2026-11-24T20:31:51.64323684Z",
+  "close_reason": "Landed in 8d3105f on `dev`. `App::keys` in `crates/acre-gui/src/app.rs` moves the selection with the arrow keys through `move_edits`, deletes it with Delete through `delete_edits`, and copies and pastes through `copy_text` and `paste_edits` from egui's `Event::Copy` and `Event::Paste`. `Nudge` in `nudge.rs` adds up arrow presses made while an edit is with neovim and sends them once its text comes back. `Field::ui` in `field.rs` is always multi-line, with Shift+Enter as its return key, and plain Enter leaves it.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "3818184",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8d3105f",
+      "branch": "dev"
+    }
   }
 }
