@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-23T19:08:06.620014002Z",
+  "updated_at": "2026-11-24T01:11:48.607427776Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -220,6 +220,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "acre-ca92c8 adds a `matrix` node, not yet committed. `matrix m { at 40 40; rows 13; columns 12; unit 24 24; }` draws a grid of equal cells, and `row-numbers FIRST STEP` and `column-numbers FIRST STEP` write numbers left of the rows and above the columns. A child `cell { at R C; fill #fde8e8; }` styles one cell, with R and C counted from 0. A node takes at most one name before `{`, so `cell 3 4 { ... }` would have changed `lang`, and `at R C` keeps the cell's place inside the braces. `matrix` and `row` share the `cell` kind: a row's cell rejects `at`, and a matrix's cell rejects `span` and `note`. `cells DATA RCOL CCOL TEXTCOL;` sets cell text from a data file, one cell per row. `from`, `to` and `over` name one cell as `m R C`. `at m DX DY` still offsets from the whole matrix, so `at` cannot name a matrix cell.",
       "commit": "b009f84",
+      "branch": "dev"
+    },
+    {
+      "id": "742485ee",
+      "at": "2026-11-24T01:11:48.607424806Z",
+      "author": "Jack Roddy/903974e6",
+      "text": "`text` takes `rotate DEGREES`, added in commit a541e3c. The text turns about its `at` point by that angle, counterclockwise. A positive angle therefore reads uphill, and `rotate 45` slants up to the right.\n\nA figure needed bucket prefixes as tilted labels over narrow bars, where flat labels collide. Counterclockwise follows the math convention, so the sign matches what a reader expects of an angle.\n\nOnly `text` takes it. Brace, arrow and cell labels still draw flat.",
+      "commit": "a541e3c",
       "branch": "dev"
     }
   ],
