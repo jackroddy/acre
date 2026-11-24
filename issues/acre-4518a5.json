@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:19:43.225887092Z",
+  "updated_at": "2026-11-24T07:25:44.499585265Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -301,6 +301,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Provisional syntax for `merge` (acre-54a6a7): `merge { from A; from B; ...; to T; at X Y; }`. Each `from` takes the forms an `arrow` takes and starts one line, and `from` on `merge` is the one property a node may set more than once; `Props::new` allows that pair through by the `REPEATED` constant in `scene/build.rs`. Each line sweeps into a junction, and an arrow runs from the junction to `to`. `at` takes only `X Y`. Without it, the junction sits out of `to`'s side, or above `to` when `to` names no side, halfway to the nearest `from` along that way, and 24 pixels out when no `from` lies ahead of `to`. A `from` with no side sets off the way the arrow runs, and every line arrives along it. `head`, `head-size`, `label`, `label-side` and `label-at` belong to the arrow, `tail` draws at each `from`, and `stroke`, `stroke-width` and `dash` set every line. A colour per line was left out. All of this is provisional until Jack draws with it.",
       "commit": "859da28",
+      "branch": "dev"
+    },
+    {
+      "id": "adb4f1fe",
+      "at": "2026-11-24T07:25:44.499583015Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Tags landed provisionally in commit 93032ac. Every drawn node but `caption` takes `tag \"TEXT\"` or `tag auto`, with `tag-size`, `tag-color` and `tag-font` for the look. `tag auto` letters through the whole canvas in source order, and a tag set by hand does not count. The tag sits 8 pixels left of the box around what the node draws, centered on it vertically, as the issue body proposed. There is no `tag-side`. The look is a property on the node, as `title-size` is on a panel, so a style carries it; there is no `style tag` like `style marker`.",
+      "commit": "93032ac",
       "branch": "dev"
     }
   ],
