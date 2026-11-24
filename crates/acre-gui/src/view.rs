@@ -4,11 +4,12 @@ use acre::lang::Span;
 use acre::render;
 use acre::scene::{Animation, Point, Scene, Track};
 use eframe::egui::{
-    self, Color32, PointerButton, Popup, Pos2, Rect, Sense, SetOpenCommand, Shape, Stroke,
-    StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
+    self, Color32, CursorIcon, PointerButton, Popup, Pos2, Rect, Sense, SetOpenCommand, Shape,
+    Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
 };
 
 use crate::drag::{Drag, Release};
+use crate::handle::{self, Edge, Grip, Reshape, Target};
 use crate::selection;
 use crate::snap::{self, Bounds, Guide, Snapped};
 use crate::tool::{self, Tool};
@@ -57,6 +58,8 @@ pub struct View {
     /// The points placed so far of the polygon or polyline being drawn,
     /// in canvas pixels.
     pub path: Vec<Point>,
+    /// The one selected node that shows handles.
+    pub target: Option<Target>,
 }
 
 /// What the person did in the pane this frame.
@@ -81,6 +84,8 @@ pub struct Shown {
     pub right_clicked: Option<Span>,
     /// What was chosen from the menu of a right-clicked object.
     pub chosen: Option<MenuItem>,
+    /// The change a handle dragged and let go of this frame makes.
+    pub reshaped: Option<Reshape>,
 }
 
 /// An entry in the menu of a right-clicked object.
@@ -137,6 +142,7 @@ impl View {
             spacing: 10.0,
             tool: Tool::Select,
             path: Vec::new(),
+            target: None,
         }
     }
 
@@ -182,7 +188,9 @@ impl View {
     /// each snap. A drag on empty canvas draws a selection box. A
     /// double-click on no object fits the canvas to the pane. With a tool
     /// other than Select, a press draws a new node, outlined as it goes.
-    /// A right-click on an object opens its menu.
+    /// A right-click on an object opens its menu. With the Select tool,
+    /// the node in `target` shows handles, and a drag on one draws the outline it
+    /// makes, snapped.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -203,12 +211,16 @@ impl View {
             created: None,
             right_clicked: None,
             chosen: None,
+            reshaped: None,
         };
         let Some(scene) = scene else {
             self.drag = None;
             return shown;
         };
         let canvas = Vec2::new(scene.canvas.width as f32, scene.canvas.height as f32);
+        let target = self.target.clone().filter(|_| self.tool == Tool::Select);
+        let target = target.as_ref();
+        let handle_reach = ((handle::HANDLE + 2.0) / self.zoom) as f64;
 
         let (pressed, down, pointer) = ui.input(|i| {
             (
@@ -224,9 +236,12 @@ impl View {
             && response.contains_pointer()
             && let Some(at) = pointer
         {
-            self.drag = Some(match self.tool {
-                Tool::Select => {
-                    let nodes = node_at(scene, self.to_canvas(rect, at), t)
+            let p = self.to_canvas(rect, at);
+            let grip = target.and_then(|target| Some((target, target.grip_at(p, handle_reach)?)));
+            self.drag = Some(match (self.tool, grip) {
+                (Tool::Select, Some((target, grip))) => Drag::grip(target.clone(), grip, at),
+                (Tool::Select, None) => {
+                    let nodes = node_at(scene, p, t)
                         .map_or(Vec::new(), |node| selection::dragged(selected, node));
                     Drag::new(nodes, at)
                 }
@@ -284,6 +299,18 @@ impl View {
             drag.place(snapped.by);
             guides = snapped.guides;
         }
+        if let Some(drag) = &mut self.drag
+            && let Some((target, grip, by)) = drag.gripping()
+            && let Some(at) = target.grip_point(grip)
+        {
+            let others: Vec<Bounds> = others(scene, target.node(), t);
+            let reach = (snap::REACH / self.zoom) as f64;
+            let grid = self.grid.then_some(self.spacing);
+            let axes = handle::axes(grip);
+            let (to, snaps) = handle::snap_handle(at + by, axes, &others, reach, grid, self.snap);
+            drag.place(to - at);
+            guides = snaps;
+        }
         if !down && let Some(drag) = self.drag.take() {
             match drag.release() {
                 Release::Click(at) => shown.clicked = Some(self.to_canvas(rect, at)),
@@ -305,6 +332,7 @@ impl View {
                 Release::Create(from, to) => {
                     shown.created = Some((self.to_canvas(rect, from), self.to_canvas(rect, to)));
                 }
+                Release::Grip { target, grip, by } => shown.reshaped = target.reshape(grip, by),
             }
         }
         let preview = match self.drag.as_ref().and_then(Drag::moving) {
@@ -428,6 +456,19 @@ impl View {
 
         let hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
         guides.extend(self.draw_preview(&painter, rect, scene, t, hover));
+        if let Some(target) = target {
+            let gripped = self.drag.as_ref().and_then(Drag::gripping);
+            let dragged = gripped.and_then(|(gripped, grip, by)| reshaped(gripped, grip, by));
+            self.draw_handles(&painter, rect, dragged.as_ref().unwrap_or(target));
+            let grip = match (gripped, hover) {
+                (Some((_, grip, _)), _) => Some(grip),
+                (None, Some(p)) if self.drag.is_none() => target.grip_at(p, handle_reach),
+                _ => None,
+            };
+            if let Some(grip) = grip {
+                ui.ctx().set_cursor_icon(cursor(grip));
+            }
+        }
         for g in &guides {
             painter.line_segment(
                 [to_screen(g.from), to_screen(g.to)],
@@ -552,6 +593,39 @@ impl View {
         guides
     }
 
+    /// Draw the outline of `target` and a square on each of its handles.
+    fn draw_handles(&self, painter: &egui::Painter, rect: Rect, target: &Target) {
+        let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
+        let stroke = Stroke::new(1.5, blue);
+        let to_screen = |p: Point| self.to_screen(rect, p);
+        match target {
+            Target::Box { bounds, oval, .. } => {
+                let area = Rect::from_min_max(to_screen(bounds.0), to_screen(bounds.1));
+                if *oval {
+                    painter.add(Shape::ellipse_stroke(
+                        area.center(),
+                        area.size() / 2.0,
+                        stroke,
+                    ));
+                }
+                painter.rect_stroke(area, 0.0, stroke, StrokeKind::Middle);
+            }
+            Target::Path { points, open, .. } => {
+                let points: Vec<Pos2> = points.iter().copied().map(to_screen).collect();
+                painter.add(if *open {
+                    Shape::line(points, stroke)
+                } else {
+                    Shape::closed_line(points, stroke)
+                });
+            }
+        }
+        for (_, at) in target.handles() {
+            let square = Rect::from_center_size(to_screen(at), Vec2::splat(2.0 * handle::HANDLE));
+            painter.rect_filled(square, 1.0, Color32::WHITE);
+            painter.rect_stroke(square, 1.0, Stroke::new(1.0, blue), StrokeKind::Middle);
+        }
+    }
+
     /// The screen point at canvas point `p` in a pane at `rect`.
     pub fn to_screen(&self, rect: Rect, p: Point) -> Pos2 {
         rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom
@@ -665,6 +739,41 @@ fn snap_drag(
             by: Point::new(by.x.round(), by.y.round()),
             guides: Vec::new(),
         },
+    }
+}
+
+/// The boxes of the objects of `scene` at time `t` that the node at
+/// `node` did not draw.
+fn others(scene: &Scene, node: Span, t: f64) -> Vec<Bounds> {
+    let own = drawn_by(scene, &[node]);
+    (0..scene.objects.len())
+        .filter(|i| own.binary_search(i).is_err())
+        .filter_map(|i| scene.bounds(i, t))
+        .collect()
+}
+
+/// `target` as a drag of its handle `grip` by `by` canvas pixels leaves
+/// it.
+fn reshaped(target: &Target, grip: Grip, by: Point) -> Option<Target> {
+    let mut out = target.clone();
+    match (&mut out, target.reshape(grip, by)?) {
+        (Target::Box { bounds, .. }, Reshape::Resize { to, .. }) => *bounds = to,
+        (Target::Path { points, .. }, Reshape::Vertex { index, by, .. }) => {
+            points[index] = points[index] + by
+        }
+        _ => return None,
+    }
+    Some(out)
+}
+
+/// The pointer's look over the handle `grip`.
+fn cursor(grip: Grip) -> CursorIcon {
+    match grip {
+        Grip::Box([Edge::Middle, _]) => CursorIcon::ResizeVertical,
+        Grip::Box([_, Edge::Middle]) => CursorIcon::ResizeHorizontal,
+        Grip::Box([x, y]) if x == y => CursorIcon::ResizeNwSe,
+        Grip::Box(_) => CursorIcon::ResizeNeSw,
+        Grip::Vertex(_) => CursorIcon::Move,
     }
 }
 

@@ -16,6 +16,16 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- One selected box or ellipse shows eight handles, at its corners and the
+  middles of its sides. A drag on a handle draws the new outline and
+  resizes the node on release. The dragged edges snap to the edges and
+  centres of other objects and to the grid. An edge dragged past the one
+  across from it stops 1 pixel short. A left or top handle also moves
+  `at`, so the edge across stays put. A node its text sizes gets a
+  `size`.
+- One selected polygon or polyline shows a handle on each vertex. A drag
+  on a handle moves that vertex and rewrites its pair in `points`.
+- Over a handle the pointer changes to a resize or move cursor.
 - With one or more nodes selected, a panel on the right lists the
   properties every selected node's kind takes among `fill`, `stroke`,
   `stroke-width`, `dash`, `color`, `text-color`, `text-size` and `font`.

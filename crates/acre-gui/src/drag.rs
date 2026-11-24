@@ -2,6 +2,8 @@ use acre::lang::Span;
 use acre::scene::Point;
 use eframe::egui::Pos2;
 
+use crate::handle::{Grip, Target};
+
 /// How far, in screen points, the pointer goes from where it was
 /// pressed before the press is a drag and not a click.
 const THRESHOLD: f32 = 4.0;
@@ -14,6 +16,9 @@ pub struct Drag {
     /// Whether the drag draws a new node, and so neither moves nor
     /// selects.
     create: bool,
+    /// The handle the drag pulls and what it sits on, when the press was
+    /// on one.
+    grip: Option<(Target, Grip)>,
     /// Where the press was, on screen.
     from: Pos2,
     /// Where the pointer is, on screen.
@@ -34,6 +39,12 @@ pub enum Release {
     Select(Pos2, Pos2),
     /// Draw a new node from one point on screen to another.
     Create(Pos2, Pos2),
+    /// Drag the handle `grip` on `target` by `by` canvas pixels.
+    Grip {
+        target: Target,
+        grip: Grip,
+        by: Point,
+    },
 }
 
 impl Drag {
@@ -41,6 +52,7 @@ impl Drag {
         Drag {
             nodes,
             create: false,
+            grip: None,
             from,
             to: from,
             by: None,
@@ -51,6 +63,14 @@ impl Drag {
     pub fn create(from: Pos2) -> Self {
         Drag {
             create: true,
+            ..Drag::new(Vec::new(), from)
+        }
+    }
+
+    /// A press on the handle `grip` of `target`.
+    pub fn grip(target: Target, grip: Grip, from: Pos2) -> Self {
+        Drag {
+            grip: Some((target, grip)),
             ..Drag::new(Vec::new(), from)
         }
     }
@@ -84,7 +104,7 @@ impl Drag {
     /// The corners on screen of the selection box, once the pointer has
     /// gone past the threshold on empty canvas.
     pub fn boxed(&self) -> Option<(Pos2, Pos2)> {
-        let selecting = self.nodes.is_empty() && !self.create;
+        let selecting = self.nodes.is_empty() && !self.create && self.grip.is_none();
         (selecting && self.by.is_some()).then_some((self.from, self.to))
     }
 
@@ -94,15 +114,29 @@ impl Drag {
         (self.create && self.by.is_some()).then_some((self.from, self.to))
     }
 
+    /// The handle being dragged, what it sits on, and how far it has
+    /// moved, once the pointer has gone past the threshold.
+    pub fn gripping(&self) -> Option<(&Target, Grip, Point)> {
+        let (target, grip) = self.grip.as_ref()?;
+        Some((target, *grip, self.by?))
+    }
+
     pub fn release(self) -> Release {
-        match self.by {
-            None => Release::Click(self.from),
-            Some(_) if self.create => Release::Create(self.from, self.to),
-            Some(_) if self.nodes.is_empty() => Release::Select(self.from, self.to),
-            Some(by) => Release::Move {
+        let Some(by) = self.by else {
+            return Release::Click(self.from);
+        };
+        if let Some((target, grip)) = self.grip {
+            return Release::Grip { target, grip, by };
+        }
+        if self.create {
+            Release::Create(self.from, self.to)
+        } else if self.nodes.is_empty() {
+            Release::Select(self.from, self.to)
+        } else {
+            Release::Move {
                 nodes: self.nodes,
                 by,
-            },
+            }
         }
     }
 }
@@ -195,6 +229,31 @@ mod tests {
         assert_eq!(
             Drag::create(pos2(5.0, 5.0)).release(),
             Release::Click(pos2(5.0, 5.0))
+        );
+    }
+
+    #[test]
+    fn a_drag_on_a_handle_pulls_it_and_neither_selects_nor_moves() {
+        let target = Target::Path {
+            node: span(),
+            points: vec![Point::new(0.0, 0.0), Point::new(10.0, 0.0)],
+            open: true,
+        };
+        let grip = Grip::Vertex(1);
+        let mut drag = Drag::grip(target.clone(), grip, pos2(10.0, 10.0));
+        drag.follow(pos2(30.0, 10.0), 2.0);
+        assert_eq!(drag.boxed(), None);
+        assert_eq!(drag.moving(), None);
+        let by = Point::new(10.0, 0.0);
+        assert_eq!(drag.gripping(), Some((&target, grip, by)));
+        drag.place(Point::new(11.0, 0.0));
+        assert_eq!(
+            drag.release(),
+            Release::Grip {
+                target,
+                grip,
+                by: Point::new(11.0, 0.0),
+            }
         );
     }
 }

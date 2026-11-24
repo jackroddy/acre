@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scene::edit::resize_edits` works out the edits that resize a box or an
+  ellipse from one box to another, given by top-left and bottom-right
+  corners. It writes the new `size`, or adds one to a node its text sizes.
+  It moves `at` by as much as the point `place` names moves, so with
+  `place center` a drag on one side keeps the side across put. It refuses
+  what `move_edits` refuses, and a `size` from a `let`, a `( ... )` or a
+  style.
+- `scene::edit::vertex_edits` works out the edits that move one vertex of
+  a polygon or a polyline. It refuses `points` from data, a `let` or a
+  `( ... )`. A polyline's point written twice in a row is one vertex, as
+  the polyline is drawn.
 - `scene::edit::property_edits` works out the edits that set a property
   such as `fill` or `dash` on one or more nodes. It replaces a node's own
   value, or adds one before the node's first property, which then goes over

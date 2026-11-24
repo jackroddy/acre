@@ -13,6 +13,7 @@ use eframe::egui::{
 };
 
 use crate::field::{self, Field};
+use crate::handle::{self, Reshape};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
@@ -330,6 +331,27 @@ impl App {
             self.view.end_move();
             self.notice = Some(why);
         }
+    }
+
+    /// Resize a box or an ellipse, or move a vertex, as a handle was
+    /// dragged, or name on the status line why not.
+    fn reshape(&mut self, reshape: Reshape) {
+        let edits = match reshape {
+            Reshape::Resize { node, from, to } => {
+                self.on_source("resize", |text| edit::resize_edits(text, node, from, to))
+            }
+            Reshape::Vertex { node, index, by } => self.on_source("move the vertex", |text| {
+                edit::vertex_edits(text, node, index, by.x, by.y)
+            }),
+        };
+        let written = edits.and_then(|edits| {
+            if edits.is_empty() {
+                Ok(())
+            } else {
+                self.write(&edits)
+            }
+        });
+        self.notice = written.err();
     }
 
     /// Ask the editor to make `edits`, or make them in the file and show
@@ -1116,6 +1138,12 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let marks = self.marks();
+                self.view.target = match (&self.program, &self.scene) {
+                    (Some(program), Some(scene)) => {
+                        handle::target(program, scene, self.selection.spans())
+                    }
+                    _ => None,
+                };
                 let shown = self.view.show(
                     ui,
                     self.scene.as_mut(),
@@ -1147,6 +1175,9 @@ impl eframe::App for App {
                 }
                 if let Some((nodes, by)) = shown.moved {
                     self.move_nodes(&nodes, by);
+                }
+                if let Some(reshape) = shown.reshaped {
+                    self.reshape(reshape);
                 }
                 if let Some(area) = shown.boxed {
                     self.select_in(area);

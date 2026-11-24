@@ -4,6 +4,7 @@
 mod app;
 mod drag;
 mod field;
+mod handle;
 mod link;
 mod nudge;
 mod playback;

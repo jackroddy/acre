@@ -3,6 +3,8 @@
 //!
 //! A viewer that drags objects asks [`move_edits`] for the changes to
 //! the numbers that place their nodes, and [`apply`] makes them.
+//! [`resize_edits`] resizes a box or an ellipse, and [`vertex_edits`]
+//! moves one vertex of a polygon or a polyline.
 //! One that edits an object's text reads it with [`text_of`] and asks
 //! [`text_edits`] for the change to its string.
 //! [`node_path`] and [`node_span`] find a node again after an edit
@@ -19,6 +21,7 @@ pub use nodes::{
 };
 pub use properties::{Origin, Setting, property_edits, property_values};
 
+use super::Point;
 use super::build::at_named;
 use crate::lang::{self, Error, Node, Property, Span, Value, ValueKind};
 
@@ -210,6 +213,153 @@ pub fn text_edits(source: &str, node: Span, new_text: &str) -> Result<Vec<TextEd
     }
 }
 
+/// The edits to `source` that resize the box or ellipse whose span is
+/// `node` from the box `from` to the box `to`, each given by its
+/// top-left and bottom-right corners in canvas pixels.
+///
+/// The edits write the new width and height into the node's `size`, or
+/// add a `size` to a node its text sizes. They move its `at` as
+/// [`move_edits`] would, by how far the point its `place` names moves,
+/// so the edges `from` and `to` share stay put.
+///
+/// # Errors
+///
+/// If `source` does not parse, no node has the span `node`, the node is
+/// neither a box nor an ellipse, or [`move_edits`] refuses to move it.
+/// Also if its `size` comes from a `let`, a `( ... )` or a style.
+pub fn resize_edits(
+    source: &str,
+    node: Span,
+    from: (Point, Point),
+    to: (Point, Point),
+) -> Result<Vec<TextEdit>, Error> {
+    let program = lang::parse(source)?;
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+    let kind = target.kind.text.as_str();
+    if kind != "box" && kind != "ellipse" {
+        return Err(Error::new(
+            target.kind.span,
+            format!("a `{kind}` has no size to change; only a box or an ellipse resizes"),
+        ));
+    }
+    let mut mover = Mover {
+        source,
+        canvas,
+        target,
+        by: [0.0; 2],
+        moved: &[],
+        paste: false,
+    };
+    mover.check_place(around)?;
+    let place = mover.place()?;
+    let (old, new) = (from.1 - from.0, to.1 - to.0);
+    mover.by = [
+        to.0.x - from.0.x + place[0] * (new.x - old.x),
+        to.0.y - from.0.y + place[1] * (new.y - old.y),
+    ];
+    let at = mover.property("at")?;
+    let mut edits = match at {
+        Some(_) => mover.at()?,
+        None => Vec::new(),
+    };
+    match mover.property("size")? {
+        Some(p) => {
+            mover.literal(p)?;
+            let size = [new.x, new.y];
+            edits.extend(mover.rewrite(p, &p.values, |axis, _| size[axis])?);
+            if at.is_none() {
+                edits.extend(mover.new_at());
+            }
+        }
+        None => {
+            // one insertion for both, as two at one place would hang
+            // on the order edits are sorted in
+            let new_at = match (at, mover.offsets()) {
+                (None, Some(offsets)) => format!("at {offsets}; "),
+                _ => String::new(),
+            };
+            let [w, h] = [new.x, new.y].map(|n| number(n, places(n)));
+            edits.push(mover.insert(&format!("{new_at}size {w} {h}")));
+        }
+    }
+    edits.retain(|e| source[e.span.start..e.span.end] != e.text);
+    edits.sort_by_key(|e| e.span.start);
+    Ok(edits)
+}
+
+/// The edits to `source` that move vertex `index`, from 0, of the
+/// polygon or polyline whose span is `node` `dx` pixels across and `dy`
+/// down, as [`move_edits`] moves a node. The vertices are the points as
+/// drawn: a polyline's point written twice in a row is one vertex.
+///
+/// # Errors
+///
+/// If `source` does not parse, no node has the span `node`, the node is
+/// neither a polygon nor a polyline, it has no vertex `index`, or
+/// [`move_edits`] refuses to move it. Also if its `points` come from
+/// data, a `let` or a `( ... )`.
+pub fn vertex_edits(
+    source: &str,
+    node: Span,
+    index: usize,
+    dx: f64,
+    dy: f64,
+) -> Result<Vec<TextEdit>, Error> {
+    let program = lang::parse(source)?;
+    let (canvas, path) = locate(&program, node)?;
+    let (target, around) = path.split_last().expect("`locate` gives the node it finds");
+    let kind = target.kind.text.as_str();
+    if kind != "polygon" && kind != "polyline" {
+        return Err(Error::new(
+            target.kind.span,
+            format!("a `{kind}` has no vertices; only a polygon or a polyline does"),
+        ));
+    }
+    let mover = Mover {
+        source,
+        canvas,
+        target,
+        by: [dx, dy],
+        moved: &[],
+        paste: false,
+    };
+    mover.check_place(around)?;
+    let Some(p) = mover.points()? else {
+        return Err(Error::new(target.kind.span, "the node has no `points`"));
+    };
+    let mut vertices: Vec<Vec<&[Value]>> = Vec::new();
+    for pair in p.values.chunks(2) {
+        let same = |v: &Value, w: &Value| match (&v.kind, &w.kind) {
+            (ValueKind::Number(a), ValueKind::Number(b)) => a == b,
+            _ => false,
+        };
+        match vertices.last_mut() {
+            Some(last)
+                if kind == "polyline"
+                    && pair.len() == 2
+                    && same(&last[0][0], &pair[0])
+                    && same(&last[0][1], &pair[1]) =>
+            {
+                last.push(pair)
+            }
+            _ => vertices.push(vec![pair]),
+        }
+    }
+    let Some(vertex) = vertices.get(index) else {
+        return Err(Error::new(
+            p.span,
+            format!("the points hold no vertex {index}"),
+        ));
+    };
+    let mut edits = Vec::new();
+    for pair in vertex {
+        edits.extend(mover.pair(p, pair)?);
+    }
+    edits.retain(|e| source[e.span.start..e.span.end] != e.text);
+    Ok(edits)
+}
+
 /// The place in `program` of the node whose span is `span`: its index
 /// among the top nodes, then among each parent's children in turn.
 pub fn node_path(program: &lang::Program, span: Span) -> Option<Vec<usize>> {
@@ -316,7 +466,7 @@ impl Mover<'_> {
                 edits
             }
             "merge" => self.merge()?,
-            "polygon" | "polyline" => self.points()?,
+            "polygon" | "polyline" => self.all_points()?,
             _ => return Ok(None),
         };
         Ok(Some(edits))
@@ -397,6 +547,21 @@ impl Mover<'_> {
         if let Some(p) = own(self.target, key) {
             return Ok(Some(p));
         }
+        match self.styled(key) {
+            Some((style, _)) => Err(Error::new(
+                self.target.kind.span,
+                format!(
+                    "`{key}` comes from style `{style}`, which other nodes may share; set it on the node to change it"
+                ),
+            )),
+            None => Ok(None),
+        }
+    }
+
+    /// The style the node takes `key` from and its property, when the
+    /// node does not set `key` itself: the last of the style named after
+    /// its kind and those it names that sets it.
+    fn styled(&self, key: &str) -> Option<(&str, &Property)> {
         let named = own(self.target, "style")
             .into_iter()
             .flat_map(|p| &p.values)
@@ -404,22 +569,16 @@ impl Mover<'_> {
                 ValueKind::Word(w) => Some(w.as_str()),
                 _ => None,
             });
-        for style in [self.target.kind.text.as_str()].into_iter().chain(named) {
-            let set = self.canvas.children.iter().any(|n| {
-                n.kind.text == "style"
-                    && n.name.as_ref().is_some_and(|w| w.text == style)
-                    && own(n, key).is_some()
-            });
-            if set {
-                return Err(Error::new(
-                    self.target.kind.span,
-                    format!(
-                        "`{key}` comes from style `{style}`, which other nodes may share; set it on the node to change it"
-                    ),
-                ));
-            }
-        }
-        Ok(None)
+        [self.target.kind.text.as_str()]
+            .into_iter()
+            .chain(named)
+            .rev()
+            .find_map(|style| {
+                let node = self.canvas.children.iter().find(|n| {
+                    n.kind.text == "style" && n.name.as_ref().is_some_and(|w| w.text == style)
+                })?;
+                Some((style, own(node, key)?))
+            })
     }
 
     /// An error if a value of `p` comes from a `let` or a `( ... )`.
@@ -618,9 +777,22 @@ impl Mover<'_> {
 
     /// The edits to every point of a polygon's or a polyline's
     /// `points`.
-    fn points(&self) -> Result<Vec<TextEdit>, Error> {
-        let Some(p) = self.property("points")? else {
+    fn all_points(&self) -> Result<Vec<TextEdit>, Error> {
+        let Some(p) = self.points()? else {
             return Ok(Vec::new());
+        };
+        let mut edits = Vec::new();
+        for pair in p.values.chunks(2) {
+            edits.extend(self.pair(p, pair)?);
+        }
+        Ok(edits)
+    }
+
+    /// A polygon's or a polyline's `points`, or an error when they are
+    /// not numbers written in the node.
+    fn points(&self) -> Result<Option<&Property>, Error> {
+        let Some(p) = self.property("points")? else {
+            return Ok(None);
         };
         self.literal(p)?;
         if let Some(Value {
@@ -635,29 +807,70 @@ impl Mover<'_> {
                 ),
             ));
         }
-        let mut edits = Vec::new();
-        for pair in p.values.chunks(2) {
-            edits.extend(self.pair(p, pair)?);
-        }
-        Ok(edits)
+        Ok(Some(p))
+    }
+
+    /// Where the point `place` names sits in the node's box, as a
+    /// fraction of its width and height from the top-left corner.
+    fn place(&self) -> Result<[f64; 2], Error> {
+        let Some(p) = own(self.target, "place").or(self.styled("place").map(|(_, p)| p)) else {
+            return Ok([0.0, 0.0]);
+        };
+        self.literal(p)?;
+        let word = match p.values.as_slice() {
+            [
+                Value {
+                    kind: ValueKind::Word(w),
+                    ..
+                },
+            ] => w.as_str(),
+            _ => return Err(p.expected("a place such as center or top-left")),
+        };
+        Ok(match word {
+            "top-left" => [0.0, 0.0],
+            "top" => [0.5, 0.0],
+            "top-right" => [1.0, 0.0],
+            "left" => [0.0, 0.5],
+            "center" => [0.5, 0.5],
+            "right" => [1.0, 0.5],
+            "bottom-left" => [0.0, 1.0],
+            "bottom" => [0.5, 1.0],
+            "bottom-right" => [1.0, 1.0],
+            _ => return Err(p.expected("a place such as center or top-left")),
+        })
     }
 
     /// The edits that add the offset to `values`, two numbers of `p`.
     fn pair(&self, p: &Property, values: &[Value]) -> Result<Vec<TextEdit>, Error> {
+        self.rewrite(p, values, |axis, n| n + self.by[axis])
+    }
+
+    /// The edits that write `to(axis, n)` over each number `n` of
+    /// `values`, two numbers of `p`, the first across and the second
+    /// down. A number keeps as many decimals as it was written with, or
+    /// as the change needs up to two, whichever is more.
+    fn rewrite(
+        &self,
+        p: &Property,
+        values: &[Value],
+        to: impl Fn(usize, f64) -> f64,
+    ) -> Result<Vec<TextEdit>, Error> {
         let [x, y] = values else {
             return Err(p.expected("two numbers"));
         };
-        [(x, self.by[0]), (y, self.by[1])]
+        [x, y]
             .into_iter()
-            .map(|(v, by)| {
+            .enumerate()
+            .map(|(axis, v)| {
                 let ValueKind::Number(n) = v.kind else {
                     return Err(Error::new(v.span, "expected a number"));
                 };
                 let written = &self.source[v.span.start..v.span.end];
                 let decimals = written.split_once('.').map_or(0, |(_, f)| f.len());
+                let new = to(axis, n);
                 Ok(TextEdit {
                     span: v.span,
-                    text: number(n + by, decimals.max(places(by))),
+                    text: number(new, decimals.max(places(new - n))),
                 })
             })
             .collect()
@@ -1549,5 +1762,190 @@ mod tests {
         let src = "canvas { size 300 200; box b { at 1 1; size 5 5; text \"x\"; } }";
         let err = text_edits(src, span_of(src, "box b"), "$\"$ \"\"\"").unwrap_err();
         assert!(err.message.contains("no string literal"), "{}", err.message);
+    }
+
+    /// `src` in acre's layout with the node that starts with `node`
+    /// resized so its object's box is `to`, after checking that the
+    /// result keeps that layout and that the box is `to`.
+    fn resized(src: &str, node: &str, to: (f64, f64, f64, f64)) -> String {
+        use crate::scene::Point;
+        let src = format(src).unwrap();
+        let span = span_of(&src, node);
+        let object =
+            |s: &Scene| (0..s.objects.len()).find(|&i| s.objects[i].source.start == span.start);
+        let before = scene(&src);
+        let from = before.bounds(object(&before).unwrap(), 0.0).unwrap();
+        let to = (Point::new(to.0, to.1), Point::new(to.2, to.3));
+        let out = apply(&src, &resize_edits(&src, span, from, to).unwrap());
+        assert_eq!(format(&out).unwrap(), out);
+        let after = scene(&out);
+        assert_eq!(
+            after.bounds(object(&after).unwrap(), 0.0),
+            Some(to),
+            "{out}"
+        );
+        out
+    }
+
+    #[test]
+    fn a_resize_from_the_bottom_right_sets_only_the_size() {
+        let src = "canvas { size 300 200; box b { at 10 10; size 40 20; } }";
+        let out = resized(src, "box b", (10.0, 10.0, 60.0, 45.0));
+        assert!(out.contains("box b { at 10 10; size 50 35; }"), "{out}");
+    }
+
+    #[test]
+    fn a_resize_from_the_top_left_moves_the_at_too() {
+        let src = "canvas { size 300 200; ellipse e { at 10 10; size 40 20; } }";
+        let out = resized(src, "ellipse e", (0.0, 4.5, 50.0, 30.0));
+        assert!(
+            out.contains("ellipse e { at 0 4.5; size 50 25.5; }"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_resize_keeps_the_opposite_edge_whatever_the_place() {
+        // centred at 100 100, the box runs from 80 to 120 across
+        let src = "canvas { size 300 200; box b { at 100 100; place center; size 40 20; } }";
+        let out = resized(src, "box b", (80.0, 90.0, 130.0, 110.0));
+        assert!(
+            out.contains("at 105 100; place center; size 50 20;"),
+            "{out}"
+        );
+        let out = resized(src, "box b", (70.0, 80.0, 120.0, 110.0));
+        assert!(out.contains("at 95 95; place center; size 50 30;"), "{out}");
+
+        let src = "canvas { size 300 200; style corner { place bottom-right; }
+            box b { at 100 100; style corner; size 40 20; } }";
+        let out = resized(src, "box b", (50.0, 80.0, 100.0, 100.0));
+        assert!(out.contains("at 100 100;"), "{out}");
+        assert!(out.contains("size 50 20;"), "{out}");
+        let out = resized(src, "box b", (60.0, 80.0, 110.0, 100.0));
+        assert!(out.contains("at 110 100;"), "{out}");
+    }
+
+    #[test]
+    fn a_resize_moves_an_at_from_a_thing_by_its_offset() {
+        // b's top-left sits 10 right of the middle of a's right side, at
+        // 90 40
+        let src = "canvas { size 300 200; box a { at 20 20; size 60 40; }
+            box b { at a right 0.5 10 0; size 20 10; } }";
+        let out = resized(src, "box b", (85.0, 40.0, 110.0, 50.0));
+        assert!(out.contains("at a right 0.5 5 0; size 25 10;"), "{out}");
+        let src = "canvas { size 300 200; box a { at 20 20; size 60 40; }
+            box b { at a; size 20 10; } }";
+        let out = resized(src, "box b", (20.0, 15.0, 40.0, 30.0));
+        assert!(out.contains("at a 0 -5; size 20 15;"), "{out}");
+    }
+
+    #[test]
+    fn a_node_its_text_sizes_gets_a_size() {
+        let src = "canvas { size 300 200; box b { at 10 10; text \"hello\"; } }";
+        let out = resized(src, "box b", (10.0, 10.0, 90.0, 50.0));
+        assert!(out.contains("box b { size 80 40; at 10 10; text"), "{out}");
+        let src = "canvas { size 300 200; box b { text \"hello\"; } }";
+        let out = resized(src, "box b", (-5.0, 0.0, 90.0, 50.0));
+        assert!(out.contains("box b { at -5 0; size 95 50; text"), "{out}");
+    }
+
+    #[test]
+    fn a_size_keeps_its_decimals() {
+        let src = "canvas { size 300 200; box b { at 10 10; size 40.0 20.25; } }";
+        let out = resized(src, "box b", (10.0, 10.0, 60.0, 30.25));
+        assert!(out.contains("size 50.0 20.25;"), "{out}");
+    }
+
+    #[test]
+    fn a_resize_is_refused_where_a_move_is_or_the_size_is_not_the_nodes() {
+        use crate::scene::Point;
+        let to = (Point::new(0.0, 0.0), Point::new(30.0, 30.0));
+        let from = (Point::new(0.0, 0.0), Point::new(20.0, 20.0));
+        for (src, node, why) in [
+            (
+                "canvas { size 300 200; let w 20 20; box b { at 0 0; size w; } }",
+                "box b",
+                "comes from a `let`",
+            ),
+            (
+                "canvas { size 300 200; style s { size 20 20; } box b { at 0 0; style s; } }",
+                "box b",
+                "`size` comes from style `s`",
+            ),
+            (
+                "canvas { size 300 200; repeat i 0 2 { box b { at (i * 30) 0; size 20 20; } } }",
+                "box b",
+                "`repeat`",
+            ),
+            (
+                "canvas { size 300 200; box b { at 0 0; size 20 20; }
+                    timeline { 1s { move b 10 0; } } }",
+                "box b",
+                "the timeline moves `b`",
+            ),
+            (
+                "canvas { size 300 200; stack { box b { size 20 20; } } }",
+                "box b",
+                "a child of a stack",
+            ),
+            (
+                "canvas { size 300 200; text t { at 0 0; text \"x\"; } }",
+                "text t",
+                "only a box or an ellipse resizes",
+            ),
+        ] {
+            let got = resize_edits(src, span_of(src, node), from, to)
+                .unwrap_err()
+                .message;
+            assert!(got.contains(why), "{node}: {got}");
+        }
+    }
+
+    #[test]
+    fn a_vertex_moves_its_pair_of_points() {
+        let src =
+            "canvas { size 300 200; group { at 50 50; polygon p { points 0 0 40 0 20 30; } } }";
+        let out = apply(
+            src,
+            &vertex_edits(src, span_of(src, "polygon p"), 2, 5.0, -2.5).unwrap(),
+        );
+        assert!(out.contains("points 0 0 40 0 25 27.5;"), "{out}");
+
+        // the repeated point is one vertex as drawn, so vertex 2 is the
+        // last
+        let src = "canvas { size 300 200; polyline l { points 0 0 10 10 10 10 20 0; } }";
+        let span = span_of(src, "polyline l");
+        let out = apply(src, &vertex_edits(src, span, 1, 1.0, 0.0).unwrap());
+        assert!(out.contains("points 0 0 11 10 11 10 20 0;"), "{out}");
+        let out = apply(src, &vertex_edits(src, span, 2, 1.0, 0.0).unwrap());
+        assert!(out.contains("points 0 0 10 10 10 10 21 0;"), "{out}");
+        assert!(vertex_edits(src, span, 3, 1.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn a_vertex_of_data_points_or_a_let_is_refused() {
+        for (src, node, why) in [
+            (
+                "canvas { size 300 200; data d { file \"d.csv\"; }
+                    polyline l { points d x y; } }",
+                "polyline l",
+                "come from data `d`",
+            ),
+            (
+                "canvas { size 300 200; let s 0 0; polygon p { points s 9 0 5 9; } }",
+                "polygon p",
+                "comes from a `let`",
+            ),
+            (
+                "canvas { size 300 200; box b { at 0 0; size 9 9; } }",
+                "box b",
+                "has no vertices",
+            ),
+        ] {
+            let got = vertex_edits(src, span_of(src, node), 0, 1.0, 1.0)
+                .unwrap_err()
+                .message;
+            assert!(got.contains(why), "{node}: {got}");
+        }
     }
 }
