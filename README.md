@@ -23,15 +23,15 @@ file, so `gq` on part of one fails. `acre` and `acre-gui` have to be on
 the path. A viewer that exits with an error shows its last lines of
 stderr as an error message, and one the person closed says nothing.
 
-A viewer started on its own, without `--stdio`, listens on a socket. Its
-File > Edit in neovim opens neovim on the drawing shown, in a terminal,
-with the socket's path in `ACRE_SOCKET`. The plugin then links the first
-acre buffer to that viewer instead of starting one. `:AcreView` with
-`ACRE_SOCKET` set also links to that viewer, and starts a viewer of its
-own when nothing listens on the socket. `:AcreView` in the linked buffer
-closes the link and leaves the viewer running.
-`require("acre").connect(path)` links the current buffer to the viewer at
-any socket path.
+A viewer started on its own, without `--stdio`, listens on a socket. Its File
+> Edit in neovim opens neovim on the drawing shown, in a terminal, with a
+command on neovim's command line that calls `require("acre").connect(path)`
+for the socket, so the plugin links that buffer to the viewer instead of
+starting one. Neovim started with the socket's path in `ACRE_SOCKET` links the
+first acre buffer the same way, and `:AcreView` with `ACRE_SOCKET` set links
+to that viewer, or starts a viewer of its own when nothing listens on the
+socket. `:AcreView` in the linked buffer closes the link and leaves the viewer
+running.
 
 `setup` takes these options:
 
