@@ -3,7 +3,7 @@
   "title": "A space inside a code span draws about twice as wide as a monospace space",
   "body": "A `text` node in a sans font draws a code span that holds a space, such as `` `space shown` ``, with a gap about twice the width of a monospace space between the two words. `figures/space-shown.acre` shows it in bullet `b2`, rendered with `acre render --scale 2 --time 3`. The text has no `text-align justify`, so justification does not stretch the gap. A code span with no space inside, such as `` `MaskedKeys::order_ties` ``, draws as expected.",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T07:32:50.497338571Z",
-  "updated_at": "2026-11-24T22:43:01.241199016Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T00:29:48.276196582Z",
+  "closed_at": "2026-11-25T00:29:48.276196582Z",
+  "close_reason": "Not a bug. A space inside a code span is one monospace space (0.6 em), as it should be; it only looks wide beside sans word gaps. Jack looked at a side-by-side render on 2026-11-24 and chose to keep true monospace spaces in inline code.",
+  "resolution": "dropped",
   "notes": [
     {
       "id": "7ea2fba0",
@@ -32,6 +32,9 @@
       "commit": "03ebbdd",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "9b6886c",
+      "branch": "dev"
+    }
   }
 }
