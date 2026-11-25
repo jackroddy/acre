@@ -3,26 +3,29 @@
   "title": "A colour can be a blend of two colours",
   "body": "A colour in acre is a literal such as `#C26A7A` or a `let` name that stands for one. Nothing computes a colour from others.\n\ndecade's proposed palette makes most of its shades as blends. For example, an agent card's fill is the theme's `red` 15% of the way from `background`. To draw that today, a script outside the figure works out the hex value and the figure holds the result. The figure then no longer shows where the value came from, and a change to the theme means running the script again.\n\n## Proposal\n\nA colour value can be a blend of two colours by a fraction, written in the plainest form the parser already reads, for example `(mix background red 0.15)`. Either colour may be a literal or a `let` name. Log the form chosen on the language design issue.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "acre-4ed6a0",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-25T00:11:18.378965908Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T23:37:02.060676961Z",
-  "updated_at": "2026-11-24T23:56:18.378965908Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T00:00:38.52992511Z",
+  "closed_at": "2026-11-25T00:00:38.52992511Z",
+  "close_reason": "Landed in 9b6886c on dev. `(mix A B F)` blends two colors in sRGB, alpha included, with halves rounded up. `scene::expand::substitute` and `mix` evaluate it, `scene::expand::lets` reads the `let` lines, and the parser takes colors in groups. `scene::edit::property_values` now shows a group's worked-out value, and an edit to it is refused as a `( ... )` value. The syntax is logged on acre-4518a5.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "29eef0c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "9b6886c",
+      "branch": "dev"
+    }
   }
 }
