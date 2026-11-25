@@ -49,6 +49,12 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   which asks the editor to show that file and send its text. Until it
   does, acre-gui refuses edits in that tab.
 
+### Changed
+
+- The File menu is the first button of the toolbar, and the tab bar sits
+  under the toolbar. The File menu's own bar is gone. With `--stdio` the
+  toolbar has no File menu, as before.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

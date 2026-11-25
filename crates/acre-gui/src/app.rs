@@ -695,13 +695,17 @@ impl App {
         }
     }
 
-    /// The buttons that zoom the render, the snap, grid and lock toggles,
-    /// and the tools, with Done and Cancel while a path is being drawn,
+    /// The File menu unless linked over stdio, the buttons that zoom the
+    /// render, the snap, grid and lock toggles, and the tools, with Done and Cancel while a path is being drawn,
     /// and the buttons that align two or more selected nodes and space
     /// out three or more. While locked, only the Select tool is on and
     /// no arrange button is.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            if !self.stdio() {
+                self.menu(ui);
+                ui.separator();
+            }
             let pane = self.pane;
             if ui.button("−").on_hover_text("zoom out").clicked() {
                 self.doc_mut().view.zoom_by(0.8, pane);
@@ -1476,11 +1480,8 @@ impl eframe::App for App {
         self.keys(ui.ctx());
         let doc = self.doc_mut();
         doc.time = doc.playback.time(Instant::now());
-        if !self.stdio() {
-            egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
-        }
-        egui::Panel::top("tabs").show(ui, |ui| self.tabs(ui));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        egui::Panel::top("tabs").show(ui, |ui| self.tabs(ui));
         if let Some(closing) = self.closing {
             self.confirm_close(ui.ctx(), closing);
         }
