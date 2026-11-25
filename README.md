@@ -23,6 +23,16 @@ file, so `gq` on part of one fails. `acre` and `acre-gui` have to be on
 the path. A viewer that exits with an error shows its last lines of
 stderr as an error message, and one the person closed says nothing.
 
+A viewer started on its own, without `--stdio`, listens on a socket. Its
+File > Edit in neovim opens neovim on the drawing shown, in a terminal,
+with the socket's path in `ACRE_SOCKET`. The plugin then links the first
+acre buffer to that viewer instead of starting one. `:AcreView` with
+`ACRE_SOCKET` set also links to that viewer, and starts a viewer of its
+own when nothing listens on the socket. `:AcreView` in the linked buffer
+closes the link and leaves the viewer running.
+`require("acre").connect(path)` links the current buffer to the viewer at
+any socket path.
+
 `setup` takes these options:
 
 | option | default | what it sets |
@@ -34,11 +44,14 @@ stderr as an error message, and one the person closed says nothing.
 ## Tests
 
 `tests/edit.lua` checks the plugin's side of the link with a stand-in viewer.
+`tests/socket.lua` checks the link over a socket, with a socket server in
+neovim standing in for the viewer.
 `tests/viewer.lua` runs the real viewer from `target/release/acre-gui`. It
 opens a window and needs a display. Run each from the repository root:
 
 ```sh
 nvim --clean --headless -l editors/nvim/tests/edit.lua
+nvim --clean --headless -l editors/nvim/tests/socket.lua
 nvim --clean --headless -l editors/nvim/tests/viewer.lua
 ```
 

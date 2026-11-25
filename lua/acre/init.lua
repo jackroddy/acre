@@ -1,7 +1,7 @@
--- The acre viewer for a buffer: acre-gui started with --stdio, sent
--- the buffer's text and cursor as JSON lines, and answering with the
--- source's error, with clicks on the render, and with edits to the
--- source.
+-- The acre viewer for a buffer: acre-gui started with --stdio, or one
+-- already running whose socket is in $ACRE_SOCKET, sent the buffer's
+-- text and cursor as JSON lines, and answering with the source's error,
+-- with clicks on the render, and with edits to the source.
 
 local M = {}
 
@@ -17,7 +17,8 @@ M.config = {
 local ns = vim.api.nvim_create_namespace("acre")
 local group = vim.api.nvim_create_augroup("acre_view", { clear = true })
 
--- the viewer that is running, at most one
+-- the viewer linked, at most one: `chan` is the channel to it, a job
+-- when `socket` is false
 local view = nil
 
 function M.setup(opts)
@@ -26,7 +27,7 @@ end
 
 local function send(message)
   if view then
-    vim.fn.chansend(view.job, vim.json.encode(message) .. "\n")
+    vim.fn.chansend(view.chan, vim.json.encode(message) .. "\n")
   end
 end
 
@@ -209,7 +210,12 @@ function M.stop()
   local old = view
   view = nil
   vim.api.nvim_clear_autocmds({ group = group })
-  vim.fn.jobstop(old.job)
+  -- a socket's viewer keeps running, without this buffer
+  if old.socket then
+    vim.fn.chanclose(old.chan)
+  else
+    vim.fn.jobstop(old.chan)
+  end
   if old.timer then
     old.timer:close()
   end
@@ -218,26 +224,81 @@ function M.stop()
   end
 end
 
+-- A callback for a channel's output that hands each whole line to
+-- `receive` as a message.
+local function lines()
+  local pending = ""
+  return function(_, data)
+    -- data holds pieces split at newlines, the last one unfinished
+    pending = pending .. data[1]
+    for i = 2, #data do
+      if pending ~= "" then
+        local ok, message = pcall(vim.json.decode, pending)
+        if ok and view then
+          receive(message)
+        end
+      end
+      pending = data[i]
+    end
+  end
+end
+
+-- Show `buf` in the viewer at the other end of `chan`.
+local function open(chan, buf, socket)
+  view = { chan = chan, buf = buf, socket = socket, timer = vim.uv.new_timer() }
+  follow(buf)
+  send_text()
+  send_cursor()
+end
+
+-- Link the current buffer to the viewer listening on the socket at
+-- `path`. True when it connected.
+local function connect(path)
+  local buf = vim.api.nvim_get_current_buf()
+  local on_lines = lines()
+  local chan
+  local ok, result = pcall(vim.fn.sockconnect, "pipe", path, {
+    on_data = function(id, data)
+      -- a lone empty piece is the end of the stream
+      if #data == 1 and data[1] == "" then
+        if view and view.chan == chan then
+          M.stop()
+        end
+        return
+      end
+      on_lines(id, data)
+    end,
+  })
+  if not ok or result <= 0 then
+    return false
+  end
+  chan = result
+  open(chan, buf, true)
+  return true
+end
+
+-- Link the current buffer to the viewer listening on the socket at
+-- `path`, or say why not.
+function M.connect(path)
+  M.stop()
+  if not connect(path) then
+    vim.notify("acre: cannot connect to the viewer at " .. path, vim.log.levels.ERROR)
+  end
+end
+
 function M.start()
   M.stop()
+  -- a stale socket, whose viewer has closed, falls back to a viewer of
+  -- this buffer's own
+  local socket = vim.env.ACRE_SOCKET
+  if socket and socket ~= "" and connect(socket) then
+    return
+  end
   local buf = vim.api.nvim_get_current_buf()
-  local pending = ""
   local errors = {}
   local job
   job = vim.fn.jobstart(M.config.cmd, {
-    on_stdout = function(_, data)
-      -- data holds pieces split at newlines, the last one unfinished
-      pending = pending .. data[1]
-      for i = 2, #data do
-        if pending ~= "" then
-          local ok, message = pcall(vim.json.decode, pending)
-          if ok and view then
-            receive(message)
-          end
-        end
-        pending = data[i]
-      end
-    end,
+    on_stdout = lines(),
     on_stderr = function(_, data)
       for _, line in ipairs(data) do
         if line ~= "" then
@@ -250,11 +311,11 @@ function M.start()
     end,
     on_exit = function(_, status)
       -- a job that M.stop already stopped is no longer the open view
-      local open = view and view.job == job
-      if open then
+      local shown = view and view.chan == job
+      if shown then
         M.stop()
       end
-      if open and status ~= 0 then
+      if shown and status ~= 0 then
         local message = "acre: the viewer exited with status " .. status
         if #errors > 0 then
           message = message .. "\n" .. table.concat(errors, "\n")
@@ -267,10 +328,7 @@ function M.start()
     vim.notify("acre: cannot start " .. table.concat(M.config.cmd, " "), vim.log.levels.ERROR)
     return
   end
-  view = { job = job, buf = buf, timer = vim.uv.new_timer() }
-  follow(buf)
-  send_text()
-  send_cursor()
+  open(job, buf, false)
 end
 
 -- Show the current buffer in the running viewer, in place of the
