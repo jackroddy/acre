@@ -167,6 +167,35 @@ check("the second buffer has them", hooks(second) > 0, tostring(hooks(second)))
 acre.toggle()
 check("toggle in the shown buffer closes the viewer", hooks(second) == 0)
 
+-- a viewer that exits: a failure is reported with its stderr, a clean exit is silent
+acre.stop()
+local notes = {}
+local real_notify = vim.notify
+vim.notify = function(message, level)
+  table.insert(notes, { message = message, level = level })
+end
+local function run_viewer(script)
+  notes = {}
+  acre.setup({ cmd = { "sh", "-c", script }, debounce = 10 })
+  acre.start()
+  vim.wait(2000, function()
+    return #notes > 0
+  end)
+  vim.wait(200)
+end
+run_viewer("echo boom >&2; exit 3")
+check(
+  "a failing viewer is reported with its stderr",
+  #notes == 1
+    and notes[1].level == vim.log.levels.ERROR
+    and notes[1].message:find("acre: the viewer exited with status 3", 1, true) ~= nil
+    and notes[1].message:find("boom", 1, true) ~= nil,
+  vim.inspect(notes)
+)
+run_viewer("exit 0")
+check("a viewer that exits cleanly reports nothing", #notes == 0, vim.inspect(notes))
+vim.notify = real_notify
+
 acre.stop()
 vim.fn.delete(sent_file)
 print(failures == 0 and "all passed" or (failures .. " failed"))
