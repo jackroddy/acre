@@ -57,11 +57,11 @@ pub fn command(file: &Path, socket: &Path, terminal: Terminal) -> Command {
     };
 
     // the socket goes on neovim's command line, since a terminal that
-    // `open` starts on macOS does not inherit the viewer's environment
-    command.arg("nvim").arg(file).arg(format!(
-        "+lua require(\"acre\").connect({})",
-        lua_string(socket)
-    ));
+    // `open` starts on macOS does not inherit the viewer's environment.
+    // `-c` and not `+`: ghostty takes an argument that starts with `+`
+    // as one of its own actions and drops it
+    let connect = format!("lua require(\"acre\").connect({})", lua_string(socket));
+    command.arg("nvim").arg(file).arg("-c").arg(connect);
     if let Some(dir) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
         command.current_dir(dir);
     }
@@ -104,7 +104,7 @@ mod tests {
             .map(|(_, value)| value)
     }
 
-    const CONNECT: &str = "+lua require(\"acre\").connect(\"/run/acre/7.sock\")";
+    const CONNECT: &str = "lua require(\"acre\").connect(\"/run/acre/7.sock\")";
 
     #[test]
     fn outside_decade_the_terminal_comes_from_xdg_terminal_exec() {
@@ -114,7 +114,7 @@ mod tests {
             Terminal::Xdg,
         );
         assert_eq!(command.get_program(), "xdg-terminal-exec");
-        assert_eq!(args(&command), ["nvim", "/a/b c.acre", CONNECT]);
+        assert_eq!(args(&command), ["nvim", "/a/b c.acre", "-c", CONNECT]);
         assert_eq!(env(&command, "DECADE_PANE"), None);
         assert_eq!(command.get_current_dir(), Some(Path::new("/a")));
     }
@@ -136,6 +136,7 @@ mod tests {
                 "-e",
                 "nvim",
                 "/a/b.acre",
+                "-c",
                 CONNECT
             ]
         );
@@ -160,6 +161,7 @@ mod tests {
                 "-e",
                 "nvim",
                 "/a/b.acre",
+                "-c",
                 CONNECT
             ]
         );
