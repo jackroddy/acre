@@ -1,6 +1,6 @@
 [package]
 name = "acre-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "the acre command: checks and renders drawings written in acre's language"
 readme = "../../README.md"
 edition.workspace = true
@@ -13,6 +13,6 @@ name = "acre"
 path = "src/main.rs"
 
 [dependencies]
-acre = { path = "../acre", version = "0.2.0" }
+acre = { path = "../acre", version = "0.3.0" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

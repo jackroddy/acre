@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-24
+
 ### Fixed
 
 - `acre reference` and `acre fmt -` end quietly when the program reading
@@ -52,5 +54,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   it takes, the values the property takes, and what it does.
   `acre reference timeline` lists the timeline's actions.
 
-[Unreleased]: https://github.com/jackroddy/acre/compare/acre-cli-v0.1.0...HEAD
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-cli-v0.1.1...HEAD
+[0.1.1]: https://github.com/jackroddy/acre/compare/acre-cli-v0.1.0...acre-cli-v0.1.1
 [0.1.0]: https://github.com/jackroddy/acre/releases/tag/acre-cli-v0.1.0

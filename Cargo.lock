@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "acre"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "hyphenation",
  "krilla",
@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "acre-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "acre",
  "anyhow",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "acre-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "acre",
  "clap",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
 ### Added
 
 - `(mix A B F)` is a color that blends color A towards color B by the
@@ -583,6 +585,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both name their arguments and exit with "not written yet": this release
   holds the crate name and nothing renders.
 
-[Unreleased]: https://github.com/jackroddy/acre/compare/acre-v0.2.0...HEAD
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-v0.3.0...HEAD
+[0.3.0]: https://github.com/jackroddy/acre/compare/acre-v0.2.0...acre-v0.3.0
 [0.2.0]: https://github.com/jackroddy/acre/compare/v0.1.0...acre-v0.2.0
 [0.1.0]: https://github.com/jackroddy/acre/releases/tag/v0.1.0

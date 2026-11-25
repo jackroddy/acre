@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
 ### Added
 
 - A × button at the right end of the toolbar closes acre-gui after a
@@ -33,21 +35,20 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   position of the drawing as they were, and the part of the drawing under
   an open panel is hidden. A click, drag or scroll over a panel goes to the
   panel. The panels no longer resize by dragging their edge.
-- The editor's cursor selects a node, as a click does, in place of the
-  orange outline it drew. The node selected is the innermost one below the
-  canvas that holds the cursor and draws something. A node holds the
-  cursor from the first letter of its kind to its closing brace. The
-  cursor between nodes or on the canvas's own lines clears the selection.
-  The cursor in a line's indentation counts as on the line's first
-  character. The cursor in the spaces after a line's last character
-  counts as on that character, so the line of a closing brace selects the
-  node the brace closes. A blank line inside a stack or group selects the
-  stack or group. The cursor in a child of a selected node selects the
-  child. After a click, the viewer ignores the one cursor message that
-  answers its goto. The clicked node then stays selected and its
-  properties panel stays open. The properties
-  panel opens only for a selection made in the viewer by a click, a box or
-  a new node. A selection the cursor made leaves it closed.
+- The editor's cursor selects a node, as a click does, in place of the orange
+  outline it drew. The node selected is the innermost one below the canvas
+  that holds the cursor and draws something. A node holds the cursor from the
+  first letter of its kind to its closing brace. The cursor between nodes or
+  on the canvas's own lines clears the selection. The cursor in a line's
+  indentation counts as on the line's first character. The cursor in the
+  spaces after a line's last character counts as on that character, so the
+  line of a closing brace selects the node the brace closes. A blank line
+  inside a stack or group selects the stack or group. The cursor in a child of
+  a selected node selects the child. After a click, the viewer ignores the one
+  cursor message that answers its goto. The clicked node then stays selected
+  and its properties panel stays open. The properties panel opens only for a
+  selection made in the viewer by a click, a box or a new node. A selection
+  the cursor made leaves it closed.
 
 ## [0.1.0] - 2026-11-24
 
@@ -237,5 +238,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   a refused change acre-gui writes nothing, and the status line gives the
   reason.
 
-[Unreleased]: https://github.com/jackroddy/acre/compare/acre-gui-v0.1.0...HEAD
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-gui-v0.2.0...HEAD
+[0.2.0]: https://github.com/jackroddy/acre/compare/acre-gui-v0.1.0...acre-gui-v0.2.0
 [0.1.0]: https://github.com/jackroddy/acre/releases/tag/acre-gui-v0.1.0
