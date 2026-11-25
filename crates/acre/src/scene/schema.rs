@@ -360,7 +360,7 @@ pub const NODES: &[NodeKind] = &[
             prop(
                 "let",
                 "NAME VALUES...",
-                "a name that stands for its values in any later property; `(NAME N)` stands for value N of several, counting from 0",
+                "a name that stands for its values in any later property; `(NAME N)` stands for value N of several, counting from 0; anywhere a COLOR goes, `(mix A B F)` is the color F of the way from color A to color B, F from 0 to 1",
             ),
         ],
         children: &[

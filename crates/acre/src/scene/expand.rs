@@ -30,6 +30,7 @@ pub(super) const RESERVED: &[&str] = &[
     "top-right",
     "bottom-left",
     "bottom-right",
+    "mix",
 ];
 
 /// The canvas, the colors its lets name, and the `marker` style's
@@ -44,34 +45,12 @@ pub(super) type Expanded = (Node, HashMap<String, Color>, Vec<Property>);
 /// the same badge.
 pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
     one_name(canvas)?;
-    let mut lets: HashMap<&str, Vec<Value>> = HashMap::new();
-    let mut properties = Vec::new();
-    for p in &canvas.properties {
-        if p.key.text != "let" {
-            properties.push(p.clone());
-            continue;
-        }
-        let Some((name, values)) = p.values.split_first() else {
-            return Err(Error::new(p.span, "`let` takes a name and its values"));
-        };
-        let ValueKind::Word(word) = &name.kind else {
-            return Err(Error::new(name.span, "a `let` name is a bare word"));
-        };
-        if values.is_empty() {
-            return Err(Error::new(p.span, "`let` takes a name and its values"));
-        }
-        if RESERVED.contains(&word.as_str()) {
-            return Err(Error::new(
-                name.span,
-                format!("`{word}` is a word acre reads itself, so it cannot be a `let` name"),
-            ));
-        }
-        // substituted now, so a let may use the lets above it
-        let values = substitute(values, &lets)?;
-        if lets.insert(word, values).is_some() {
-            return Err(Error::new(name.span, format!("`{word}` is set twice")));
-        }
-    }
+    let lets = lets(canvas)?;
+    let properties: Vec<&Property> = canvas
+        .properties
+        .iter()
+        .filter(|p| p.key.text != "let")
+        .collect();
 
     let mut styles: HashMap<&str, Vec<Property>> = HashMap::new();
     for node in &canvas.children {
@@ -99,7 +78,7 @@ pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
             .map(|p| {
                 Ok(Property {
                     values: substitute(&p.values, &lets)?,
-                    ..p
+                    ..p.clone()
                 })
             })
             .collect::<Result<_, Error>>()?,
@@ -139,6 +118,35 @@ pub(super) fn expand(canvas: &Node) -> Result<Expanded, Error> {
         })
         .collect();
     Ok((out, colors, badge))
+}
+
+/// The values each `let` on `canvas` names, with the lets above it,
+/// groups and blends already worked out.
+pub(super) fn lets(canvas: &Node) -> Result<HashMap<&str, Vec<Value>>, Error> {
+    let mut lets: HashMap<&str, Vec<Value>> = HashMap::new();
+    for p in canvas.properties.iter().filter(|p| p.key.text == "let") {
+        let Some((name, values)) = p.values.split_first() else {
+            return Err(Error::new(p.span, "`let` takes a name and its values"));
+        };
+        let ValueKind::Word(word) = &name.kind else {
+            return Err(Error::new(name.span, "a `let` name is a bare word"));
+        };
+        if values.is_empty() {
+            return Err(Error::new(p.span, "`let` takes a name and its values"));
+        }
+        if RESERVED.contains(&word.as_str()) {
+            return Err(Error::new(
+                name.span,
+                format!("`{word}` is a word acre reads itself, so it cannot be a `let` name"),
+            ));
+        }
+        // substituted now, so a let may use the lets above it
+        let values = substitute(values, &lets)?;
+        if lets.insert(word, values).is_some() {
+            return Err(Error::new(name.span, format!("`{word}` is set twice")));
+        }
+    }
+    Ok(lets)
 }
 
 /// Push `node` onto `out`, with its children, styles applied and names
@@ -327,13 +335,26 @@ fn rename(node: &mut Node, names: &[String], i: i64) {
 /// `values` with each let name replaced by its values and each group
 /// replaced by the number it comes to. A group that opens with the name
 /// of a let of several values, such as `(tints i)`, is replaced by the
-/// one the rest of the group counts to, from 0.
-fn substitute(values: &[Value], lets: &HashMap<&str, Vec<Value>>) -> Result<Vec<Value>, Error> {
+/// one the rest of the group counts to, from 0, and one that opens with
+/// `mix` by the color it blends.
+pub(super) fn substitute(
+    values: &[Value],
+    lets: &HashMap<&str, Vec<Value>>,
+) -> Result<Vec<Value>, Error> {
     let mut out = Vec::with_capacity(values.len());
     for v in values {
         match &v.kind {
             ValueKind::Word(w) if lets.contains_key(w.as_str()) => {
                 out.extend(lets[w.as_str()].iter().cloned());
+            }
+            ValueKind::Group(inner)
+                if let [first, rest @ ..] = inner.as_slice()
+                    && first.kind == ValueKind::Word("mix".into()) =>
+            {
+                out.push(Value {
+                    kind: ValueKind::Color(mix(rest, v, lets)?),
+                    span: v.span,
+                });
             }
             ValueKind::Group(inner)
                 if let [first, rest @ ..] = inner.as_slice()
@@ -378,6 +399,50 @@ fn substitute(values: &[Value], lets: &HashMap<&str, Vec<Value>>) -> Result<Vec<
         }
     }
     Ok(out)
+}
+
+/// The color of `(mix A B F)`, whose values after `mix` are `operands`:
+/// F of the way from color A to color B in each of red, green, blue and
+/// alpha, rounded to the nearest whole value with halves rounded up.
+fn mix(
+    operands: &[Value],
+    group: &Value,
+    lets: &HashMap<&str, Vec<Value>>,
+) -> Result<[u8; 4], Error> {
+    let [a, b, f] = operands else {
+        return Err(Error::new(
+            group.span,
+            "`mix` takes two colors and a fraction, as in `(mix A B 0.5)`",
+        ));
+    };
+
+    // each operand on its own, so an error points at it and not at
+    // the `let` its values came from
+    let one = |v: &Value| match substitute(std::slice::from_ref(v), lets)?.as_slice() {
+        [one] => Ok(one.kind.clone()),
+        _ => Err(Error::new(v.span, "this stands for several values")),
+    };
+    let color = |v: &Value| match one(v)? {
+        ValueKind::Color(c) => Ok(c),
+        _ => Err(Error::new(
+            v.span,
+            "`mix` blends two colors, and this is not a color",
+        )),
+    };
+    let (a, b) = (color(a)?, color(b)?);
+    let f = match one(f)? {
+        ValueKind::Number(n) if (0.0..=1.0).contains(&n) => n,
+        _ => {
+            return Err(Error::new(
+                f.span,
+                "the fraction of a `mix` is a number from 0 to 1",
+            ));
+        }
+    };
+    Ok(std::array::from_fn(|i| {
+        let (a, b) = (f64::from(a[i]), f64::from(b[i]));
+        (a + (b - a) * f).round() as u8
+    }))
 }
 
 // a group is evaluated by precedence climbing over its values:
@@ -644,6 +709,113 @@ mod tests {
         assert_eq!(
             err.message,
             "`t` has 3 values, so `(t N)` takes a whole N from 0 to 2"
+        );
+    }
+
+    #[test]
+    fn a_mix_blends_each_channel_and_rounds_halves_up() {
+        let canvas = expanded(
+            "canvas { size 10 10; background (mix #000000 #ffffff 0.5);
+                box { fill (mix #00000000 #ff8040ff 0.25); stroke (mix #102030 #405060 0); }
+                box { fill (mix #102030 #405060 1); } }",
+        );
+        assert_eq!(
+            values(&canvas.properties[1]),
+            [ValueKind::Color([0x80, 0x80, 0x80, 0xff])]
+        );
+        let first = &canvas.children[0];
+        assert_eq!(
+            values(&first.properties[0]),
+            [ValueKind::Color([64, 32, 16, 64])]
+        );
+        assert_eq!(
+            values(&first.properties[1]),
+            [ValueKind::Color([0x10, 0x20, 0x30, 0xff])]
+        );
+        assert_eq!(
+            values(&canvas.children[1].properties[0]),
+            [ValueKind::Color([0x40, 0x50, 0x60, 0xff])]
+        );
+    }
+
+    #[test]
+    fn a_mix_takes_let_names_nested_mixes_and_goes_in_a_let() {
+        let (canvas, colors, _) = expand(
+            &parse(
+                "canvas { size 10 10; let background #000000; let red #ff0000; let f 0.25;
+                    let card (mix background red (f * 2));
+                    let tints (mix background red 0) (mix (mix background red 1) #ffffff 0.5);
+                    box { fill card; stroke (tints 1); } }",
+            )
+            .unwrap()
+            .nodes[0],
+        )
+        .unwrap();
+        let fill = &canvas.children[0].properties;
+        assert_eq!(values(&fill[0]), [ValueKind::Color([128, 0, 0, 255])]);
+        assert_eq!(values(&fill[1]), [ValueKind::Color([255, 128, 128, 255])]);
+        assert_eq!(colors["card"], Color::rgba(128.0 / 255.0, 0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn a_mix_needs_two_colors_and_a_fraction_from_0_to_1() {
+        fn err(src: &str) -> (String, &str) {
+            let program = parse(src).unwrap();
+            let err = expand(&program.nodes[0]).unwrap_err();
+            (err.message, &src[err.span.start..err.span.end])
+        }
+        assert_eq!(
+            err("canvas { size 1 1; box { fill (mix #000000 #ffffff 1.5); } }"),
+            (
+                "the fraction of a `mix` is a number from 0 to 1".into(),
+                "1.5"
+            )
+        );
+        assert_eq!(
+            err("canvas { size 1 1; box { fill (mix #000000 #ffffff (0 - 0.5)); } }"),
+            (
+                "the fraction of a `mix` is a number from 0 to 1".into(),
+                "(0 - 0.5)"
+            )
+        );
+        assert_eq!(
+            err("canvas { size 1 1; let w 4; box { fill (mix #000000 w 0.5); } }"),
+            (
+                "`mix` blends two colors, and this is not a color".into(),
+                "w"
+            )
+        );
+        assert_eq!(
+            err("canvas { size 1 1; box { fill (mix #000000 #ffffff #ffffff); } }"),
+            (
+                "the fraction of a `mix` is a number from 0 to 1".into(),
+                "#ffffff"
+            )
+        );
+        assert_eq!(
+            err(
+                "canvas { size 1 1; let two #000000 #ffffff; box { fill (mix two #ffffff 0.5); } }"
+            ),
+            ("this stands for several values".into(), "two")
+        );
+        assert_eq!(
+            err("canvas { size 1 1; box { fill (mix #000000 #ffffff); } }"),
+            (
+                "`mix` takes two colors and a fraction, as in `(mix A B 0.5)`".into(),
+                "(mix #000000 #ffffff)"
+            )
+        );
+        assert_eq!(
+            err("canvas { size 1 1; box { fill (mix #000000 #ffffff 0.5 0.5); } }").0,
+            "`mix` takes two colors and a fraction, as in `(mix A B 0.5)`"
+        );
+        assert_eq!(
+            err("canvas { size 1 1; let mix #000000; }").0,
+            "`mix` is a word acre reads itself, so it cannot be a `let` name"
+        );
+        assert_eq!(
+            err("canvas { size (#000000 + 1) 1; }"),
+            ("expected a number".into(), "#000000")
         );
     }
 

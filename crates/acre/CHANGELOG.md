@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `(mix A B F)` is a color that blends color A towards color B by the
+  fraction F, from 0 to 1. Each of red, green, blue and alpha moves F of
+  the way from A to B. Halves round up, so `(mix #000000 #ffffff 0.5)` is
+  `#808080`. A and B may be literals, `let` names or other mixes. A
+  property that takes a color takes a mix, and so do a `let`, a palette
+  symbol and a timeline action. `mix` can no longer be a `let` name.
+- A `( ... )` may hold colors.
 - `scene::edit::reorder_edits` moves a child of a stack or a grid to just
   before one of its siblings, or after the last. The child's text goes
   with its properties and the nodes inside it. A child alone on its lines
@@ -20,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scene::edit::siblings` gives the children of the stack or grid that
   holds a node, and how it lays them out as a `Layout`: `Down`, `Right`,
   or `Grid` with its columns.
+
+### Changed
+
+- `scene::edit::property_values` gives the value a `( ... )` comes to,
+  with its `let` names replaced, where it gave the group before. A
+  blended color reads as the color it comes to.
 
 ### Fixed
 

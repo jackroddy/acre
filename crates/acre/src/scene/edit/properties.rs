@@ -4,7 +4,7 @@
 use super::nodes::{EndAt, removal};
 use super::{Mover, TextEdit, apply, locate, own};
 use crate::lang::{self, Error, Node, Span, Value, ValueKind};
-use crate::scene::{build, schema};
+use crate::scene::{build, expand, schema};
 
 /// Where a node's value of a property comes from.
 #[derive(Debug, Clone, PartialEq)]
@@ -21,8 +21,9 @@ pub enum Origin {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Setting<'k> {
     pub key: &'k str,
-    /// The values, with a `let`'s name replaced by the values it names,
-    /// or none when the default applies.
+    /// The values, with a `let`'s name replaced by the values it names
+    /// and a `( ... )` by what it comes to, or none when the default
+    /// applies.
     pub values: Vec<ValueKind>,
     pub origin: Origin,
 }
@@ -97,23 +98,17 @@ fn styles_of<'a>(canvas: &'a Node, target: &Node) -> Vec<&'a Node> {
         .collect()
 }
 
-/// `values` with a lone word that a `let` on `canvas` names replaced by
-/// the let's values.
+/// `values` with the names of the `let`s on `canvas` replaced by their
+/// values and each `( ... )` by what it comes to, or `values` as they
+/// are if those do not work out.
 fn resolved(canvas: &Node, values: &[Value]) -> Vec<ValueKind> {
-    if let [
-        Value {
-            kind: ValueKind::Word(w),
-            ..
-        },
-    ] = values
-        && let Some(p) = canvas.properties.iter().find(|p| {
-            p.key.text == "let"
-                && matches!(p.values.first(), Some(Value { kind: ValueKind::Word(name), .. }) if name == w)
-        })
-    {
-        return p.values[1..].iter().map(|v| v.kind.clone()).collect();
-    }
-    values.iter().map(|v| v.kind.clone()).collect()
+    let worked_out = expand::lets(canvas).and_then(|lets| expand::substitute(values, &lets));
+    worked_out
+        .as_deref()
+        .unwrap_or(values)
+        .iter()
+        .map(|v| v.kind.clone())
+        .collect()
 }
 
 /// The edits to `source` that set `key` to `value`, written as it is
@@ -457,6 +452,19 @@ mod tests {
         assert!(refusal(src, "box a", "stroke-width", "3").contains("`( ... )`"));
         let src = "canvas { size 100 100; repeat i 0 2 { box { size 5 5; } } }";
         assert!(refusal(src, "box {", "fill", "#000000").contains("`repeat`"));
+    }
+
+    #[test]
+    fn a_blended_color_is_read_as_its_value_and_not_edited() {
+        let src = "canvas { size 100 100; let bg #000000; box a { fill (mix bg #ffffff 0.5); size 5 5; } }";
+        assert_eq!(
+            value(src, "box a", "fill"),
+            (Origin::Node, vec![ValueKind::Color([128, 128, 128, 255])])
+        );
+        assert_eq!(
+            refusal(src, "box a", "fill", "#000000"),
+            "`fill` is worked out from `( ... )`; edit it by hand"
+        );
     }
 
     #[test]

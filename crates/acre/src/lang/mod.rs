@@ -90,8 +90,8 @@ pub enum ValueKind {
     /// `#rrggbb` or `#rrggbbaa`, with alpha 255 when absent.
     Color([u8; 4]),
     Word(String),
-    /// The values between `(` and `)`, an arithmetic expression that
-    /// `scene` evaluates once names are replaced.
+    /// The values between `(` and `)`, an arithmetic expression or a
+    /// blend of colors that `scene` evaluates once names are replaced.
     Group(Vec<Value>),
     /// An operator inside a group.
     Op(char),
@@ -662,6 +662,7 @@ impl Parser<'_> {
             self.pos += 1;
             let kind = match &token.tok {
                 Tok::Number(n) => ValueKind::Number(*n),
+                Tok::Color(c) => ValueKind::Color(*c),
                 Tok::Word(w) => ValueKind::Word(w.clone()),
                 Tok::Op(c) => ValueKind::Op(*c),
                 Tok::LParen => {
@@ -681,7 +682,7 @@ impl Parser<'_> {
                     return Err(Error::new(
                         token.span,
                         format!(
-                            "expected a number, a name or an operator, found {}",
+                            "expected a number, a color, a name or an operator, found {}",
                             describe(other)
                         ),
                     ));
