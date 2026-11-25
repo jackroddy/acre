@@ -3,7 +3,7 @@
   "title": "Decide whether to delete the local backup-before-rewrite branch",
   "body": "Rewriting dev on 2026-11-13 so that prefix-encoder.acre was never committed left the old commits on a local branch, backup-before-rewrite, and in the reflog. Nothing on dev, main or origin holds them. Deleting the branch and expiring the reflog prunes them for good. Jack has not decided yet.",
   "type": "task",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T06:31:10.408666068Z",
-  "updated_at": "2026-11-13T06:31:10.408666068Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:15:11.670366554Z",
+  "closed_at": "2026-11-25T01:15:11.670366554Z",
+  "close_reason": "Jack chose on 2026-11-24 to delete it. The branch (tip f4067bd) is gone; the reflog still holds the old commits until git expires it, which happens without anyone acting.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "6866c55",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "35a04f1",
+      "branch": "dev"
+    }
   }
 }
