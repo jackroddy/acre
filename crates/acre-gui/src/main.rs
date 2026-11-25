@@ -10,6 +10,7 @@ mod handle;
 mod link;
 mod nudge;
 mod playback;
+mod preview;
 mod properties;
 mod recent;
 mod reorder;

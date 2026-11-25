@@ -18,6 +18,11 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   disabled. Selection, box selection, pan, zoom, Ctrl+C and playback
   still work.
 - `acre-gui --locked` starts the viewer locked.
+- Hovering a file under File > Open Recent shows a small render of it
+  at time 0 beside the menu. A spinner shows while the render is built.
+  For a missing file or one with an error, the menu shows the first
+  line of the error instead. acre-gui keeps each render for the session
+  and builds it again when the file changes.
 
 ## [0.2.0] - 2026-11-24
 

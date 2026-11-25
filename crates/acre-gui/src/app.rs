@@ -19,6 +19,7 @@ use crate::handle::{self, Reshape, Target};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::nudge::Nudge;
 use crate::playback::{self, Playback};
+use crate::preview::Previews;
 use crate::properties::Properties;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
@@ -36,6 +37,7 @@ const LOCKED: &str = "locked";
 /// from an editor over the link.
 pub struct App {
     recent: Recent,
+    previews: Previews,
     /// Whether the dialog that asks before closing the viewer is open.
     closing: bool,
     /// The file the source belongs to.
@@ -108,6 +110,7 @@ impl App {
     pub fn new(file: Option<PathBuf>, link: Option<Link>, locked: bool) -> Self {
         let mut app = App {
             recent: Recent::load(),
+            previews: Previews::default(),
             closing: false,
             path: None,
             text: String::new(),
@@ -206,31 +209,8 @@ impl App {
     /// The scene `program` describes, with the font and data files it
     /// lists read from the folder of the source's file.
     fn build(&mut self, program: &lang::Program) -> Result<Scene, lang::Error> {
-        let fonts = scene::font_files(program)?;
-        let data = scene::data_files(program)?;
-        let listed: Vec<(&str, &str, lang::Span)> = fonts
-            .iter()
-            .map(|f| ("font", f.path.as_str(), f.span))
-            .chain(data.iter().map(|d| ("data file", d.path.as_str(), d.span)))
-            .collect();
         let dir = self.path.as_deref().and_then(Path::parent);
-        self.files = listed
-            .iter()
-            .map(|(_, path, _)| {
-                let path = dir.map_or(PathBuf::from(path), |d| d.join(path));
-                let changed = modified(&path);
-                (path, changed)
-            })
-            .collect();
-        let mut bytes = Vec::new();
-        for ((what, written, span), (path, _)) in listed.iter().zip(&self.files) {
-            let read = fs::read(path).map_err(|e| {
-                lang::Error::new(*span, format!("cannot read {what} {written}: {e}"))
-            })?;
-            bytes.push(read);
-        }
-        let data_bytes = bytes.split_off(fonts.len());
-        scene::build(program, &bytes, &data_bytes)
+        build(program, dir, &mut self.files)
     }
 
     /// Build the source again if a font or data file it lists changed on
@@ -639,7 +619,10 @@ impl App {
                     }
                     let mut chosen = None;
                     for file in &self.recent.files {
-                        if ui.button(file.to_string_lossy()).clicked() {
+                        let button = ui
+                            .button(file.to_string_lossy())
+                            .on_hover_ui(|ui| self.previews.show(ui, file));
+                        if button.clicked() {
                             chosen = Some(file.clone());
                         }
                     }
@@ -1526,6 +1509,40 @@ fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -
     pressed
 }
 
+/// The scene `program` describes, with the font and data files it lists
+/// read from `dir`, or from the working directory without one. `files`
+/// gets each listed file with when it last changed on disk, once the
+/// program lists them without an error.
+pub fn build(
+    program: &lang::Program,
+    dir: Option<&Path>,
+    files: &mut Vec<(PathBuf, Option<SystemTime>)>,
+) -> Result<Scene, lang::Error> {
+    let fonts = scene::font_files(program)?;
+    let data = scene::data_files(program)?;
+    let listed: Vec<(&str, &str, lang::Span)> = fonts
+        .iter()
+        .map(|f| ("font", f.path.as_str(), f.span))
+        .chain(data.iter().map(|d| ("data file", d.path.as_str(), d.span)))
+        .collect();
+    *files = listed
+        .iter()
+        .map(|(_, path, _)| {
+            let path = dir.map_or(PathBuf::from(path), |d| d.join(path));
+            let changed = modified(&path);
+            (path, changed)
+        })
+        .collect();
+    let mut bytes = Vec::new();
+    for ((what, written, span), (path, _)) in listed.iter().zip(files.iter()) {
+        let read = fs::read(path)
+            .map_err(|e| lang::Error::new(*span, format!("cannot read {what} {written}: {e}")))?;
+        bytes.push(read);
+    }
+    let data_bytes = bytes.split_off(fonts.len());
+    scene::build(program, &bytes, &data_bytes)
+}
+
 fn missing_glyph(c: char) -> String {
     format!(
         "warning: no font has a glyph for '{c}' (U+{:04X})",
@@ -1535,6 +1552,6 @@ fn missing_glyph(c: char) -> String {
 
 /// When the file at `path` last changed, or `None` when the disk cannot
 /// say.
-fn modified(path: &Path) -> Option<SystemTime> {
+pub fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
