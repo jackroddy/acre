@@ -3,26 +3,29 @@
   "title": "Open Recent shows a render of a file when hovered",
   "body": "File > Open Recent in acre-gui lists paths only. Hovering an entry should show a small render of that drawing beside the menu: built on a background thread with its fonts and data files read relative to it, a spinner until it is ready, cached by path and modification time, and the error line instead of a picture for a missing or broken file.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-25T01:49:46.686140113Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-25T01:34:36.89812234Z",
-  "updated_at": "2026-11-25T01:34:46.686140113Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:36:53.947185022Z",
+  "closed_at": "2026-11-25T01:36:53.947185022Z",
+  "close_reason": "Landed in 104eac2. `Previews` in `crates/acre-gui/src/preview.rs` renders each hovered Open Recent entry on a background thread and caches it by path and modification time. The free function `build` in `app.rs` reads a drawing's fonts and data files for both the viewer and the preview.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "60d64ff",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "104eac2",
+      "branch": "dev"
+    }
   }
 }
