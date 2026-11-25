@@ -628,39 +628,37 @@ impl App {
     }
 
     fn menu(&mut self, ui: &mut egui::Ui) {
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("Open…").clicked() {
-                    let dialog = rfd::FileDialog::new().add_filter("acre drawing", &["acre"]);
-                    if let Some(path) = dialog.pick_file() {
-                        self.open(&path);
+        ui.menu_button("File", |ui| {
+            if ui.button("Open…").clicked() {
+                let dialog = rfd::FileDialog::new().add_filter("acre drawing", &["acre"]);
+                if let Some(path) = dialog.pick_file() {
+                    self.open(&path);
+                }
+                ui.close();
+            }
+            ui.menu_button("Open Recent", |ui| {
+                if self.recent.files.is_empty() {
+                    ui.label("nothing yet");
+                }
+                let mut chosen = None;
+                for file in &self.recent.files {
+                    let button = ui
+                        .button(file.to_string_lossy())
+                        .on_hover_ui(|ui| self.previews.show(ui, file));
+                    if button.clicked() {
+                        chosen = Some(file.clone());
                     }
+                }
+                if let Some(file) = chosen {
+                    self.open(&file);
                     ui.close();
                 }
-                ui.menu_button("Open Recent", |ui| {
-                    if self.recent.files.is_empty() {
-                        ui.label("nothing yet");
-                    }
-                    let mut chosen = None;
-                    for file in &self.recent.files {
-                        let button = ui
-                            .button(file.to_string_lossy())
-                            .on_hover_ui(|ui| self.previews.show(ui, file));
-                        if button.clicked() {
-                            chosen = Some(file.clone());
-                        }
-                    }
-                    if let Some(file) = chosen {
-                        self.open(&file);
-                        ui.close();
-                    }
-                });
-                self.edit_in_neovim(ui);
-                ui.separator();
-                if ui.button("Quit").clicked() {
-                    ui.ctx().send_viewport_cmd(ViewportCommand::Close);
-                }
             });
+            self.edit_in_neovim(ui);
+            ui.separator();
+            if ui.button("Quit").clicked() {
+                ui.ctx().send_viewport_cmd(ViewportCommand::Close);
+            }
         });
     }
 
