@@ -1,5 +1,6 @@
 //! acre-gui: a viewer for acre drawings. It renders a file and follows
-//! its changes, or renders what an editor sends it over stdin.
+//! its changes, or renders what an editor sends it over stdin or over a
+//! socket.
 
 mod anchor;
 mod app;
@@ -9,6 +10,7 @@ mod drag;
 mod field;
 mod handle;
 mod link;
+mod neovim;
 mod nudge;
 mod playback;
 mod preview;
@@ -21,7 +23,9 @@ mod tabs;
 mod tool;
 mod view;
 
+use std::env;
 use std::path::PathBuf;
+use std::process;
 
 use clap::Parser;
 use eframe::egui;
@@ -59,8 +63,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(move |cc| {
             // egui's own Ctrl+= and Ctrl+- zoom of the whole window
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            let link = cli.stdio.then(|| link::Link::start(cc.egui_ctx.clone()));
-            Ok(Box::new(app::App::new(cli.file, link, cli.locked)))
+            let ctx = cc.egui_ctx.clone();
+            let link = if cli.stdio {
+                Some(link::Link::stdio(ctx))
+            } else {
+                let path = link::socket_path(
+                    env::var_os("XDG_RUNTIME_DIR").as_deref(),
+                    env::var_os("USER").as_deref(),
+                    process::id(),
+                );
+                link::Link::listen(ctx, path)
+                    .inspect_err(|e| eprintln!("acre-gui: no socket for an editor: {e}"))
+                    .ok()
+            };
+            let recent = recent::Recent::load();
+            Ok(Box::new(app::App::new(cli.file, recent, link, cli.locked)))
         }),
     )?;
     Ok(())

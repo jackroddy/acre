@@ -5,6 +5,7 @@ const KEPT: usize = 10;
 
 /// Recently opened files, newest first, kept in
 /// `$XDG_STATE_HOME/acre/recent` with one path per line.
+#[derive(Default)]
 pub struct Recent {
     store: Option<PathBuf>,
     pub files: Vec<PathBuf>,

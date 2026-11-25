@@ -18,6 +18,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   disabled. Selection, box selection, pan, zoom, Ctrl+C and playback
   still work.
 - `acre-gui --locked` starts the viewer locked.
+- Without `--stdio`, acre-gui listens for an editor on a Unix socket at
+  `$XDG_RUNTIME_DIR/acre/<pid>.sock`. Without `XDG_RUNTIME_DIR`, the
+  socket goes in `acre-$USER` in the temporary folder. An editor that
+  connects talks to the viewer as one on stdin and stdout does, one
+  editor at a time. When it disconnects, the viewer keeps running and
+  watches its files again. acre-gui removes the socket when it closes.
+- File > Edit in neovim opens neovim on the drawing shown, with the
+  socket's path in `ACRE_SOCKET`, and the plugin links to the viewer.
+  Inside decade, neovim opens in ghostty in a pane split beside the
+  viewer. Elsewhere it opens in the terminal `xdg-terminal-exec` starts.
+  The item is disabled while an editor is linked and for a drawing with
+  no file.
 - Hovering a file under File > Open Recent shows a small render of it
   at time 0 beside the menu. A spinner shows while the render is built.
   For a missing file or one with an error, the menu shows the first

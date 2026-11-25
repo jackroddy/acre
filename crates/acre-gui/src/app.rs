@@ -17,7 +17,8 @@ use crate::arrange::{self, Arrange};
 use crate::document::{self, Added, Document};
 use crate::field::{self, Field};
 use crate::handle::{self, Reshape, Target};
-use crate::link::{Incoming, Link, Outgoing, Replace};
+use crate::link::{Editor, Incoming, Link, Outgoing, Replace};
+use crate::neovim;
 use crate::nudge::Nudge;
 use crate::playback;
 use crate::preview::Previews;
@@ -46,8 +47,8 @@ pub struct App {
     /// The index in `docs` of the drawing shown.
     active: usize,
     last_check: Instant,
-    /// The editor that sends the source, when acre-gui runs with
-    /// `--stdio`. acre-gui then watches no file.
+    /// The link an editor sends the source over. While an editor is
+    /// connected, acre-gui watches no file.
     link: Option<Link>,
     /// The offset of the last goto sent to the editor.
     //
@@ -72,12 +73,13 @@ pub struct App {
 }
 
 impl App {
-    /// A viewer of `file`, or of the last file opened. With `link`, a
-    /// viewer of what the editor at its other end sends. With `locked`,
-    /// it refuses edits until the toolbar unlocks it.
-    pub fn new(file: Option<PathBuf>, link: Option<Link>, locked: bool) -> Self {
+    /// A viewer of `file`, or of the last file in `recent`. With `link`,
+    /// a viewer of what an editor at its other end sends, and with a
+    /// link over stdin and stdout, of that alone. With `locked`, it
+    /// refuses edits until the toolbar unlocks it.
+    pub fn new(file: Option<PathBuf>, recent: Recent, link: Option<Link>, locked: bool) -> Self {
         let mut app = App {
-            recent: Recent::load(),
+            recent,
             previews: Previews::default(),
             closing: None,
             docs: vec![Document::blank()],
@@ -94,13 +96,24 @@ impl App {
             title: String::new(),
         };
         app.bar.locked = locked;
-        if app.link.is_none() {
+        if !app.stdio() {
             let file = file.or_else(|| app.recent.files.first().filter(|f| f.exists()).cloned());
             if let Some(file) = file {
                 app.open(&file);
             }
         }
         app
+    }
+
+    /// Whether the link is over stdin and stdout, which leaves no file
+    /// to open and no menu.
+    fn stdio(&self) -> bool {
+        self.link.as_ref().is_some_and(Link::is_stdio)
+    }
+
+    /// The editor connected over the link.
+    fn editor(&self) -> Option<&Editor> {
+        self.link.as_ref().and_then(Link::editor)
     }
 
     /// The drawing shown.
@@ -151,11 +164,11 @@ impl App {
     fn shown_changed(&mut self) {
         self.notice = None;
         let doc = &self.docs[self.active];
-        if let Some(link) = &self.link
+        if let Some(editor) = self.editor()
             && !doc.linked
             && let Some(path) = &doc.path
         {
-            link.send(&Outgoing::Open {
+            editor.send(&Outgoing::Open {
                 path: path.to_string_lossy().into_owned(),
             });
         }
@@ -171,10 +184,10 @@ impl App {
     }
 
     /// Build each drawing again whose font or data files changed on
-    /// disk, and without a link read each watched file again that
+    /// disk, and without an editor read each watched file again that
     /// changed.
     fn check_disk(&mut self) {
-        let watch = self.link.is_none();
+        let watch = self.editor().is_none();
         for (i, doc) in self.docs.iter_mut().enumerate() {
             let mut built = doc.check_files();
             if watch {
@@ -187,15 +200,24 @@ impl App {
     }
 
     /// Take what the editor sent, and tell it about the source's error
-    /// when that changed. False once the editor has gone.
+    /// when that changed. False once the editor at the other end of
+    /// stdin and stdout has gone.
     fn talk(&mut self) -> bool {
-        let Some(link) = &self.link else { return true };
+        let Some(link) = &mut self.link else {
+            return true;
+        };
+        let received = link.received();
+        if received.closed {
+            if link.is_stdio() {
+                return false;
+            }
+            self.unlink();
+        }
         let mut texts: Vec<(String, Option<PathBuf>, u64)> = Vec::new();
         let mut cursor = None;
-        let mut open = true;
-        for message in link.received() {
+        for message in received.messages {
             match message {
-                Some(Incoming::Text { text, path, tick }) => {
+                Incoming::Text { text, path, tick } => {
                     // an unnamed buffer comes with an empty path
                     let path = path.filter(|p| !p.is_empty()).map(PathBuf::from);
 
@@ -204,8 +226,7 @@ impl App {
                     texts.retain(|(_, p, _)| *p != path);
                     texts.push((text, path, tick));
                 }
-                Some(Incoming::Cursor { offset }) => cursor = Some(offset),
-                None => open = false,
+                Incoming::Cursor { offset } => cursor = Some(offset),
             }
         }
 
@@ -221,7 +242,7 @@ impl App {
         // after the text, so the offset is read against the source
         // of the newest program
         let Some(doc) = self.docs.iter_mut().find(|d| d.linked) else {
-            return open;
+            return true;
         };
         if let Some(offset) = cursor
             && Some(offset) != goto
@@ -231,9 +252,9 @@ impl App {
             doc.selection = Selection::at_cursor(program, &doc.program_text, &drawn, offset);
         }
         if !doc.reported
-            && let Some(link) = &self.link
+            && let Some(editor) = self.link.as_ref().and_then(Link::editor)
         {
-            link.send(&match &doc.error {
+            editor.send(&match &doc.error {
                 Some(e) => Outgoing::Error {
                     offset: e.span.start,
                     message: e.message.clone(),
@@ -242,7 +263,20 @@ impl App {
             });
             doc.reported = true;
         }
-        open
+        true
+    }
+
+    /// Watch each drawing's file again, once the editor has gone.
+    fn unlink(&mut self) {
+        for doc in &mut self.docs {
+            doc.linked = false;
+
+            // the editor's text can differ from the file, so the
+            // next check reads every file again
+            doc.modified = None;
+        }
+        self.goto = None;
+        self.nudge.answered();
     }
 
     /// Show `text`, the editor's source of tick `tick` for the file at
@@ -289,8 +323,8 @@ impl App {
 
     /// Ask the editor to make `edits` to the source it last sent.
     fn send_edits(&self, edits: &[TextEdit]) {
-        let Some(link) = &self.link else { return };
-        link.send(&Outgoing::Edit {
+        let Some(editor) = self.editor() else { return };
+        editor.send(&Outgoing::Edit {
             tick: self.doc().tick,
             edits: edits.iter().map(Replace::from).collect(),
         });
@@ -463,7 +497,7 @@ impl App {
         if self.bar.locked {
             return Err(LOCKED.to_string());
         }
-        if self.link.is_some() {
+        if self.editor().is_some() {
             if !self.doc().linked {
                 return Err("wait for the editor to show this drawing".to_string());
             }
@@ -581,9 +615,9 @@ impl App {
         let Some(offset) = doc.selection.spans().first().map(|s| s.start) else {
             return;
         };
-        match &self.link {
-            Some(link) if doc.linked => {
-                link.send(&Outgoing::Goto { offset });
+        match self.link.as_ref().and_then(Link::editor) {
+            Some(editor) if doc.linked => {
+                editor.send(&Outgoing::Goto { offset });
                 self.goto = Some(offset);
             }
             _ => {
@@ -621,12 +655,35 @@ impl App {
                         ui.close();
                     }
                 });
+                self.edit_in_neovim(ui);
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.ctx().send_viewport_cmd(ViewportCommand::Close);
                 }
             });
         });
+    }
+
+    /// The menu item that opens neovim on the drawing shown, linked to
+    /// this viewer. It is disabled while an editor is connected.
+    fn edit_in_neovim(&mut self, ui: &mut egui::Ui) {
+        let file = self.doc().path.clone();
+        let socket = self.link.as_ref().and_then(Link::socket);
+        let why_not = match (&file, socket) {
+            _ if self.editor().is_some() => Some("an editor is linked already"),
+            (None, _) => Some("this drawing has no file"),
+            (_, None) => Some("acre-gui has no socket for neovim to link to"),
+            _ => None,
+        };
+        let button = ui
+            .add_enabled(why_not.is_none(), egui::Button::new("Edit in neovim"))
+            .on_disabled_hover_text(why_not.unwrap_or_default());
+        if button.clicked()
+            && let (Some(file), Some(socket)) = (file, socket)
+        {
+            self.notice = neovim::open(&file, socket).err();
+            ui.close();
+        }
     }
 
     /// Take up `tool`, dropping the points placed of any polygon or
@@ -942,7 +999,7 @@ impl App {
     /// Select the nodes `added` names now, or once the editor sends back
     /// the text the edit with it makes.
     fn select_added(&mut self, added: Added) {
-        match &self.link {
+        match self.editor() {
             Some(_) => self.doc_mut().added = Some(added),
             None => self.select(added),
         }
@@ -1338,7 +1395,7 @@ impl App {
             doc.time,
             doc.selection.spans(),
         );
-        if doc.blank && self.link.is_none() {
+        if doc.blank && !self.stdio() {
             ui.painter().text(
                 shown.rect.center(),
                 Align2::CENTER_CENTER,
@@ -1394,6 +1451,11 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self) {
+        // dropping the link removes its socket
+        self.link = None;
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if !self.talk() {
             ctx.send_viewport_cmd(ViewportCommand::Close);
@@ -1414,7 +1476,7 @@ impl eframe::App for App {
         self.keys(ui.ctx());
         let doc = self.doc_mut();
         doc.time = doc.playback.time(Instant::now());
-        if self.link.is_none() {
+        if !self.stdio() {
             egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         }
         egui::Panel::top("tabs").show(ui, |ui| self.tabs(ui));
@@ -1574,4 +1636,76 @@ fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -
         response.on_hover_text_at_pointer(place);
     }
     pressed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, ErrorKind, Write};
+    use std::os::unix::net::UnixStream;
+
+    /// The next line the viewer sends to `editor`, with the viewer
+    /// taking messages meanwhile.
+    fn answer(app: &mut App, editor: &mut BufReader<UnixStream>) -> String {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut line = String::new();
+        while Instant::now() < deadline {
+            assert!(app.talk());
+            match editor.read_line(&mut line) {
+                Ok(_) if line.ends_with('\n') => return line,
+                Err(e) if e.kind() != ErrorKind::WouldBlock && e.kind() != ErrorKind::TimedOut => {
+                    panic!("{e}")
+                }
+                _ => {}
+            }
+        }
+        panic!("no answer, only {line:?}");
+    }
+
+    #[test]
+    fn an_editor_on_the_socket_gets_answers_and_leaves_the_viewer_running() {
+        let path = std::env::temp_dir().join(format!("acre-gui-test-{}.sock", std::process::id()));
+        let link = Link::listen(egui::Context::default(), path.clone()).unwrap();
+        let mut app = App::new(None, Recent::default(), Some(link), false);
+        assert!(app.editor().is_none());
+
+        let stream = UnixStream::connect(&path).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(20)))
+            .unwrap();
+        let mut editor = BufReader::new(stream);
+        let text = |text: &str, tick: u64| {
+            let message =
+                serde_json::json!({"type": "text", "text": text, "path": "", "tick": tick});
+            format!("{message}\n")
+        };
+        editor
+            .get_mut()
+            .write_all(text("canvas { size 40 40; box { at 10; } }\n", 1).as_bytes())
+            .unwrap();
+        let error: serde_json::Value =
+            serde_json::from_str(&answer(&mut app, &mut editor)).unwrap();
+        assert_eq!(error["type"], "error");
+        assert!(error["message"].as_str().unwrap().contains("`at`"));
+        assert!(app.editor().is_some());
+        assert!(app.doc().linked);
+
+        editor
+            .get_mut()
+            .write_all(text("canvas { size 40 40; }\n", 2).as_bytes())
+            .unwrap();
+        assert_eq!(answer(&mut app, &mut editor), "{\"type\":\"ok\"}\n");
+
+        drop(editor);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.editor().is_some() && Instant::now() < deadline {
+            assert!(app.talk(), "the viewer stays open when the editor goes");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(app.editor().is_none());
+        assert!(!app.doc().linked);
+
+        drop(app);
+        assert!(!path.exists(), "the socket goes with the viewer");
+    }
 }
