@@ -41,7 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         viewport: egui::ViewportBuilder::default()
             .with_title("acre")
             .with_app_id("acre-gui")
-            .with_inner_size([900.0, 720.0]),
+            .with_inner_size([900.0, 720.0])
+            .with_decorations(false),
         ..Default::default()
     };
     eframe::run_native(
