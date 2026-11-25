@@ -16,7 +16,8 @@ the cursor to the node that drew it. Moving the cursor into a node selects
 that node in the viewer. An error in the source shows as a
 diagnostic. `gggqG` formats the buffer with `acre fmt -`, which reads a whole
 file, so `gq` on part of one fails. `acre` and `acre-gui` have to be on
-the path.
+the path. A viewer that exits with an error shows its last lines of
+stderr as an error message, and one the person closed says nothing.
 
 `setup` takes these options:
 

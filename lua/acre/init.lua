@@ -192,7 +192,9 @@ function M.start()
   M.stop()
   local buf = vim.api.nvim_get_current_buf()
   local pending = ""
-  local job = vim.fn.jobstart(M.config.cmd, {
+  local errors = {}
+  local job
+  job = vim.fn.jobstart(M.config.cmd, {
     on_stdout = function(_, data)
       -- data holds pieces split at newlines, the last one unfinished
       pending = pending .. data[1]
@@ -206,9 +208,28 @@ function M.start()
         pending = data[i]
       end
     end,
-    on_exit = function()
-      if view and view.job == job then
+    on_stderr = function(_, data)
+      for _, line in ipairs(data) do
+        if line ~= "" then
+          table.insert(errors, line)
+          if #errors > 20 then
+            table.remove(errors, 1)
+          end
+        end
+      end
+    end,
+    on_exit = function(_, status)
+      -- a job that M.stop already stopped is no longer the open view
+      local open = view and view.job == job
+      if open then
         M.stop()
+      end
+      if open and status ~= 0 then
+        local message = "acre: the viewer exited with status " .. status
+        if #errors > 0 then
+          message = message .. "\n" .. table.concat(errors, "\n")
+        end
+        vim.notify(message, vim.log.levels.ERROR)
       end
     end,
   })
