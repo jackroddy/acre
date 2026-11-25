@@ -26,3 +26,10 @@ acre render drawing.acre --out drawing.pdf
 | `acre` | the library: language, scene model and renderer |
 | `acre-cli` | the `acre` command |
 | `acre-gui` | the viewer: a drawing's render, redrawn as its file or editor buffer changes |
+
+## licence
+
+acre is licensed under MIT or Apache-2.0, at your option. The fonts it
+bundles have their own licences, in `crates/acre/assets/fonts/`. The
+English hyphenation patterns have theirs, in
+`crates/acre/assets/hyphenation/hyph-en-us-LICENSE.txt`.
