@@ -20,6 +20,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Changed
 
+- acre-gui draws no title bar of its own. Inside decade, which leaves
+  decorations to the client, winit drew one whose close button did
+  nothing.
 - When the editor sends a source with another path, the viewer pauses at 0,
   as it does when it opens a file.
 - The sections panel and the properties panel lie over the render instead
