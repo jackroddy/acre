@@ -3,7 +3,7 @@
   "title": "A file manager does not open .acre files in acre-gui",
   "body": "`acre-gui` has app menu entries in `~/.local/share/applications`. No MIME type covers `.acre` files, so a file manager does not offer `acre-gui` for them. A fix needs a shared-mime-info XML file that maps `*.acre` to a type such as `text/x-acre`, and a `MimeType=` line on both desktop entries.",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-09T23:27:03.918031401Z",
-  "updated_at": "2026-11-09T23:27:03.918031401Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:17:56.559300905Z",
+  "closed_at": "2026-11-25T01:17:56.559300905Z",
+  "close_reason": "Set up on Jack's desktop on 2026-11-24, outside the repo: a shared-mime-info package `acre.xml` in `~/.local/share/mime/packages` maps `*.acre` to `text/x-acre` (a subclass of text/plain), both app menu entries gained `MimeType=text/x-acre;`, and `xdg-mime default` makes the release entry the default. GIO reports `.acre` files as `text/x-acre`. The repo ships no desktop entries, so nothing here is versioned.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "38a8b36",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "35a04f1",
+      "branch": "dev"
+    }
   }
 }
