@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-24T07:58:47.013366009Z",
+  "updated_at": "2026-11-25T00:00:38.518487568Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -333,6 +333,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Data fills rows and tables, and data points take units (acre-c4254f, commit 4c45d30). A row takes `cells DATA COL`, one cell per row of the column. A table takes `row DATA COL...`, one table row per row of the file with the named columns in turn, and it may mix these with quoted `row` lines in line order. A `polygon` or `polyline` with `points DATA XCOL YCOL` takes `units SX SY` and `origin X Y`. A data point (X, Y) lands at ((X - OX) * SX, (Y - OY) * SY) in the group's coordinates, and a negative unit turns that axis around. `units` and `origin` are an error with numbers in `points`. The names avoid `scale`, which the timeline uses for an action. A `text` from data was left out, because a text holds one string and nothing plain picks one row of a column. All of this is provisional.",
       "commit": "4c45d30",
+      "branch": "dev"
+    },
+    {
+      "id": "25196df4",
+      "at": "2026-11-25T00:00:38.518484928Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Blended colors (acre-07da80, commit 9b6886c). `(mix A B F)` is the color F of the way from color A to color B, with F a number from 0 to 1. It uses the group the parser already reads for arithmetic and for `(NAME N)` list picks. The parser now also takes `#rrggbb` and `#rrggbbaa` inside `( ... )`. A and B may be color literals, `let` names or nested mixes. The blend is component-wise in sRGB, alpha included, and a half rounds up. `mix` became a word a `let` may not take. The form is provisional, like the rest of the syntax.",
+      "commit": "9b6886c",
       "branch": "dev"
     }
   ],
