@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-25T01:34:36.920882462Z",
-  "updated_at": "2026-11-25T01:57:32.053829301Z",
+  "updated_at": "2026-11-25T04:36:34.984978306Z",
   "closed_at": "2026-11-25T01:57:32.053829301Z",
   "close_reason": "Landed in 0237012. Without `--stdio`, acre-gui listens on `$XDG_RUNTIME_DIR/acre/<pid>.sock` (`Link::listen` in `link.rs`) and goes back to watching files when the editor disconnects. File > Edit in neovim runs the command from `neovim::command`. Outside decade that is `xdg-terminal-exec nvim FILE`. Inside decade it is ghostty with decade's flags and with `DECADE_PANE` and `DECADE_INTO` removed, so decade splits the focused pane. The plugin connects with `sockconnect` when `ACRE_SOCKET` is set. Nobody has tried it in a window yet.",
   "resolution": "done",
-  "notes": [],
+  "notes": [
+    {
+      "id": "27cd583e",
+      "at": "2026-11-25T04:36:34.984977436Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Jack tried File > Edit in neovim by hand inside decade on 2026-11-24 at 5fc897c, once his neovim config gave the acre plugin its own lazy.nvim name, and it worked: neovim opened in a split beside the viewer and linked over the socket.",
+      "commit": "5fc897c",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "60d64ff",
