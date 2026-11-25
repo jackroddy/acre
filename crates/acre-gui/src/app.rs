@@ -33,6 +33,8 @@ const DISK_CHECK: Duration = Duration::from_millis(500);
 /// from an editor over the link.
 pub struct App {
     recent: Recent,
+    /// Whether the dialog that asks before closing the viewer is open.
+    closing: bool,
     /// The file the source belongs to.
     path: Option<PathBuf>,
     text: String,
@@ -102,6 +104,7 @@ impl App {
     pub fn new(file: Option<PathBuf>, link: Option<Link>) -> Self {
         let mut app = App {
             recent: Recent::load(),
+            closing: false,
             path: None,
             text: String::new(),
             modified: None,
@@ -705,7 +708,30 @@ impl App {
                     }
                 }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("×").on_hover_text("close acre-gui").clicked() {
+                    self.closing = true;
+                }
+            });
         });
+    }
+
+    /// Ask whether to close the viewer, and close it on Close. A click on
+    /// Cancel or outside the dialog keeps it open.
+    fn confirm_close(&mut self, ctx: &egui::Context) {
+        let shown = egui::Modal::new(egui::Id::unique("close")).show(ctx, |ui| {
+            ui.label("Close acre-gui?");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| (ui.button("Close").clicked(), ui.button("Cancel").clicked()))
+                .inner
+        });
+        let (close, cancel) = shown.inner;
+        if close {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+        if close || cancel || shown.backdrop_response.clicked() {
+            self.closing = false;
+        }
     }
 
     /// Space plays and pauses. With a selection the arrow keys move it a
@@ -1234,6 +1260,9 @@ impl eframe::App for App {
             egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         }
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        if self.closing {
+            self.confirm_close(ui.ctx());
+        }
         egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
         if self.playback.duration() > 0.0 {
             egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));

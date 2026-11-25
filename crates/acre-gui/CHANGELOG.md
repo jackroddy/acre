@@ -9,6 +9,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Added
 
+- A × button at the right end of the toolbar closes acre-gui after a
+  dialog asks to confirm. Cancel, or a click outside the dialog, keeps it
+  open.
 - Dragging one child of a stack or a grid reorders it among its siblings.
   The viewer outlines the child under the pointer. A line marks the place
   it would land: across the stack at the nearest gap, or along the
