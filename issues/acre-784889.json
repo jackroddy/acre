@@ -3,26 +3,29 @@
   "title": "acre-gui holds several drawings in tabs",
   "body": "acre-gui shows one drawing; `App` holds its path, text, scene, selection, playback, zoom and field.\n\n## Proposal\n\n- A `Document` holds everything that belongs to one drawing; `App` holds the open documents and the active one.\n- A tab bar under the menu, one tab per drawing by file name, each with a × that asks to confirm as the window's × does. File > Open adds a tab, or switches to it when the file is already open. Each tab keeps its own selection, zoom and playback, and without a link watches its own file.\n- With neovim linked: `:AcreView` in another buffer opens or switches to that buffer's tab instead of replacing the drawing; switching tabs in the viewer sends a new `open {path}` message, and the plugin switches to that buffer, opening it if needed, and moves the link to it.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-25T01:52:24.863498841Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-25T01:34:36.909759596Z",
-  "updated_at": "2026-11-25T01:37:24.863498841Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:47:40.723955312Z",
+  "closed_at": "2026-11-25T01:47:40.723955312Z",
+  "close_reason": "Landed in two commits on dev. `be5f747` moves the per-drawing state out of `App` into `Document` (`document.rs`) and the toolbar settings into `Toolbar` (`view.rs`), with no change in behaviour. `b35b50e` adds the tab bar, the tab bookkeeping in `tabs.rs` (`find`, `add`, `close`), the `open` link message and its handler in `editors/nvim/lua/acre/init.lua`, with tests in `tabs.rs` and `editors/nvim/tests/edit.lua`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "60d64ff",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "b35b50e",
+      "branch": "dev"
+    }
   }
 }
