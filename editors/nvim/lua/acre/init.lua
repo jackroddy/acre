@@ -109,6 +109,15 @@ local function apply(buf, edits)
   end
 end
 
+-- the buffer whose name is `path`, if one has it
+local function buffer_of(path)
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(b) == path then
+      return b
+    end
+  end
+end
+
 local function receive(message)
   local buf = view.buf
   if message.type == "goto" then
@@ -141,6 +150,27 @@ local function receive(message)
       end
     end
     send_text()
+  elseif message.type == "open" then
+    -- the person switched tabs in the viewer: show that file in the
+    -- window of the buffer shown so far, and move the viewer to it,
+    -- which sends its text back for the tab to show
+    local win = vim.fn.bufwinid(buf)
+    if win ~= -1 then
+      vim.api.nvim_set_current_win(win)
+    end
+    local target = buffer_of(message.path)
+    local ok, err = pcall(function()
+      if target and vim.api.nvim_buf_is_loaded(target) then
+        vim.cmd.buffer(target)
+      else
+        vim.cmd.edit(vim.fn.fnameescape(message.path))
+      end
+    end)
+    if not ok then
+      vim.notify("acre: cannot open " .. message.path .. ": " .. err, vim.log.levels.ERROR)
+      return
+    end
+    M.switch()
   end
 end
 

@@ -8,8 +8,8 @@ use acre::scene::{self, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{
-    self, Align2, Color32, Event, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle, Vec2,
-    ViewportCommand,
+    self, Align2, Color32, Event, FontId, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle,
+    Vec2, ViewportCommand,
 };
 
 use crate::anchor;
@@ -24,6 +24,7 @@ use crate::preview::Previews;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
 use crate::snap;
+use crate::tabs;
 use crate::tool::{self, Step, Tool};
 use crate::view::{MenuItem, Toolbar};
 
@@ -38,9 +39,9 @@ const LOCKED: &str = "locked";
 pub struct App {
     recent: Recent,
     previews: Previews,
-    /// Whether the dialog that asks before closing the viewer is open.
-    closing: bool,
-    /// The drawings open.
+    /// What the open dialog asks to close.
+    closing: Option<Closing>,
+    /// The drawings open, one to a tab.
     docs: Vec<Document>,
     /// The index in `docs` of the drawing shown.
     active: usize,
@@ -78,8 +79,8 @@ impl App {
         let mut app = App {
             recent: Recent::load(),
             previews: Previews::default(),
-            closing: false,
-            docs: vec![Document::new()],
+            closing: None,
+            docs: vec![Document::blank()],
             active: 0,
             last_check: Instant::now(),
             link,
@@ -111,11 +112,62 @@ impl App {
         &mut self.docs[self.active]
     }
 
+    /// Show the file at `path` in its tab, or in a new tab when none
+    /// has it.
     fn open(&mut self, path: &Path) {
-        self.notice = match self.doc_mut().open(path) {
-            Ok(()) => self.recent.touch(path).err(),
-            Err(why) => Some(why),
+        let i = match tabs::find(&self.docs, Some(path)) {
+            Some(i) => i,
+            None => {
+                let mut doc = Document::new();
+                if let Err(why) = doc.open(path) {
+                    self.notice = Some(why);
+                    return;
+                }
+                tabs::add(&mut self.docs, doc)
+            }
         };
+        self.activate(i);
+        self.notice = self.recent.touch(path).err();
+    }
+
+    /// Show the drawing in tab `i`. With a link, ask the editor to show
+    /// its file when the editor shows another.
+    fn activate(&mut self, i: usize) {
+        if i == self.active {
+            return;
+        }
+
+        // the points placed and the field belong to the drawing left,
+        // and a field's text is written only while it is shown
+        let left = self.doc_mut();
+        left.view.path.clear();
+        left.field = None;
+        self.active = i;
+        self.shown_changed();
+    }
+
+    /// Clear the status line for the drawing now shown, and with a link,
+    /// ask the editor to show its file when the editor shows another.
+    fn shown_changed(&mut self) {
+        self.notice = None;
+        let doc = &self.docs[self.active];
+        if let Some(link) = &self.link
+            && !doc.linked
+            && let Some(path) = &doc.path
+        {
+            link.send(&Outgoing::Open {
+                path: path.to_string_lossy().into_owned(),
+            });
+        }
+    }
+
+    /// Close tab `i`.
+    fn close_tab(&mut self, i: usize) {
+        let shown = i == self.active;
+        self.active = tabs::close(&mut self.docs, self.active, i);
+        if shown {
+            self.shown_changed();
+        }
     }
 
     /// Build each drawing again whose font or data files changed on
@@ -138,51 +190,39 @@ impl App {
     /// when that changed. False once the editor has gone.
     fn talk(&mut self) -> bool {
         let Some(link) = &self.link else { return true };
-        let mut newest = None;
+        let mut texts: Vec<(String, Option<PathBuf>, u64)> = Vec::new();
         let mut cursor = None;
         let mut open = true;
         for message in link.received() {
             match message {
-                Some(Incoming::Text { text, path, tick }) => newest = Some((text, path, tick)),
+                Some(Incoming::Text { text, path, tick }) => {
+                    // an unnamed buffer comes with an empty path
+                    let path = path.filter(|p| !p.is_empty()).map(PathBuf::from);
+
+                    // only the newest text of a file matters when
+                    // several came at once
+                    texts.retain(|(_, p, _)| *p != path);
+                    texts.push((text, path, tick));
+                }
                 Some(Incoming::Cursor { offset }) => cursor = Some(offset),
                 None => open = false,
             }
         }
 
-        let goto = if newest.is_some() || cursor.is_some() {
-            self.goto.take()
-        } else {
+        let goto = if texts.is_empty() && cursor.is_none() {
             None
+        } else {
+            self.goto.take()
         };
-
-        // only the newest text matters when several came at once
-        if let Some((text, path, tick)) = newest {
-            // the editor sends its text after an edit it makes or
-            // drops alike, so a drag it dropped snaps back here, and
-            // this text is taken as the answer to the edit sent last
-            self.nudge.answered();
-            let doc = &mut self.docs[self.active];
-            doc.view.end_move();
-            let path = path.map(PathBuf::from);
-            if path != doc.path {
-                doc.rewind();
-            }
-            doc.path = path;
-
-            // an undo can bring back the text already shown under a
-            // new tick, and an edit must carry the new one
-            doc.tick = tick;
-            if (text != doc.text || doc.version == 0) && doc.show(text) {
-                self.notice = None;
-            }
-            if let Some(added) = doc.added.take() {
-                self.select(added);
-            }
+        for (text, path, tick) in texts {
+            self.take_text(text, path, tick);
         }
 
         // after the text, so the offset is read against the source
         // of the newest program
-        let doc = &mut self.docs[self.active];
+        let Some(doc) = self.docs.iter_mut().find(|d| d.linked) else {
+            return open;
+        };
         if let Some(offset) = cursor
             && Some(offset) != goto
             && let (Some(scene), Some(program)) = (&doc.scene, &doc.program)
@@ -203,6 +243,48 @@ impl App {
             doc.reported = true;
         }
         open
+    }
+
+    /// Show `text`, the editor's source of tick `tick` for the file at
+    /// `path`, in that file's tab. A file other than the one the editor
+    /// showed means the editor moved, and its tab is shown, opened when
+    /// no tab has it.
+    fn take_text(&mut self, text: String, path: Option<PathBuf>, tick: u64) {
+        // the editor sends its text after an edit it makes or drops
+        // alike, so a drag it dropped snaps back here, and this text
+        // is taken as the answer to the edit sent last
+        self.nudge.answered();
+        let linked = self.docs.iter().position(|d| d.linked);
+        let i = match linked {
+            Some(i) if self.docs[i].path == path => i,
+            _ => {
+                if let Some(i) = linked {
+                    self.docs[i].linked = false;
+                }
+                let i = tabs::find(&self.docs, path.as_deref()).unwrap_or_else(|| {
+                    let mut doc = Document::new();
+                    doc.path = path;
+                    tabs::add(&mut self.docs, doc)
+                });
+                self.docs[i].linked = true;
+                self.activate(i);
+                i
+            }
+        };
+        let doc = &mut self.docs[i];
+        doc.view.end_move();
+
+        // an undo can bring back the text already shown under a new
+        // tick, and an edit must carry the new one
+        doc.tick = tick;
+        if (text != doc.text || doc.version == 0) && doc.show(text) && i == self.active {
+            self.notice = None;
+        }
+        if let Some(added) = doc.added.take()
+            && i == self.active
+        {
+            self.select(added);
+        }
     }
 
     /// Ask the editor to make `edits` to the source it last sent.
@@ -382,6 +464,9 @@ impl App {
             return Err(LOCKED.to_string());
         }
         if self.link.is_some() {
+            if !self.doc().linked {
+                return Err("wait for the editor to show this drawing".to_string());
+            }
             self.nudge.admit()?;
             self.send_edits(edits);
             self.nudge.sent();
@@ -484,7 +569,8 @@ impl App {
     }
 
     /// Select the node that drew the object at canvas `point`, and point
-    /// the editor at it, or name its line when there is no editor. A
+    /// the editor at it, or name its line when the editor does not
+    /// show this drawing. A
     /// point on no object ends the selection.
     fn go_to_object_at(&mut self, point: scene::Point) {
         let doc = &mut self.docs[self.active];
@@ -496,11 +582,11 @@ impl App {
             return;
         };
         match &self.link {
-            Some(link) => {
+            Some(link) if doc.linked => {
                 link.send(&Outgoing::Goto { offset });
                 self.goto = Some(offset);
             }
-            None => {
+            _ => {
                 let line = doc.text[..offset.min(doc.text.len())].matches('\n').count() + 1;
                 self.notice = Some(format!("drawn by line {line}"));
             }
@@ -635,27 +721,63 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("×").on_hover_text("close acre-gui").clicked() {
-                    self.closing = true;
+                    self.closing = Some(Closing::Window);
                 }
             });
         });
     }
 
-    /// Ask whether to close the viewer, and close it on Close. A click on
-    /// Cancel or outside the dialog keeps it open.
-    fn confirm_close(&mut self, ctx: &egui::Context) {
+    /// Ask whether to close what `closing` names, and close it on
+    /// Close. A click on Cancel or outside the dialog keeps it open.
+    fn confirm_close(&mut self, ctx: &egui::Context, closing: Closing) {
+        let question = match closing {
+            Closing::Window => "Close acre-gui?".to_string(),
+            Closing::Tab(i) => format!("Close {}?", self.docs[i].name()),
+        };
         let shown = egui::Modal::new(egui::Id::unique("close")).show(ctx, |ui| {
-            ui.label("Close acre-gui?");
+            ui.label(question);
             ui.add_space(8.0);
             ui.horizontal(|ui| (ui.button("Close").clicked(), ui.button("Cancel").clicked()))
                 .inner
         });
         let (close, cancel) = shown.inner;
-        if close {
-            ctx.send_viewport_cmd(ViewportCommand::Close);
-        }
         if close || cancel || shown.backdrop_response.clicked() {
-            self.closing = false;
+            self.closing = None;
+        }
+        match closing {
+            Closing::Window if close => ctx.send_viewport_cmd(ViewportCommand::Close),
+            Closing::Tab(i) if close => self.close_tab(i),
+            _ => {}
+        }
+    }
+
+    /// One tab for each drawing open, by its file's name, with its path
+    /// on hover and a × that asks to close it. A click on a tab shows its
+    /// drawing. The blank drawing has no tab.
+    fn tabs(&mut self, ui: &mut egui::Ui) {
+        let mut chosen = None;
+        ui.horizontal(|ui| {
+            for (i, doc) in self.docs.iter().enumerate().filter(|(_, d)| !d.blank) {
+                let path = doc
+                    .path
+                    .as_ref()
+                    .map_or("untitled".into(), |p| p.display().to_string());
+                let tab = ui.selectable_label(i == self.active, doc.name());
+                if tab.on_hover_text(path).clicked() {
+                    chosen = Some(i);
+                }
+                if ui
+                    .small_button("×")
+                    .on_hover_text("close this tab")
+                    .clicked()
+                {
+                    self.closing = Some(Closing::Tab(i));
+                }
+                ui.separator();
+            }
+        });
+        if let Some(i) = chosen {
+            self.activate(i);
         }
     }
 
@@ -1216,6 +1338,15 @@ impl App {
             doc.time,
             doc.selection.spans(),
         );
+        if doc.blank && self.link.is_none() {
+            ui.painter().text(
+                shown.rect.center(),
+                Align2::CENTER_CENTER,
+                "Open a drawing with File › Open",
+                FontId::proportional(16.0),
+                ui.visuals().weak_text_color(),
+            );
+        }
         self.pane = shown.rect.size();
         self.hover = shown.hover;
         if let Some(point) = shown.clicked {
@@ -1286,9 +1417,10 @@ impl eframe::App for App {
         if self.link.is_none() {
             egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         }
+        egui::Panel::top("tabs").show(ui, |ui| self.tabs(ui));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
-        if self.closing {
-            self.confirm_close(ui.ctx());
+        if let Some(closing) = self.closing {
+            self.confirm_close(ui.ctx(), closing);
         }
         egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
         if self.doc().playback.duration() > 0.0 {
@@ -1316,6 +1448,15 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| self.canvas(ui));
     }
+}
+
+/// What the dialog that asks before closing is about.
+#[derive(Clone, Copy)]
+enum Closing {
+    /// The viewer's window.
+    Window,
+    /// The tab at this index.
+    Tab(usize),
 }
 
 /// The width of a side panel, as egui gives a side panel by default.

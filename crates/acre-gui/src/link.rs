@@ -9,12 +9,17 @@
 //! out  {"type":"edit","tick":7,"edits":[{"start":20,"end":22,"text":"40"}]}
 //! out  {"type":"error","offset":40,"message":"`box` needs `at`"}
 //! out  {"type":"ok"}
+//! out  {"type":"open","path":"/a/c.acre"}
 //! ```
 //!
 //! Offsets count bytes from the start of the text. A `tick` names one
 //! version of the text: an `edit` holds ranges in the text of its tick,
 //! and the editor drops an edit whose tick is no longer its own. acre-gui
 //! closes when stdin closes.
+//!
+//! acre-gui keeps each path the editor sends in a tab of its own. An
+//! `open` asks the editor to show the file of the tab the person
+//! switched to and send its text.
 
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::{Receiver, channel};
@@ -50,6 +55,9 @@ pub enum Outgoing {
     Ok,
     /// Make these changes to the source of `tick`.
     Edit { tick: u64, edits: Vec<Replace> },
+    /// Show this file, and send its text in place of the text sent so
+    /// far.
+    Open { path: String },
 }
 
 /// The text that replaces bytes `start..end` of the source.
@@ -148,6 +156,13 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Outgoing::Ok).unwrap(),
             r#"{"type":"ok"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Outgoing::Open {
+                path: "/a/c.acre".into()
+            })
+            .unwrap(),
+            r#"{"type":"open","path":"/a/c.acre"}"#
         );
         let edit = Outgoing::Edit {
             tick: 12,

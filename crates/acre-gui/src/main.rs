@@ -17,6 +17,7 @@ mod recent;
 mod reorder;
 mod selection;
 mod snap;
+mod tabs;
 mod tool;
 mod view;
 

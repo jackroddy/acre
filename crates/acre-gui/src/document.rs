@@ -17,6 +17,11 @@ use crate::view::View;
 /// A drawing, from a file the viewer watches or from an editor over the
 /// link.
 pub struct Document {
+    /// Whether this stands for no drawing: the viewer before the first
+    /// opens, or with every tab closed.
+    pub blank: bool,
+    /// Whether this is the drawing the editor at the link shows.
+    pub linked: bool,
     /// The file the source belongs to.
     pub path: Option<PathBuf>,
     pub text: String,
@@ -68,6 +73,8 @@ pub struct Added {
 impl Document {
     pub fn new() -> Self {
         Document {
+            blank: false,
+            linked: false,
             path: None,
             text: String::new(),
             modified: None,
@@ -87,6 +94,13 @@ impl Document {
             playback: Playback::new(),
             time: 0.0,
             missing: Vec::new(),
+        }
+    }
+
+    pub fn blank() -> Self {
+        Document {
+            blank: true,
+            ..Document::new()
         }
     }
 

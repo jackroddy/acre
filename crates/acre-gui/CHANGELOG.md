@@ -23,6 +23,19 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   For a missing file or one with an error, the menu shows the first
   line of the error instead. acre-gui keeps each render for the session
   and builds it again when the file changes.
+- acre-gui holds several drawings in tabs, in a bar under the menu. A
+  tab shows the file's name, and its full path on hover. Each tab keeps
+  its own selection, zoom and playback, and without `--stdio` watches its
+  own file. File > Open and Open Recent open a file in a new tab, or show
+  its tab when one has it. A tab's × asks before it closes the tab.
+  Closing the last tab leaves an empty viewer that says to open a file.
+  Switching tabs drops a text field left open in the tab left, without
+  writing it.
+- With `--stdio`, a text for another path opens that path in a tab, or
+  shows its tab, in place of the drawing shown. An unnamed buffer's tab
+  is "untitled". A click on a tab sends `{"type":"open","path":...}`,
+  which asks the editor to show that file and send its text. Until it
+  does, acre-gui refuses edits in that tab.
 
 ## [0.2.0] - 2026-11-24
 
