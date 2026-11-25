@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-25T01:39:28.012513751Z",
   "defer_until": null,
   "created_at": "2026-11-25T01:24:12.416747857Z",
-  "updated_at": "2026-11-25T01:24:28.012513751Z",
+  "updated_at": "2026-11-25T01:27:19.263763927Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "9c73bbe5",
+      "at": "2026-11-25T01:27:19.263763377Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "The acre-gui part landed in commit 60d64ff. `App::write` refuses an edit while `View::locked` is set. The toolbar's Lock toggle and `acre-gui --locked` set it. A press on an object or a handle while locked comes to a click, through `press` in `view.rs` and `Drag::click`. The `acre-figures` skill still has to tell agents to pass `--locked`.",
+      "commit": "60d64ff",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "3759073",
