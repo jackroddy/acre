@@ -3,7 +3,7 @@
   "title": "Inside decade, the neovim plugin can open the viewer in a scratch pane",
   "body": "The neovim plugin in `editors/nvim/` starts `acre-gui --stdio` as a viewer. Inside decade, the viewer's window opens in a new pane beside neovim, because decade places it by the `DECADE_PANE` that neovim passed on.\n\ndecade reads a `DECADE_INTO=<pane name>` variable from a window's process environment and puts the window in that pane (decade issue decade-7736aa). The plugin can set it when it starts the viewer, so the viewer opens in a scratch pane.\n\n## Open\n\n- How the plugin learns the scratch pane's name: a setting in the plugin, or a question to decade.",
   "type": "feature",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-25T00:35:37.3036857Z",
-  "updated_at": "2026-11-25T00:35:37.3036857Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:18:28.704252977Z",
+  "closed_at": "2026-11-25T01:18:28.704252977Z",
+  "close_reason": "Jack on 2026-11-24: not useful. :AcreView already opens the viewer in a new pane beside neovim, which is what editing wants; targeting the scratch pane would need the pane named on nearly every use.",
+  "resolution": "dropped",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "9b6886c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "35a04f1",
+      "branch": "dev"
+    }
   }
 }
