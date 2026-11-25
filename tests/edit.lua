@@ -167,6 +167,49 @@ check("the second buffer has them", hooks(second) > 0, tostring(hooks(second)))
 acre.toggle()
 check("toggle in the shown buffer closes the viewer", hooks(second) == 0)
 
+-- an open from the viewer, sent when the person switches tabs, shows
+-- that file's buffer, loaded or not, and moves the viewer to it, which
+-- sends the buffer's text
+vim.cmd.buffer(buf)
+local loaded = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(loaded, "loaded.acre")
+vim.api.nvim_buf_set_lines(loaded, 0, -1, false, { "canvas { size 20 20 }" })
+local on_disk = vim.fn.tempname() .. ".acre"
+vim.fn.writefile({ "canvas { size 30 30 }" }, on_disk)
+local unloaded = vim.fn.bufadd(on_disk)
+check("the fixture's second buffer is not loaded", not vim.api.nvim_buf_is_loaded(unloaded))
+vim.fn.delete(sent_file)
+acre.start()
+before = #wait_for_texts(1)
+
+acre._receive({ type = "open", path = vim.api.nvim_buf_get_name(loaded) })
+check("an open shows a loaded buffer", vim.api.nvim_get_current_buf() == loaded)
+sent = wait_for_texts(before + 1)
+check(
+  "and sends its text",
+  #sent > before
+    and sent[#sent].text == "canvas { size 20 20 }\n"
+    and sent[#sent].path == vim.api.nvim_buf_get_name(loaded),
+  vim.inspect(sent[#sent])
+)
+check("and moves the viewer to it", hooks(loaded) > 0 and hooks(buf) == 0)
+
+before = #sent
+acre._receive({ type = "open", path = vim.api.nvim_buf_get_name(unloaded) })
+check(
+  "an open loads a buffer that is not loaded",
+  vim.api.nvim_get_current_buf() == unloaded and vim.api.nvim_buf_is_loaded(unloaded)
+)
+sent = wait_for_texts(before + 1)
+check(
+  "and sends its text",
+  #sent > before and sent[#sent].text == "canvas { size 30 30 }\n",
+  vim.inspect(sent[#sent])
+)
+check("and moves the viewer to it", hooks(unloaded) > 0 and hooks(loaded) == 0)
+acre.stop()
+vim.fn.delete(on_disk)
+
 -- a viewer that exits: a failure is reported with its stderr, a clean exit is silent
 acre.stop()
 local notes = {}

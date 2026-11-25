@@ -10,8 +10,12 @@ Add this directory to neovim's runtime path, for example with lazy.nvim:
 ```
 
 `:AcreView` starts `acre-gui --stdio` for the current buffer. Run in another
-buffer, it moves the open viewer to that buffer, and run in the buffer the
-viewer shows, it closes it. The viewer draws the buffer as you type. A click on the render moves
+buffer, it moves the open viewer to that buffer, which the viewer shows in a
+tab of its own, or in the tab it already has. Run in the buffer the viewer
+shows, it closes the viewer. A click on another tab in the viewer shows that
+tab's file in the window of the buffer it showed, loading the file if no
+buffer has it, and moves the viewer there. The viewer draws the buffer as you
+type. A click on the render moves
 the cursor to the node that drew it. Moving the cursor into a node selects
 that node in the viewer. An error in the source shows as a
 diagnostic. `gggqG` formats the buffer with `acre fmt -`, which reads a whole
