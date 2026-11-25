@@ -52,6 +52,18 @@ pub struct View {
     /// The nodes let go of after a drag, and how far, drawn there until
     /// the source they were moved in comes back.
     held: Option<(Vec<Span>, Point)>,
+    /// The points placed so far of the polygon or polyline being drawn,
+    /// in canvas pixels.
+    pub path: Vec<Point>,
+    /// The one selected node that shows handles.
+    pub target: Option<Target>,
+    /// The things an end of a line can go on, while one is drawn or
+    /// moved.
+    pub outlines: Vec<Outline>,
+}
+
+/// The settings the toolbar sets, which every drawing shares.
+pub struct Toolbar {
     /// Whether dragged nodes snap to other objects and the grid.
     pub snap: bool,
     /// Whether the grid is drawn and snapped to.
@@ -61,14 +73,18 @@ pub struct View {
     /// Whether the view refuses every edit to the source.
     pub locked: bool,
     pub tool: Tool,
-    /// The points placed so far of the polygon or polyline being drawn,
-    /// in canvas pixels.
-    pub path: Vec<Point>,
-    /// The one selected node that shows handles.
-    pub target: Option<Target>,
-    /// The things an end of a line can go on, while one is drawn or
-    /// moved.
-    pub outlines: Vec<Outline>,
+}
+
+impl Toolbar {
+    pub fn new() -> Self {
+        Toolbar {
+            snap: true,
+            grid: false,
+            spacing: 10.0,
+            locked: false,
+            tool: Tool::Select,
+        }
+    }
 }
 
 /// What the person did in the pane this frame.
@@ -152,11 +168,6 @@ impl View {
             moved: None,
             drag: None,
             held: None,
-            snap: true,
-            grid: false,
-            spacing: 10.0,
-            locked: false,
-            tool: Tool::Select,
             path: Vec::new(),
             target: None,
             outlines: Vec::new(),
@@ -204,8 +215,8 @@ impl View {
         self.moved = Some(Instant::now());
     }
 
-    /// Lay the pane out in `ui`, take the person's zoom, pan and drag,
-    /// and draw `scene`, whose version is `version`, at time `t`, with an
+    /// Lay the pane out in `ui`, take the person's zoom, pan and drag
+    /// with the toolbar's settings `bar`, and draw `scene`, whose version is `version`, at time `t`, with an
     /// outline around each object the nodes at `selected` draw. While
     /// nodes are dragged, their objects are drawn where they are dragged
     /// to, snapped, and outlined, with a guide for each snap. A drag that reorders a child of a stack or grid outlines
@@ -221,6 +232,7 @@ impl View {
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
+        bar: &Toolbar,
         scene: Option<&mut Scene>,
         version: u64,
         t: f64,
@@ -246,7 +258,7 @@ impl View {
             return shown;
         };
         let canvas = Vec2::new(scene.canvas.width as f32, scene.canvas.height as f32);
-        let target = self.target.clone().filter(|_| self.tool == Tool::Select);
+        let target = self.target.clone().filter(|_| bar.tool == Tool::Select);
         let target = target.as_ref();
         let handle_reach = ((handle::HANDLE + 2.0) / self.zoom) as f64;
 
@@ -269,17 +281,17 @@ impl View {
             let nodes =
                 node_at(scene, p, t).map_or(Vec::new(), |node| selection::dragged(selected, node));
             if let [node] = nodes[..]
-                && self.tool == Tool::Select
+                && bar.tool == Tool::Select
                 && grip.is_none()
-                && !self.locked
+                && !bar.locked
             {
                 shown.pressed = Some(node);
             }
-            self.drag = Some(press(self.tool, self.locked, grip, nodes, at));
+            self.drag = Some(press(bar.tool, bar.locked, grip, nodes, at));
         }
-        self.context_menu(&response, scene, rect, t, &mut shown);
+        self.context_menu(&response, bar.locked, scene, rect, t, &mut shown);
 
-        if response.double_clicked() && self.tool == Tool::Select {
+        if response.double_clicked() && bar.tool == Tool::Select {
             let node = pointer.and_then(|at| node_at(scene, self.to_canvas(rect, at), t));
             match node {
                 Some(node) => shown.double_clicked = Some(node),
@@ -323,8 +335,8 @@ impl View {
             && let Some((nodes, by)) = drag.moving()
         {
             let reach = (snap::REACH / self.zoom) as f64;
-            let grid = self.grid.then_some(self.spacing);
-            let snapped = snap_drag(scene, nodes, by, t, self.snap, reach, grid);
+            let grid = bar.grid.then_some(bar.spacing);
+            let snapped = snap_drag(scene, nodes, by, t, bar.snap, reach, grid);
             drag.place(snapped.by);
             guides = snapped.guides;
         }
@@ -336,9 +348,9 @@ impl View {
         {
             let others: Vec<Bounds> = others(scene, target.node(), t);
             let reach = (snap::REACH / self.zoom) as f64;
-            let grid = self.grid.then_some(self.spacing);
+            let grid = bar.grid.then_some(bar.spacing);
             let axes = handle::axes(grip);
-            let (to, snaps) = handle::snap_handle(at + by, axes, &others, reach, grid, self.snap);
+            let (to, snaps) = handle::snap_handle(at + by, axes, &others, reach, grid, bar.snap);
             drag.place(to - at);
             guides = snaps;
         }
@@ -432,8 +444,8 @@ impl View {
             painter.image(texture.id(), cover, uv, Color32::WHITE);
         }
         let to_screen = |p: Point| self.to_screen(rect, p);
-        if self.grid {
-            let step = snap::grid_step(self.spacing, self.zoom);
+        if bar.grid {
+            let step = snap::grid_step(bar.spacing, self.zoom);
             let (lo, hi) = (
                 self.to_canvas(rect, rect.min),
                 self.to_canvas(rect, rect.max),
@@ -500,7 +512,7 @@ impl View {
         }
 
         let hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
-        guides.extend(self.draw_preview(&painter, rect, scene, t, hover));
+        guides.extend(self.draw_preview(bar, &painter, rect, scene, t, hover));
         if let Some(target) = target {
             let gripped = self.drag.as_ref().and_then(Drag::gripping);
             let dragged = gripped.and_then(|(gripped, grip, by)| {
@@ -508,7 +520,7 @@ impl View {
                     return reshaped(gripped, grip, by);
                 };
                 let from = gripped.grip_point(grip)?;
-                let (to, anchor, snaps) = self.end_point(scene, from + by, t);
+                let (to, anchor, snaps) = self.end_point(bar, scene, from + by, t);
                 if let Some(anchor) = anchor {
                     self.draw_anchor(&painter, rect, &anchor);
                 }
@@ -547,6 +559,7 @@ impl View {
     fn context_menu(
         &self,
         response: &egui::Response,
+        locked: bool,
         scene: &Scene,
         rect: Rect,
         t: f64,
@@ -567,10 +580,7 @@ impl View {
                 (MenuItem::Delete, "Delete"),
                 (MenuItem::Duplicate, "Duplicate"),
             ] {
-                if ui
-                    .add_enabled(!self.locked, egui::Button::new(label))
-                    .clicked()
-                {
+                if ui.add_enabled(!locked, egui::Button::new(label)).clicked() {
                     shown.chosen = Some(item);
                     ui.close();
                 }
@@ -580,18 +590,24 @@ impl View {
 
     /// Canvas point `p` snapped to the edges and centres of the objects
     /// of `scene` at time `t` and to the grid, as a dragged object snaps,
-    /// or rounded to whole pixels when snapping is off, with a guide for
-    /// each snap.
-    pub fn snap_point(&self, scene: &Scene, p: Point, t: f64) -> (Point, Vec<Guide>) {
+    /// or rounded to whole pixels when `bar` turns snapping off, with a
+    /// guide for each snap.
+    pub fn snap_point(
+        &self,
+        bar: &Toolbar,
+        scene: &Scene,
+        p: Point,
+        t: f64,
+    ) -> (Point, Vec<Guide>) {
         let p = Point::new(p.x.round(), p.y.round());
-        if !self.snap {
+        if !bar.snap {
             return (p, Vec::new());
         }
         let others: Vec<Bounds> = (0..scene.objects.len())
             .filter_map(|i| scene.bounds(i, t))
             .collect();
         let reach = (snap::REACH / self.zoom) as f64;
-        let grid = self.grid.then_some(self.spacing);
+        let grid = bar.grid.then_some(bar.spacing);
         let snapped = snap::snap((p, p), &others, Point::ZERO, reach, grid);
         (p + snapped.by, snapped.guides)
     }
@@ -618,6 +634,7 @@ impl View {
     /// pointer at canvas point `hover`, and give the guides of its snaps.
     fn draw_preview(
         &self,
+        bar: &Toolbar,
         painter: &egui::Painter,
         rect: Rect,
         scene: &Scene,
@@ -627,32 +644,32 @@ impl View {
         let stroke = Stroke::new(1.5, Color32::from_rgb(0x7a, 0xa2, 0xf7));
         let to_screen = |p: Point| self.to_screen(rect, p);
         let mut guides = Vec::new();
-        let line = matches!(self.tool, Tool::Line | Tool::Arrow);
+        let line = matches!(bar.tool, Tool::Line | Tool::Arrow);
         if line
             && self.drag.is_none()
             && let Some(hover) = hover
-            && let (_, Some(anchor), _) = self.end_point(scene, hover, t)
+            && let (_, Some(anchor), _) = self.end_point(bar, scene, hover, t)
         {
             self.draw_anchor(painter, rect, &anchor);
         }
         if let Some((from, to)) = self.drag.as_ref().and_then(Drag::creating) {
             let (from, to) = (self.to_canvas(rect, from), self.to_canvas(rect, to));
             let (from, to) = if line {
-                let (from, from_anchor, _) = self.end_point(scene, from, t);
-                let (to, to_anchor, snaps) = self.end_point(scene, to, t);
+                let (from, from_anchor, _) = self.end_point(bar, scene, from, t);
+                let (to, to_anchor, snaps) = self.end_point(bar, scene, to, t);
                 for anchor in [from_anchor, to_anchor].iter().flatten() {
                     self.draw_anchor(painter, rect, anchor);
                 }
                 guides = snaps;
                 (from, to)
             } else {
-                let (from, _) = self.snap_point(scene, from, t);
-                let (to, snaps) = self.snap_point(scene, to, t);
+                let (from, _) = self.snap_point(bar, scene, from, t);
+                let (to, snaps) = self.snap_point(bar, scene, to, t);
                 guides = snaps;
                 (from, to)
             };
             let (a, b) = (to_screen(from), to_screen(to));
-            match self.tool {
+            match bar.tool {
                 Tool::Box => {
                     painter.rect_stroke(Rect::from_two_pos(a, b), 0.0, stroke, StrokeKind::Middle);
                 }
@@ -673,14 +690,14 @@ impl View {
                 _ => {}
             }
         }
-        if self.tool.draws_path() && !self.path.is_empty() {
+        if bar.tool.draws_path() && !self.path.is_empty() {
             let mut points: Vec<Pos2> = self.path.iter().copied().map(to_screen).collect();
             if let Some(hover) = hover {
-                let (at, snaps) = self.snap_point(scene, hover, t);
+                let (at, snaps) = self.snap_point(bar, scene, hover, t);
                 points.push(to_screen(at));
                 guides = snaps;
             }
-            if self.tool == Tool::Polygon {
+            if bar.tool == Tool::Polygon {
                 painter.circle_stroke(points[0], tool::CLOSE, stroke);
                 painter.add(Shape::closed_line(points, stroke));
             } else {
@@ -693,11 +710,17 @@ impl View {
     /// Where an end of a line at canvas point `p` goes at time `t`: on
     /// the anchor there, or at `p` snapped as [`View::snap_point`] snaps
     /// it, with the guides of its snaps.
-    fn end_point(&self, scene: &Scene, p: Point, t: f64) -> (Point, Option<Anchor>, Vec<Guide>) {
+    fn end_point(
+        &self,
+        bar: &Toolbar,
+        scene: &Scene,
+        p: Point,
+        t: f64,
+    ) -> (Point, Option<Anchor>, Vec<Guide>) {
         match anchor::anchor_at(&self.outlines, p, self.anchor_reach()) {
             Some(anchor) => (anchor.at, Some(anchor), Vec::new()),
             None => {
-                let (at, guides) = self.snap_point(scene, p, t);
+                let (at, guides) = self.snap_point(bar, scene, p, t);
                 (at, None, guides)
             }
         }

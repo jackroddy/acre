@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use acre::lang;
 use acre::scene::edit::{self, NewNode, TextEdit};
-use acre::scene::{self, Scene, Section};
+use acre::scene::{self, Section};
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::text::{LayoutJob, TextWrapping};
 use eframe::egui::{
@@ -14,18 +14,18 @@ use eframe::egui::{
 
 use crate::anchor;
 use crate::arrange::{self, Arrange};
+use crate::document::{self, Added, Document};
 use crate::field::{self, Field};
 use crate::handle::{self, Reshape, Target};
 use crate::link::{Incoming, Link, Outgoing, Replace};
 use crate::nudge::Nudge;
-use crate::playback::{self, Playback};
+use crate::playback;
 use crate::preview::Previews;
-use crate::properties::Properties;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
 use crate::snap;
 use crate::tool::{self, Step, Tool};
-use crate::view::{MenuItem, View};
+use crate::view::{MenuItem, Toolbar};
 
 /// How often an open file is checked for a change on disk.
 const DISK_CHECK: Duration = Duration::from_millis(500);
@@ -33,37 +33,21 @@ const DISK_CHECK: Duration = Duration::from_millis(500);
 /// The status line's reason for an edit refused while the view is locked.
 const LOCKED: &str = "locked";
 
-/// A viewer for one drawing. Its source comes from a file it watches, or
-/// from an editor over the link.
+/// A viewer of drawings. Each drawing's source comes from a file it
+/// watches, or from an editor over the link.
 pub struct App {
     recent: Recent,
     previews: Previews,
     /// Whether the dialog that asks before closing the viewer is open.
     closing: bool,
-    /// The file the source belongs to.
-    path: Option<PathBuf>,
-    text: String,
-    /// When the watched file last changed, as the disk reports it.
-    modified: Option<SystemTime>,
+    /// The drawings open.
+    docs: Vec<Document>,
+    /// The index in `docs` of the drawing shown.
+    active: usize,
     last_check: Instant,
-    /// The font and data files the last source listed, with when each
-    /// last changed on disk. A change reloads the source.
-    files: Vec<(PathBuf, Option<SystemTime>)>,
     /// The editor that sends the source, when acre-gui runs with
     /// `--stdio`. acre-gui then watches no file.
     link: Option<Link>,
-    /// The editor's tick for `text`.
-    tick: u64,
-    error: Option<lang::Error>,
-    /// The last scene that built, kept while the source has an error.
-    scene: Option<Scene>,
-    /// The program `scene` was built from.
-    program: Option<lang::Program>,
-    /// The source `program` was parsed from.
-    program_text: String,
-    /// The nodes clicked, dragged or boxed last, or under the editor's
-    /// cursor, outlined until a click elsewhere.
-    selection: Selection,
     /// The offset of the last goto sent to the editor.
     //
     // the next batch of messages that holds a text or a cursor
@@ -73,33 +57,16 @@ pub struct App {
     // holds back at most the next cursor message, and only when
     // that message is at this offset
     goto: Option<usize>,
-    /// The field open over an object to edit its text.
-    field: Option<Field>,
-    /// The panel that changes the selected nodes' colors and strokes.
-    properties: Properties,
     nudge: Nudge,
-    /// The nodes added by the edit with the editor, to select once the
-    /// editor sends its text back.
-    added: Option<Added>,
-    /// Counts the scenes built, so the view draws again on a new one.
-    version: u64,
-    /// Whether the editor heard about the current error, or that there
-    /// is none.
-    reported: bool,
-    view: View,
-    playback: Playback,
+    bar: Toolbar,
     /// Whether the panel that lists the scene's sections is open.
     sections_open: bool,
-    /// The time drawn this frame.
-    time: f64,
     /// The render pane's size at the last frame.
     pane: Vec2,
     /// The canvas point under the pointer.
     hover: Option<scene::Point>,
     /// The latest message that is not a source error.
     notice: Option<String>,
-    /// The characters in the scene's text that no font has.
-    missing: Vec<char>,
     title: String,
 }
 
@@ -112,36 +79,20 @@ impl App {
             recent: Recent::load(),
             previews: Previews::default(),
             closing: false,
-            path: None,
-            text: String::new(),
-            modified: None,
+            docs: vec![Document::new()],
+            active: 0,
             last_check: Instant::now(),
-            files: Vec::new(),
             link,
-            tick: 0,
-            error: None,
-            scene: None,
-            program: None,
-            program_text: String::new(),
-            selection: Selection::default(),
             goto: None,
-            field: None,
-            properties: Properties::default(),
             nudge: Nudge::default(),
-            added: None,
-            version: 0,
-            reported: false,
-            view: View::new(),
-            playback: Playback::new(),
+            bar: Toolbar::new(),
             sections_open: true,
-            time: 0.0,
             pane: Vec2::ZERO,
             hover: None,
             notice: None,
-            missing: Vec::new(),
             title: String::new(),
         };
-        app.view.locked = locked;
+        app.bar.locked = locked;
         if app.link.is_none() {
             let file = file.or_else(|| app.recent.files.first().filter(|f| f.exists()).cloned());
             if let Some(file) = file {
@@ -151,90 +102,35 @@ impl App {
         app
     }
 
-    fn name(&self) -> String {
-        self.path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map_or("untitled".into(), |n| n.to_string_lossy().into_owned())
+    /// The drawing shown.
+    fn doc(&self) -> &Document {
+        &self.docs[self.active]
+    }
+
+    fn doc_mut(&mut self) -> &mut Document {
+        &mut self.docs[self.active]
     }
 
     fn open(&mut self, path: &Path) {
-        match fs::read_to_string(path) {
-            Ok(text) => {
-                self.path = Some(path.to_path_buf());
-                self.modified = modified(path);
-                let now = Instant::now();
-                self.playback.pause(now);
-                self.playback.seek(now, 0.0);
-                self.selection = Selection::default();
-                self.field = None;
-                self.show(text);
-                self.notice = self.recent.touch(path).err();
-            }
-            Err(e) => self.notice = Some(format!("cannot open {}: {e}", path.display())),
-        }
-    }
-
-    /// Show `text` as the source: build its scene, and keep the last one
-    /// that built if it has an error.
-    fn show(&mut self, text: String) {
-        self.view.end_move();
-        self.text = text;
-        let built = lang::parse(&self.text)
-            .and_then(|program| self.build(&program).map(|scene| (program, scene)));
-        match built {
-            Ok((program, scene)) => {
-                self.playback
-                    .set_duration(Instant::now(), scene.canvas.duration);
-                self.error = None;
-                self.notice = None;
-                let missing = scene.missing_glyphs();
-                if missing != self.missing {
-                    for c in &missing {
-                        eprintln!("{}: {}", self.name(), missing_glyph(*c));
-                    }
-                    self.missing = missing;
-                }
-                self.selection = std::mem::take(&mut self.selection).follow(&program);
-                self.scene = Some(scene);
-                self.program = Some(program);
-                self.program_text = self.text.clone();
-                self.version += 1;
-            }
-            Err(e) => self.error = Some(e),
-        }
-        self.reported = false;
-    }
-
-    /// The scene `program` describes, with the font and data files it
-    /// lists read from the folder of the source's file.
-    fn build(&mut self, program: &lang::Program) -> Result<Scene, lang::Error> {
-        let dir = self.path.as_deref().and_then(Path::parent);
-        build(program, dir, &mut self.files)
-    }
-
-    /// Build the source again if a font or data file it lists changed on
-    /// disk.
-    fn check_files(&mut self) {
-        if self.files.iter().any(|(path, at)| modified(path) != *at) {
-            self.show(self.text.clone());
-        }
-    }
-
-    /// Read the watched file again if it changed on disk.
-    fn check_disk(&mut self) {
-        let Some(path) = self.path.clone() else {
-            return;
+        self.notice = match self.doc_mut().open(path) {
+            Ok(()) => self.recent.touch(path).err(),
+            Err(why) => Some(why),
         };
-        let on_disk = modified(&path);
-        if on_disk.is_none() || on_disk == self.modified {
-            return;
-        }
-        self.modified = on_disk;
-        if let Ok(text) = fs::read_to_string(&path)
-            && text != self.text
-        {
-            self.show(text);
+    }
+
+    /// Build each drawing again whose font or data files changed on
+    /// disk, and without a link read each watched file again that
+    /// changed.
+    fn check_disk(&mut self) {
+        let watch = self.link.is_none();
+        for (i, doc) in self.docs.iter_mut().enumerate() {
+            let mut built = doc.check_files();
+            if watch {
+                built |= doc.check_disk();
+            }
+            if built && i == self.active {
+                self.notice = None;
+            }
         }
     }
 
@@ -265,48 +161,46 @@ impl App {
             // drops alike, so a drag it dropped snaps back here, and
             // this text is taken as the answer to the edit sent last
             self.nudge.answered();
-            self.view.end_move();
+            let doc = &mut self.docs[self.active];
+            doc.view.end_move();
             let path = path.map(PathBuf::from);
-            if path != self.path {
-                self.selection = Selection::default();
-                self.field = None;
-                let now = Instant::now();
-                self.playback.pause(now);
-                self.playback.seek(now, 0.0);
+            if path != doc.path {
+                doc.rewind();
             }
-            self.path = path;
+            doc.path = path;
 
             // an undo can bring back the text already shown under a
             // new tick, and an edit must carry the new one
-            self.tick = tick;
-            if text != self.text || self.version == 0 {
-                self.show(text);
+            doc.tick = tick;
+            if (text != doc.text || doc.version == 0) && doc.show(text) {
+                self.notice = None;
             }
-            if let Some(added) = self.added.take() {
+            if let Some(added) = doc.added.take() {
                 self.select(added);
             }
         }
 
         // after the text, so the offset is read against the source
         // of the newest program
+        let doc = &mut self.docs[self.active];
         if let Some(offset) = cursor
             && Some(offset) != goto
-            && let (Some(scene), Some(program)) = (&self.scene, &self.program)
+            && let (Some(scene), Some(program)) = (&doc.scene, &doc.program)
         {
             let drawn: Vec<lang::Span> = scene.objects.iter().map(|o| o.source).collect();
-            self.selection = Selection::at_cursor(program, &self.program_text, &drawn, offset);
+            doc.selection = Selection::at_cursor(program, &doc.program_text, &drawn, offset);
         }
-        if !self.reported
+        if !doc.reported
             && let Some(link) = &self.link
         {
-            link.send(&match &self.error {
+            link.send(&match &doc.error {
                 Some(e) => Outgoing::Error {
                     offset: e.span.start,
                     message: e.message.clone(),
                 },
                 None => Outgoing::Ok,
             });
-            self.reported = true;
+            doc.reported = true;
         }
         open
     }
@@ -315,7 +209,7 @@ impl App {
     fn send_edits(&self, edits: &[TextEdit]) {
         let Some(link) = &self.link else { return };
         link.send(&Outgoing::Edit {
-            tick: self.tick,
+            tick: self.doc().tick,
             edits: edits.iter().map(Replace::from).collect(),
         });
     }
@@ -325,40 +219,41 @@ impl App {
     /// refusal of any node snaps them all back and names the reason on
     /// the status line.
     fn move_nodes(&mut self, nodes: &[lang::Span], by: scene::Point) {
-        if !nodes.iter().all(|&n| self.selection.contains(n))
-            && let Some(program) = &self.program
+        let doc = &mut self.docs[self.active];
+        if !nodes.iter().all(|&n| doc.selection.contains(n))
+            && let Some(program) = &doc.program
         {
-            self.selection = Selection::of(program, nodes);
+            doc.selection = Selection::of(program, nodes);
         }
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
         let outer = arrange::outermost(nodes);
         let stacked = outer.len() > 1
-            && self.error.is_none()
-            && outer.iter().any(|&n| edit::siblings(&self.text, n).is_ok());
-        let edits = match &self.error {
+            && doc.error.is_none()
+            && outer.iter().any(|&n| edit::siblings(&doc.text, n).is_ok());
+        let edits = match &doc.error {
             Some(_) => Err("fix the source's error before moving things".to_string()),
             None if stacked => Err(
                 "cannot move: drag one child of a stack or a grid at a time to reorder it"
                     .to_string(),
             ),
-            None => edit::move_edits(&self.text, nodes, by.x, by.y).map_err(|e| {
-                let (line, col) = e.line_col(&self.text);
+            None => edit::move_edits(&doc.text, nodes, by.x, by.y).map_err(|e| {
+                let (line, col) = e.line_col(&doc.text);
                 format!("cannot move: {line}:{col}: {}", e.message)
             }),
         };
         let edits = match edits {
             Ok(edits) => edits,
             Err(why) => {
-                self.view.end_move();
+                doc.view.end_move();
                 self.notice = Some(why);
                 return;
             }
         };
         self.notice = None;
         if let Err(why) = self.write(&edits) {
-            self.view.end_move();
+            self.doc_mut().view.end_move();
             self.notice = Some(why);
         }
     }
@@ -367,7 +262,11 @@ impl App {
     /// `before`, or after the last when `None`, and keep it selected at
     /// `index` among them, or name on the status line why not.
     fn reorder(&mut self, node: lang::Span, before: Option<lang::Span>, index: usize) {
-        let path = self.program.as_ref().and_then(|p| edit::node_path(p, node));
+        let path = self
+            .doc()
+            .program
+            .as_ref()
+            .and_then(|p| edit::node_path(p, node));
         let Some(mut path) = path else { return };
         let edits = self.on_source("reorder", |text| edit::reorder_edits(text, node, before));
         let written = edits.and_then(|edits| {
@@ -387,8 +286,9 @@ impl App {
             }
             Ok(false) => {
                 self.notice = None;
-                if let Some(program) = &self.program {
-                    self.selection = Selection::at(program, vec![path]);
+                let doc = self.doc_mut();
+                if let Some(program) = &doc.program {
+                    doc.selection = Selection::at(program, vec![path]);
                 }
             }
             Err(why) => self.notice = Some(why),
@@ -422,14 +322,15 @@ impl App {
     /// an end there, or at `to` snapped, or name on the status line why
     /// not.
     fn move_end(&mut self, node: lang::Span, end: usize, to: scene::Point) {
-        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+        let doc = self.doc();
+        let (Some(scene), Some(program)) = (&doc.scene, &doc.program) else {
             return;
         };
-        let reach = self.view.anchor_reach();
-        let at = tool::end_at(&self.view.outlines, to, self.snapped(to), reach);
-        let edits = match &self.error {
+        let reach = doc.view.anchor_reach();
+        let at = tool::end_at(&doc.view.outlines, to, self.snapped(to), reach);
+        let edits = match &doc.error {
             Some(_) => Err("fix the source's error before moving an end".to_string()),
-            None => tool::end_edits(&self.text, program, node, end, at, scene.origin),
+            None => tool::end_edits(&doc.text, program, node, end, at, scene.origin),
         };
         let written = edits.and_then(|edits| {
             if edits.is_empty() {
@@ -445,10 +346,11 @@ impl App {
     /// boxes of what they draw at the time shown, or name on the status
     /// line why not. A node inside another selected node moves with it.
     fn arrange(&mut self, how: Arrange) {
-        let Some(scene) = &self.scene else { return };
-        let drawn: Vec<(lang::Span, snap::Bounds)> = arrange::outermost(self.selection.spans())
+        let doc = self.doc();
+        let Some(scene) = &doc.scene else { return };
+        let drawn: Vec<(lang::Span, snap::Bounds)> = arrange::outermost(doc.selection.spans())
             .into_iter()
-            .filter_map(|node| Some((node, arrange::bounds(scene, node, self.time)?)))
+            .filter_map(|node| Some((node, arrange::bounds(scene, node, doc.time)?)))
             .collect();
         let boxes: Vec<snap::Bounds> = drawn.iter().map(|&(_, b)| b).collect();
         let moves: Vec<(lang::Span, f64, f64)> = drawn
@@ -473,10 +375,10 @@ impl App {
         self.notice = written.err();
     }
 
-    /// Ask the editor to make `edits`, or make them in the file and show
-    /// it again.
+    /// Ask the editor to make `edits` to the drawing shown, or make them
+    /// in its file and show it again.
     fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
-        if self.view.locked {
+        if self.bar.locked {
             return Err(LOCKED.to_string());
         }
         if self.link.is_some() {
@@ -485,11 +387,14 @@ impl App {
             self.nudge.sent();
             return Ok(());
         }
-        let path = self.path.clone().ok_or("no file to write the edit to")?;
-        let text = edit::apply(&self.text, edits);
+        let doc = &mut self.docs[self.active];
+        let path = doc.path.clone().ok_or("no file to write the edit to")?;
+        let text = edit::apply(&doc.text, edits);
         fs::write(&path, &text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        self.modified = modified(&path);
-        self.show(text);
+        doc.modified = document::modified(&path);
+        if doc.show(text) {
+            self.notice = None;
+        }
         Ok(())
     }
 
@@ -497,23 +402,25 @@ impl App {
     /// text, and select the node, or name on the status line why it has
     /// no text to edit.
     fn open_field(&mut self, node: lang::Span) {
-        let Some(program) = &self.program else { return };
-        self.selection = Selection::of(program, &[node]);
-        if self.view.locked {
+        let locked = self.bar.locked;
+        let doc = &mut self.docs[self.active];
+        let Some(program) = &doc.program else { return };
+        doc.selection = Selection::of(program, &[node]);
+        if locked {
             self.notice = Some(LOCKED.to_string());
             return;
         }
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
-        let opened = match &self.error {
+        let opened = match &doc.error {
             Some(_) => Err("fix the source's error before editing text".to_string()),
-            None => Field::open(&self.text, program, node),
+            None => Field::open(&doc.text, program, node),
         };
         match opened {
             Ok(f) => {
                 self.notice = None;
-                self.field = Some(f);
+                doc.field = Some(f);
             }
             Err(why) => self.notice = Some(why),
         }
@@ -522,19 +429,17 @@ impl App {
     /// Draw the open field over its node's objects in the pane at
     /// `rect`, and write its text once it loses the focus.
     fn edit_field(&mut self, ui: &mut egui::Ui, rect: Rect) {
-        let (Some(f), Some(scene), Some(program)) = (&mut self.field, &self.scene, &self.program)
+        let doc = &mut self.docs[self.active];
+        let (Some(f), Some(scene), Some(program)) = (&mut doc.field, &doc.scene, &doc.program)
         else {
             return;
         };
         let bounds = f
             .node(program)
-            .and_then(|n| field::bounds(scene, n, self.time));
+            .and_then(|n| field::bounds(scene, n, doc.time));
         let left = match bounds {
             Some((min, max)) => {
-                let (min, max) = (
-                    self.view.to_screen(rect, min),
-                    self.view.to_screen(rect, max),
-                );
+                let (min, max) = (doc.view.to_screen(rect, min), doc.view.to_screen(rect, max));
                 let width = (max.x - min.x).max(160.0);
                 egui::Area::new(ui.scope_id().with("text field"))
                     .order(egui::Order::Foreground)
@@ -550,10 +455,10 @@ impl App {
         if !left {
             return;
         }
-        let f = self.field.take().expect("checked above");
-        let edits = match &self.error {
+        let f = doc.field.take().expect("checked above");
+        let edits = match &doc.error {
             Some(_) => Err("fix the source's error before editing text".to_string()),
-            None => f.edits(&self.text, self.program.as_ref().expect("checked above")),
+            None => f.edits(&doc.text, doc.program.as_ref().expect("checked above")),
         };
         match edits {
             Ok(edits) if edits.is_empty() => {}
@@ -570,22 +475,24 @@ impl App {
     /// Select every node whose objects lie inside `area`, in canvas
     /// pixels, at the time shown.
     fn select_in(&mut self, area: (scene::Point, scene::Point)) {
-        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+        let doc = self.doc_mut();
+        let (Some(scene), Some(program)) = (&doc.scene, &doc.program) else {
             return;
         };
-        let spans = selection::in_box(program, scene, self.time, area);
-        self.selection = Selection::of(program, &spans);
+        let spans = selection::in_box(program, scene, doc.time, area);
+        doc.selection = Selection::of(program, &spans);
     }
 
     /// Select the node that drew the object at canvas `point`, and point
     /// the editor at it, or name its line when there is no editor. A
     /// point on no object ends the selection.
     fn go_to_object_at(&mut self, point: scene::Point) {
-        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+        let doc = &mut self.docs[self.active];
+        let (Some(scene), Some(program)) = (&doc.scene, &doc.program) else {
             return;
         };
-        self.selection = Selection::clicked(program, scene, self.time, point);
-        let Some(offset) = self.selection.spans().first().map(|s| s.start) else {
+        doc.selection = Selection::clicked(program, scene, doc.time, point);
+        let Some(offset) = doc.selection.spans().first().map(|s| s.start) else {
             return;
         };
         match &self.link {
@@ -594,10 +501,7 @@ impl App {
                 self.goto = Some(offset);
             }
             None => {
-                let line = self.text[..offset.min(self.text.len())]
-                    .matches('\n')
-                    .count()
-                    + 1;
+                let line = doc.text[..offset.min(doc.text.len())].matches('\n').count() + 1;
                 self.notice = Some(format!("drawn by line {line}"));
             }
         }
@@ -639,6 +543,15 @@ impl App {
         });
     }
 
+    /// Take up `tool`, dropping the points placed of any polygon or
+    /// polyline being drawn.
+    fn set_tool(&mut self, tool: Tool) {
+        self.bar.tool = tool;
+        for doc in &mut self.docs {
+            doc.view.path.clear();
+        }
+    }
+
     /// The buttons that zoom the render, the snap, grid and lock toggles,
     /// and the tools, with Done and Cancel while a path is being drawn,
     /// and the buttons that align two or more selected nodes and space
@@ -646,69 +559,67 @@ impl App {
     /// no arrange button is.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            let pane = self.pane;
             if ui.button("−").on_hover_text("zoom out").clicked() {
-                self.view.zoom_by(0.8, self.pane);
+                self.doc_mut().view.zoom_by(0.8, pane);
             }
             if ui.button("+").on_hover_text("zoom in").clicked() {
-                self.view.zoom_by(1.25, self.pane);
+                self.doc_mut().view.zoom_by(1.25, pane);
             }
             if ui.button("Fit").clicked() {
-                self.view.fit();
+                self.doc_mut().view.fit();
             }
             if ui
                 .button("100%")
                 .on_hover_text("one screen point to a canvas pixel")
                 .clicked()
             {
-                self.view.actual_size(self.pane);
+                self.doc_mut().view.actual_size(pane);
             }
             ui.separator();
-            ui.toggle_value(&mut self.view.snap, "Snap")
+            ui.toggle_value(&mut self.bar.snap, "Snap")
                 .on_hover_text("snap a dragged object to other objects and the grid");
-            ui.toggle_value(&mut self.view.grid, "Grid")
+            ui.toggle_value(&mut self.bar.grid, "Grid")
                 .on_hover_text("draw the grid and snap to it");
             ui.add(
-                egui::DragValue::new(&mut self.view.spacing)
+                egui::DragValue::new(&mut self.bar.spacing)
                     .range(1.0..=1000.0)
                     .suffix(" px"),
             )
             .on_hover_text("the grid's spacing in canvas pixels");
             if ui
-                .toggle_value(&mut self.view.locked, "🔒 Lock")
+                .toggle_value(&mut self.bar.locked, "🔒 Lock")
                 .on_hover_text("refuse every edit to the source")
                 .clicked()
-                && self.view.locked
+                && self.bar.locked
             {
-                self.view.tool = Tool::Select;
-                self.view.path.clear();
+                self.set_tool(Tool::Select);
             }
-            let locked = self.view.locked;
+            let locked = self.bar.locked;
             ui.separator();
             for t in Tool::ALL {
                 let enabled = !locked || t == Tool::Select;
                 if ui
                     .add_enabled(
                         enabled,
-                        egui::Button::selectable(self.view.tool == t, t.label()),
+                        egui::Button::selectable(self.bar.tool == t, t.label()),
                     )
                     .on_hover_text(t.hint())
                     .clicked()
                 {
-                    self.view.tool = t;
-                    self.view.path.clear();
+                    self.set_tool(t);
                 }
             }
-            if self.view.tool.draws_path() && !self.view.path.is_empty() {
+            if self.bar.tool.draws_path() && !self.doc().view.path.is_empty() {
                 ui.separator();
                 if ui.button("Done").clicked() {
                     self.finish_path();
                 }
                 if ui.button("Cancel").clicked() {
-                    self.view.tool = Tool::Select;
-                    self.view.path.clear();
+                    self.set_tool(Tool::Select);
                 }
             }
-            let selected = arrange::outermost(self.selection.spans()).len();
+            let selected = arrange::outermost(self.doc().selection.spans()).len();
             if selected >= 2 {
                 ui.separator();
                 let space: &[Arrange] = if selected >= 3 { &Arrange::SPACE } else { &[] };
@@ -757,7 +668,7 @@ impl App {
             self.take_keys(ctx);
         }
         if let Some((dx, dy)) = self.nudge.ready() {
-            let nodes = self.selection.spans().to_vec();
+            let nodes = self.doc().selection.spans().to_vec();
             if !nodes.is_empty() {
                 self.move_nodes(&nodes, scene::Point::new(dx, dy));
             }
@@ -787,19 +698,20 @@ impl App {
         });
 
         let now = Instant::now();
-        let fps = self.scene.as_ref().map(|s| s.canvas.fps);
-        if self.playback.duration() > 0.0 && space % 2 == 1 {
-            self.playback.toggle(now);
+        let doc = &mut self.docs[self.active];
+        let fps = doc.scene.as_ref().map(|s| s.canvas.fps);
+        if doc.playback.duration() > 0.0 && space % 2 == 1 {
+            doc.playback.toggle(now);
         }
-        if !self.selection.spans().is_empty() {
+        if !doc.selection.spans().is_empty() {
             if (across, down) != (0, 0) && !self.refuse_locked() {
                 self.nudge.press(across as f64, down as f64);
             }
         } else if let Some(fps) = fps
-            && self.playback.duration() > 0.0
+            && doc.playback.duration() > 0.0
             && across != 0
         {
-            self.playback.step(now, across, fps);
+            doc.playback.step(now, across, fps);
         }
         if delete {
             self.delete();
@@ -815,10 +727,10 @@ impl App {
     /// Whether the view is locked, with the reason on the status line
     /// when it is.
     fn refuse_locked(&mut self) -> bool {
-        if self.view.locked {
+        if self.bar.locked {
             self.notice = Some(LOCKED.to_string());
         }
-        self.view.locked
+        self.bar.locked
     }
 
     /// What `work` makes of the source, or the reason for the status line
@@ -830,18 +742,19 @@ impl App {
     ) -> Result<T, String> {
         // with an error, the scene shown was built from an earlier
         // text, so the selection's spans do not point into `text`
-        if self.error.is_some() {
+        let doc = self.doc();
+        if doc.error.is_some() {
             return Err(format!("fix the source's error before you {verb}"));
         }
-        work(&self.text).map_err(|e| {
-            let (line, col) = e.line_col(&self.text);
+        work(&doc.text).map_err(|e| {
+            let (line, col) = e.line_col(&doc.text);
             format!("cannot {verb}: {line}:{col}: {}", e.message)
         })
     }
 
     /// Delete the selected nodes, or name on the status line why not.
     fn delete(&mut self) {
-        let nodes = self.selection.spans().to_vec();
+        let nodes = self.doc().selection.spans().to_vec();
         if nodes.is_empty() || self.refuse_locked() {
             return;
         }
@@ -851,7 +764,7 @@ impl App {
         match deleted {
             Ok(()) => {
                 self.notice = None;
-                self.selection = Selection::default();
+                self.doc_mut().selection = Selection::default();
             }
             Err(why) => self.notice = Some(why),
         }
@@ -860,7 +773,7 @@ impl App {
     /// Put the selected nodes' source on the clipboard, or name on the
     /// status line why not.
     fn copy(&mut self, ctx: &egui::Context) {
-        let nodes = self.selection.spans().to_vec();
+        let nodes = self.doc().selection.spans().to_vec();
         if nodes.is_empty() {
             return;
         }
@@ -883,9 +796,10 @@ impl App {
 
         // the error's place may be in `text` or in the source, so the
         // reason names no line
-        let edits = match &self.error {
+        let doc = self.doc();
+        let edits = match &doc.error {
             Some(_) => Err("fix the source's error before you paste".to_string()),
-            None => edit::paste_edits(&self.text, text, 10.0, 10.0)
+            None => edit::paste_edits(&doc.text, text, 10.0, 10.0)
                 .map_err(|e| format!("cannot paste: {}", e.message)),
         };
         let pasted = edits.and_then(|(edits, paths)| self.write(&edits).map(|()| paths));
@@ -907,16 +821,17 @@ impl App {
     /// the text the edit with it makes.
     fn select_added(&mut self, added: Added) {
         match &self.link {
-            Some(_) => self.added = Some(added),
+            Some(_) => self.doc_mut().added = Some(added),
             None => self.select(added),
         }
     }
 
     fn select(&mut self, added: Added) {
-        let Some(program) = &self.program else { return };
-        self.selection = Selection::at(program, added.paths);
+        let doc = self.doc_mut();
+        let Some(program) = &doc.program else { return };
+        doc.selection = Selection::at(program, added.paths);
         if added.open_field
-            && let Some(&node) = self.selection.spans().first()
+            && let Some(&node) = doc.selection.spans().first()
         {
             self.open_field(node);
         }
@@ -925,7 +840,7 @@ impl App {
     /// Add the duplicate of the selected nodes that a copy and a paste
     /// make, or name on the status line why not.
     fn duplicate(&mut self) {
-        let nodes = self.selection.spans().to_vec();
+        let nodes = self.doc().selection.spans().to_vec();
         if nodes.is_empty() {
             return;
         }
@@ -937,20 +852,24 @@ impl App {
 
     /// Canvas point `p` snapped as the view snaps a new node's corner.
     fn snapped(&self, p: scene::Point) -> scene::Point {
-        match &self.scene {
-            Some(scene) => self.view.snap_point(scene, p, self.time).0,
+        let doc = self.doc();
+        match &doc.scene {
+            Some(scene) => doc.view.snap_point(&self.bar, scene, p, doc.time).0,
             None => p,
         }
     }
 
     /// Where the source's 0 0 falls on the canvas.
     fn origin(&self) -> scene::Point {
-        self.scene.as_ref().map_or(scene::Point::ZERO, |s| s.origin)
+        self.doc()
+            .scene
+            .as_ref()
+            .map_or(scene::Point::ZERO, |s| s.origin)
     }
 
     /// Take a click at canvas point `point` with the tool in use.
     fn click(&mut self, point: scene::Point) {
-        match self.view.tool {
+        match self.bar.tool {
             Tool::Select => self.go_to_object_at(point),
             Tool::Box | Tool::Ellipse => self.add_box(point, None),
             Tool::Text => {
@@ -963,9 +882,10 @@ impl App {
             }
             Tool::Polygon | Tool::Polyline => {
                 let p = self.snapped(point);
-                let close = (tool::CLOSE / self.view.zoom()) as f64;
-                let closed = self.view.tool == Tool::Polygon;
-                if tool::click_path(&mut self.view.path, p, close, closed) == Step::Done {
+                let closed = self.bar.tool == Tool::Polygon;
+                let view = &mut self.docs[self.active].view;
+                let close = (tool::CLOSE / view.zoom()) as f64;
+                if tool::click_path(&mut view.path, p, close, closed) == Step::Done {
                     self.finish_path();
                 }
             }
@@ -974,7 +894,7 @@ impl App {
 
     /// Take a drag from canvas point `from` to `to` with the tool in use.
     fn drawn(&mut self, from: scene::Point, to: scene::Point) {
-        match self.view.tool {
+        match self.bar.tool {
             Tool::Box | Tool::Ellipse => self.add_box(from, Some(to)),
             Tool::Line | Tool::Arrow => self.add_line(from, to),
             Tool::Text | Tool::Polygon | Tool::Polyline => self.click(to),
@@ -997,7 +917,7 @@ impl App {
             },
         };
         let at = at - self.origin();
-        let node = match self.view.tool {
+        let node = match self.bar.tool {
             Tool::Ellipse => NewNode::Ellipse { at, size },
             _ => NewNode::Box { at, size },
         };
@@ -1007,17 +927,18 @@ impl App {
     /// Add a line, or an arrow with that tool, from canvas point `from`
     /// to `to`, each end on the thing there when it can name it.
     fn add_line(&mut self, from: scene::Point, to: scene::Point) {
-        let (Some(scene), Some(program)) = (&self.scene, &self.program) else {
+        let doc = self.doc();
+        let (Some(scene), Some(program)) = (&doc.scene, &doc.program) else {
             return;
         };
-        let reach = self.view.anchor_reach();
-        let end = |p| tool::end_at(&self.view.outlines, p, self.snapped(p), reach);
+        let reach = doc.view.anchor_reach();
+        let end = |p| tool::end_at(&doc.view.outlines, p, self.snapped(p), reach);
         let (from, to) = (end(from), end(to));
-        let edits = match &self.error {
+        let edits = match &doc.error {
             Some(_) => Err("fix the source's error before you add a node".to_string()),
             None => {
-                let arrow = self.view.tool == Tool::Arrow;
-                tool::line_edits(&self.text, program, from, to, scene.origin, arrow)
+                let arrow = self.bar.tool == Tool::Arrow;
+                tool::line_edits(&doc.text, program, from, to, scene.origin, arrow)
             }
         };
         self.add(edits, false);
@@ -1026,14 +947,15 @@ impl App {
     /// Add the polygon or polyline through the points placed so far, or
     /// name on the status line why not.
     fn finish_path(&mut self) {
-        let closed = self.view.tool == Tool::Polygon;
-        if !tool::enough(&self.view.path, closed) {
+        let closed = self.bar.tool == Tool::Polygon;
+        let path = &self.doc().view.path;
+        if !tool::enough(path, closed) {
             let fewest = if closed { 3 } else { 2 };
             self.notice = Some(format!("place at least {fewest} points"));
             return;
         }
         let origin = self.origin();
-        let points = self.view.path.iter().map(|&p| p - origin).collect();
+        let points = path.iter().map(|&p| p - origin).collect();
         let node = if closed {
             NewNode::Polygon { points }
         } else {
@@ -1056,7 +978,7 @@ impl App {
     fn add(&mut self, edits: Result<Vec<TextEdit>, String>, open_field: bool) {
         let added = edits.and_then(|edits| {
             self.check(&edits, "add the node")?;
-            let program = self.program.as_ref().ok_or("no drawing to add to")?;
+            let program = self.doc().program.as_ref().ok_or("no drawing to add to")?;
             let path = tool::added_path(program);
             self.write(&edits)?;
             Ok(path)
@@ -1064,8 +986,7 @@ impl App {
         match added {
             Ok(path) => {
                 self.notice = None;
-                self.view.tool = Tool::Select;
-                self.view.path.clear();
+                self.set_tool(Tool::Select);
                 self.select_added(Added {
                     paths: vec![path],
                     open_field,
@@ -1081,13 +1002,14 @@ impl App {
         if self.nudge.waiting() {
             return Err("wait for the editor to take the last edit".to_string());
         }
-        let text = edit::apply(&self.text, edits);
+        let doc = self.doc_mut();
+        let text = edit::apply(&doc.text, edits);
 
         // `build` notes the files the source lists, and these are the
         // files of a source not yet shown
-        let files = std::mem::take(&mut self.files);
-        let built = lang::parse(&text).and_then(|program| self.build(&program).map(|_| ()));
-        self.files = files;
+        let files = std::mem::take(&mut doc.files);
+        let built = lang::parse(&text).and_then(|program| doc.build(&program).map(|_| ()));
+        doc.files = files;
         built.map_err(|e| {
             let (line, col) = e.line_col(&text);
             format!("cannot {verb}: {line}:{col}: {}", e.message)
@@ -1097,39 +1019,41 @@ impl App {
     /// The bar that plays, pauses and scrubs the scene's time.
     fn transport(&mut self, ui: &mut egui::Ui) {
         let now = Instant::now();
-        let duration = self.playback.duration();
+        let doc = &mut self.docs[self.active];
+        let duration = doc.playback.duration();
         ui.horizontal(|ui| {
-            let label = if self.playback.playing() {
+            let label = if doc.playback.playing() {
                 "Pause"
             } else {
                 "Play"
             };
             if ui.button(label).on_hover_text("space").clicked() {
-                self.playback.toggle(now);
+                doc.playback.toggle(now);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let sections = self.scene.as_ref().map_or(&[][..], |s| &s.sections);
+                let sections = doc.scene.as_ref().map_or(&[][..], |s| &s.sections);
                 if !sections.is_empty() {
                     ui.toggle_value(&mut self.sections_open, "Sections");
                 }
-                let mut looping = self.playback.looping();
+                let mut looping = doc.playback.looping();
                 if ui.toggle_value(&mut looping, "Loop").changed() {
-                    self.playback.set_looping(now, looping);
+                    doc.playback.set_looping(now, looping);
                 }
-                ui.label(format!("{:.2} s / {duration:.2} s", self.time));
-                if let Some(t) = time_bar(ui, sections, duration, self.time) {
-                    self.playback.seek(now, t);
+                ui.label(format!("{:.2} s / {duration:.2} s", doc.time));
+                if let Some(t) = time_bar(ui, sections, duration, doc.time) {
+                    doc.playback.seek(now, t);
                 }
             });
         });
-        self.time = self.playback.time(now);
+        doc.time = doc.playback.time(now);
     }
 
     /// The scene's sections, each with its start, the current one
     /// marked. Clicking one goes to its start.
     fn sections(&mut self, ui: &mut egui::Ui) {
-        let Some(scene) = &self.scene else { return };
-        let current = playback::current(&scene.sections, self.time);
+        let doc = self.doc_mut();
+        let Some(scene) = &doc.scene else { return };
+        let current = playback::current(&scene.sections, doc.time);
         let mut chosen = None;
         for (i, section) in scene.sections.iter().enumerate() {
             let here = current == Some(i);
@@ -1148,7 +1072,7 @@ impl App {
             // keyed by title, so a section stays open or folded
             // when an edit moves its start
             let id = ui.make_persistent_id(("section", &section.title));
-            let sub = playback::current_subsection(section, self.time).filter(|_| here);
+            let sub = playback::current_subsection(section, doc.time).filter(|_| here);
             CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
                     if ui.selectable_label(here, text).clicked() {
@@ -1165,20 +1089,23 @@ impl App {
                 });
         }
         if let Some(t) = chosen {
-            self.playback.seek(Instant::now(), t);
+            doc.playback.seek(Instant::now(), t);
         }
     }
 
     /// The panel that changes the selected nodes' colors, strokes and
     /// fonts.
     fn properties(&mut self, ui: &mut egui::Ui) {
+        let locked = self.bar.locked;
+        let doc = self.doc_mut();
+
         // with an error, the scene shown was built from an earlier
         // text, so the selection's spans do not point into `text`
-        if self.error.is_some() {
+        if doc.error.is_some() {
             ui.label("fix the source's error before changing properties");
             return;
         }
-        let fonts = self
+        let fonts = doc
             .program
             .as_ref()
             .and_then(|p| scene::font_files(p).ok())
@@ -1187,12 +1114,12 @@ impl App {
             .map(|f| f.name)
             .filter(|name| name != "math")
             .collect();
-        self.properties
-            .read(self.version, &self.text, self.selection.spans(), fonts);
-        if self.view.locked {
+        doc.properties
+            .read(doc.version, &doc.text, doc.selection.spans(), fonts);
+        if locked {
             ui.disable();
         }
-        self.properties.ui(ui, self.selection.paths());
+        doc.properties.ui(ui, doc.selection.paths());
     }
 
     /// Write the first change in the properties panel not yet written,
@@ -1202,10 +1129,11 @@ impl App {
         if self.nudge.waiting() || ctx.input(|i| i.pointer.any_down()) {
             return;
         }
-        let Some((key, value)) = self.properties.take(self.selection.paths()) else {
+        let doc = self.doc_mut();
+        let Some((key, value)) = doc.properties.take(doc.selection.paths()) else {
             return;
         };
-        let nodes = self.selection.spans().to_vec();
+        let nodes = doc.selection.spans().to_vec();
         let written = self
             .on_source("change it", |text| {
                 edit::property_edits(text, &nodes, key, &value)
@@ -1221,47 +1149,116 @@ impl App {
         // showing a value the source does not hold
         match written {
             Ok(true) => self.notice = None,
-            Ok(false) => self.properties.clear(),
+            Ok(false) => self.doc_mut().properties.clear(),
             Err(why) => {
                 self.notice = Some(why);
-                self.properties.clear();
+                self.doc_mut().properties.clear();
             }
         }
     }
 
     fn status(&self, ui: &mut egui::Ui) {
+        let doc = self.doc();
         ui.horizontal(|ui| {
-            let where_ = self
+            let where_ = doc
                 .path
                 .as_ref()
                 .map_or("untitled".into(), |p| p.display().to_string());
             ui.label(where_);
             ui.separator();
-            ui.label(format!("{:.0}%", self.view.zoom() * 100.0));
+            ui.label(format!("{:.0}%", doc.view.zoom() * 100.0));
             ui.separator();
             if let Some(p) = self.hover {
                 ui.label(format!("{:.0}, {:.0}", p.x, p.y));
                 ui.separator();
             }
-            if let Some(e) = &self.error {
-                let (line, col) = e.line_col(&self.text);
+            if let Some(e) = &doc.error {
+                let (line, col) = e.line_col(&doc.text);
                 ui.colored_label(
                     Color32::from_rgb(0xf7, 0x76, 0x8e),
                     format!("{line}:{col}: {}", e.message),
                 );
             } else if let Some(notice) = &self.notice {
                 ui.label(notice);
-            } else if let Some(&c) = self.missing.first() {
-                let more = match self.missing.len() - 1 {
+            } else if let Some(&c) = doc.missing.first() {
+                let more = match doc.missing.len() - 1 {
                     0 => String::new(),
                     n => format!(", and {n} more"),
                 };
                 ui.colored_label(
                     Color32::from_rgb(0xe0, 0xaf, 0x68),
-                    format!("{}{more}", missing_glyph(c)),
+                    format!("{}{more}", document::missing_glyph(c)),
                 );
             }
         });
+    }
+
+    /// The render pane: the drawing shown, and what the person did to it
+    /// this frame.
+    fn canvas(&mut self, ui: &mut egui::Ui) {
+        let doc = &mut self.docs[self.active];
+        doc.view.target = match (&doc.program, &doc.scene) {
+            _ if self.bar.locked => None,
+            (Some(program), Some(scene)) => handle::target(program, scene, doc.selection.spans()),
+            _ => None,
+        };
+        let ends = matches!(self.bar.tool, Tool::Line | Tool::Arrow)
+            || matches!(doc.view.target, Some(Target::Line { .. }));
+        doc.view.outlines = match (&doc.program, &doc.scene) {
+            (Some(program), Some(scene)) if ends => anchor::outlines(program, scene, doc.time),
+            _ => Vec::new(),
+        };
+        let shown = doc.view.show(
+            ui,
+            &self.bar,
+            doc.scene.as_mut(),
+            doc.version,
+            doc.time,
+            doc.selection.spans(),
+        );
+        self.pane = shown.rect.size();
+        self.hover = shown.hover;
+        if let Some(point) = shown.clicked {
+            self.click(point);
+        }
+        if let Some((from, to)) = shown.created {
+            self.drawn(from, to);
+        }
+        if let Some(node) = shown.right_clicked {
+            let doc = self.doc_mut();
+            if let Some(program) = &doc.program {
+                doc.selection = Selection::of(program, &[node]);
+            }
+        }
+        match shown.chosen {
+            Some(MenuItem::Delete) => self.delete(),
+            Some(MenuItem::Duplicate) => self.duplicate(),
+            None => {}
+        }
+        if let Some(node) = shown.double_clicked {
+            self.open_field(node);
+        }
+        if let Some(node) = shown.pressed {
+            let doc = self.doc_mut();
+            if doc.error.is_none()
+                && let Ok(siblings) = edit::siblings(&doc.text, node)
+            {
+                doc.view.reorder(siblings);
+            }
+        }
+        if let Some((nodes, by)) = shown.moved {
+            self.move_nodes(&nodes, by);
+        }
+        if let Some((node, before, index)) = shown.reordered {
+            self.reorder(node, before, index);
+        }
+        if let Some(reshape) = shown.reshaped {
+            self.reshape(reshape);
+        }
+        if let Some(area) = shown.boxed {
+            self.select_in(area);
+        }
+        self.edit_field(ui, shown.rect);
     }
 }
 
@@ -1272,13 +1269,10 @@ impl eframe::App for App {
         }
         if self.last_check.elapsed() >= DISK_CHECK {
             self.last_check = Instant::now();
-            self.check_files();
-            if self.link.is_none() {
-                self.check_disk();
-            }
+            self.check_disk();
         }
         ctx.request_repaint_after(DISK_CHECK);
-        let title = format!("{} - acre", self.name());
+        let title = format!("{} - acre", self.doc().name());
         if title != self.title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -1287,7 +1281,8 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.keys(ui.ctx());
-        self.time = self.playback.time(Instant::now());
+        let doc = self.doc_mut();
+        doc.time = doc.playback.time(Instant::now());
         if self.link.is_none() {
             egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         }
@@ -1296,100 +1291,31 @@ impl eframe::App for App {
             self.confirm_close(ui.ctx());
         }
         egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
-        if self.playback.duration() > 0.0 {
+        if self.doc().playback.duration() > 0.0 {
             egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));
         }
         let pane = ui.available_rect_before_wrap();
-        let has_sections = self.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
+        let doc = self.doc();
+        let has_sections = doc.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
         if self.sections_open && has_sections {
             side_panel(ui, "sections", pane, Align2::LEFT_TOP, |ui| {
                 self.sections(ui)
             });
         }
-        if !self.selection.spans().is_empty() && self.selection.made_in_viewer() {
+        let doc = self.doc();
+        if !doc.selection.spans().is_empty() && doc.selection.made_in_viewer() {
             self.write_property(ui.ctx());
             side_panel(ui, "properties", pane, Align2::RIGHT_TOP, |ui| {
                 self.properties(ui)
             });
         }
-        if self.playback.playing() {
+        if self.doc().playback.playing() {
             ui.ctx().request_repaint();
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
-                self.view.target = match (&self.program, &self.scene) {
-                    _ if self.view.locked => None,
-                    (Some(program), Some(scene)) => {
-                        handle::target(program, scene, self.selection.spans())
-                    }
-                    _ => None,
-                };
-                let ends = matches!(self.view.tool, Tool::Line | Tool::Arrow)
-                    || matches!(self.view.target, Some(Target::Line { .. }));
-                self.view.outlines = match (&self.program, &self.scene) {
-                    (Some(program), Some(scene)) if ends => {
-                        anchor::outlines(program, scene, self.time)
-                    }
-                    _ => Vec::new(),
-                };
-                let shown = self.view.show(
-                    ui,
-                    self.scene.as_mut(),
-                    self.version,
-                    self.time,
-                    self.selection.spans(),
-                );
-                self.pane = shown.rect.size();
-                self.hover = shown.hover;
-                if let Some(point) = shown.clicked {
-                    self.click(point);
-                }
-                if let Some((from, to)) = shown.created {
-                    self.drawn(from, to);
-                }
-                if let Some(node) = shown.right_clicked
-                    && let Some(program) = &self.program
-                {
-                    self.selection = Selection::of(program, &[node]);
-                }
-                match shown.chosen {
-                    Some(MenuItem::Delete) => self.delete(),
-                    Some(MenuItem::Duplicate) => self.duplicate(),
-                    None => {}
-                }
-                if let Some(node) = shown.double_clicked {
-                    self.open_field(node);
-                }
-                if let Some(node) = shown.pressed
-                    && self.error.is_none()
-                    && let Ok(siblings) = edit::siblings(&self.text, node)
-                {
-                    self.view.reorder(siblings);
-                }
-                if let Some((nodes, by)) = shown.moved {
-                    self.move_nodes(&nodes, by);
-                }
-                if let Some((node, before, index)) = shown.reordered {
-                    self.reorder(node, before, index);
-                }
-                if let Some(reshape) = shown.reshaped {
-                    self.reshape(reshape);
-                }
-                if let Some(area) = shown.boxed {
-                    self.select_in(area);
-                }
-                self.edit_field(ui, shown.rect);
-            });
+            .show(ui, |ui| self.canvas(ui));
     }
-}
-
-/// Nodes an edit adds, to select.
-struct Added {
-    /// Their places as [`edit::node_path`] gives them.
-    paths: Vec<Vec<usize>>,
-    /// Whether to open a field on the first to edit its text.
-    open_field: bool,
 }
 
 /// The width of a side panel, as egui gives a side panel by default.
@@ -1507,51 +1433,4 @@ fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -
         response.on_hover_text_at_pointer(place);
     }
     pressed
-}
-
-/// The scene `program` describes, with the font and data files it lists
-/// read from `dir`, or from the working directory without one. `files`
-/// gets each listed file with when it last changed on disk, once the
-/// program lists them without an error.
-pub fn build(
-    program: &lang::Program,
-    dir: Option<&Path>,
-    files: &mut Vec<(PathBuf, Option<SystemTime>)>,
-) -> Result<Scene, lang::Error> {
-    let fonts = scene::font_files(program)?;
-    let data = scene::data_files(program)?;
-    let listed: Vec<(&str, &str, lang::Span)> = fonts
-        .iter()
-        .map(|f| ("font", f.path.as_str(), f.span))
-        .chain(data.iter().map(|d| ("data file", d.path.as_str(), d.span)))
-        .collect();
-    *files = listed
-        .iter()
-        .map(|(_, path, _)| {
-            let path = dir.map_or(PathBuf::from(path), |d| d.join(path));
-            let changed = modified(&path);
-            (path, changed)
-        })
-        .collect();
-    let mut bytes = Vec::new();
-    for ((what, written, span), (path, _)) in listed.iter().zip(files.iter()) {
-        let read = fs::read(path)
-            .map_err(|e| lang::Error::new(*span, format!("cannot read {what} {written}: {e}")))?;
-        bytes.push(read);
-    }
-    let data_bytes = bytes.split_off(fonts.len());
-    scene::build(program, &bytes, &data_bytes)
-}
-
-fn missing_glyph(c: char) -> String {
-    format!(
-        "warning: no font has a glyph for '{c}' (U+{:04X})",
-        c as u32
-    )
-}
-
-/// When the file at `path` last changed, or `None` when the disk cannot
-/// say.
-pub fn modified(path: &Path) -> Option<SystemTime> {
-    fs::metadata(path).and_then(|m| m.modified()).ok()
 }

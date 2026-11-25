@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use acre::{lang, render};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 
-use crate::app;
+use crate::document;
 
 /// The box in points a preview fits into.
 const SIZE: Vec2 = Vec2::new(240.0, 160.0);
@@ -95,7 +95,7 @@ impl Previews {
     pub fn show(&mut self, ui: &mut egui::Ui, path: &Path) {
         let ppp = ui.ctx().pixels_per_point();
         let fit = [(SIZE.x * ppp) as f64, (SIZE.y * ppp) as f64];
-        self.request(path, app::modified(path), fit);
+        self.request(path, document::modified(path), fit);
         self.receive();
         let Some(entry) = self.cache.get_mut(path) else {
             return;
@@ -147,7 +147,7 @@ fn draw(path: &Path, fit: [f64; 2]) -> Result<ColorImage, String> {
     let text =
         fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let scene = lang::parse(&text)
-        .and_then(|program| app::build(&program, path.parent(), &mut Vec::new()))
+        .and_then(|program| document::build(&program, path.parent(), &mut Vec::new()))
         .map_err(|e| {
             let (line, col) = e.line_col(&text);
             format!("{line}:{col}: {}", e.message)

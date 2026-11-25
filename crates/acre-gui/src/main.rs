@@ -4,6 +4,7 @@
 mod anchor;
 mod app;
 mod arrange;
+mod document;
 mod drag;
 mod field;
 mod handle;
