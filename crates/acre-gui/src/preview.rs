@@ -13,6 +13,9 @@ use crate::document;
 /// The box in points a preview fits into.
 const SIZE: Vec2 = Vec2::new(240.0, 160.0);
 
+/// The most rows an error takes in a preview.
+const ERROR_ROWS: usize = 4;
+
 /// How often the menu draws again while a preview is being built.
 const POLL: Duration = Duration::from_millis(50);
 
@@ -93,6 +96,7 @@ impl Previews {
     /// Draw the preview of `path`: the render, a spinner while it is
     /// built, or the first line of the error that stopped it.
     pub fn show(&mut self, ui: &mut egui::Ui, path: &Path) {
+        ui.set_width(SIZE.x);
         let ppp = ui.ctx().pixels_per_point();
         let fit = [(SIZE.x * ppp) as f64, (SIZE.y * ppp) as f64];
         self.request(path, document::modified(path), fit);
@@ -116,7 +120,17 @@ impl Previews {
                 ui.image((texture.id(), size));
             }
             State::Failed(e) => {
-                ui.label(e.lines().next().unwrap_or_default());
+                let style = ui.style();
+                let mut job = egui::text::LayoutJob::simple(
+                    e.lines().next().unwrap_or_default().to_owned(),
+                    egui::TextStyle::Body.resolve(style),
+                    style.visuals.text_color(),
+                    SIZE.x,
+                );
+                // a path has no spaces to break at
+                job.wrap.break_anywhere = true;
+                job.wrap.max_rows = ERROR_ROWS;
+                ui.label(job);
             }
         }
     }
