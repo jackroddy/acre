@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- acre may break a word in justified text when the break evens out the
+  spacing of the paragraph. A word breaks where the English hyphenation
+  patterns allow, with at least 2 letters before the break and 3 after
+  it, and its first part ends in an added hyphen. A word that already
+  holds a hyphen breaks only after that hyphen. Code spans, mono text and
+  formulas never break, and neither does a word with a digit or an
+  apostrophe in it. The line before the last never ends inside a word.
+  Text copied out of a PDF keeps the added hyphen. acre sets ragged text
+  as before. The `acre` crate now depends on `hyphenation`, which embeds
+  the en-US patterns.
 - `scene::edit::property_values` gives the value a `( ... )` comes to,
   with its `let` names replaced, where it gave the group before. A
   blended color reads as the color it comes to.

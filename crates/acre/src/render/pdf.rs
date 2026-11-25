@@ -412,4 +412,18 @@ mod tests {
         let doc = pdf(r#"canvas { size 300 100; text { at 10 10; text "Hello"; font sans; } }"#);
         assert_eq!(doc.extract_text(&[1]).unwrap().trim(), "Hello");
     }
+
+    #[test]
+    fn a_hyphen_justifying_added_copies_out_with_its_word() {
+        let doc = pdf(r#"canvas {
+            size 300 200;
+            text {
+                at 10 10; width 225; size 14; font sans; text-align justify;
+                text "The suffix array of a text in memory lists every suffix of the text in sorted order, so a search for a pattern finds every place it occurs with two binary searches.";
+            }
+        }"#);
+        let copied = doc.extract_text(&[1]).unwrap();
+        assert!(copied.contains("mem-"), "{copied}");
+        assert!(copied.contains("ory lists"), "{copied}");
+    }
 }

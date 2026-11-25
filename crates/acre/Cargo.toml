@@ -9,6 +9,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+hyphenation = { version = "0.8.4", features = ["embed_en-us"] }
 krilla = { version = "0.8.2", default-features = false }
 rustybuzz = "0.20.1"
 self_cell = "1.3"
