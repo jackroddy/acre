@@ -1,0 +1,28 @@
+{
+  "id": "acre-bd3637",
+  "title": "Editing animations in the viewer",
+  "body": "Parked, not planned. Jack expects animations to be created and edited by agents, and does not want viewer tools for keyframes or timeline editing until enough reasons force him to step in by hand. Do not propose this work; reopen only if Jack asks.",
+  "type": "feature",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-25T00:22:43.282857764Z",
+  "updated_at": "2026-11-25T00:22:43.282857764Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "9b6886c",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
