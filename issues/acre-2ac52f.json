@@ -3,7 +3,7 @@
   "title": "acre-gui opens neovim on its drawing and links to it",
   "body": "neovim starts the viewer and talks to it over the viewer's stdin and stdout, so a viewer opened on its own cannot be linked.\n\n## Proposal\n\n- acre-gui listens on a socket under `$XDG_RUNTIME_DIR`. A command in the viewer, \"Edit in neovim\", opens neovim on the active drawing with the socket's path passed on, and the plugin connects with `sockconnect` instead of starting a viewer. The messages stay the same.\n- Outside decade the terminal comes from `xdg-terminal-exec`. Inside decade, neovim opens in decade's default terminal in a pane split beside the viewer, as `:AcreView` from neovim splits a pane for the viewer.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
@@ -12,19 +12,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/0c799e42",
-  "lease_expires": "2026-11-25T02:03:15.805809247Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-25T01:34:36.920882462Z",
-  "updated_at": "2026-11-25T01:48:15.805809247Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-25T01:57:32.053829301Z",
+  "closed_at": "2026-11-25T01:57:32.053829301Z",
+  "close_reason": "Landed in 0237012. Without `--stdio`, acre-gui listens on `$XDG_RUNTIME_DIR/acre/<pid>.sock` (`Link::listen` in `link.rs`) and goes back to watching files when the editor disconnects. File > Edit in neovim runs the command from `neovim::command`. Outside decade that is `xdg-terminal-exec nvim FILE`. Inside decade it is ghostty with decade's flags and with `DECADE_PANE` and `DECADE_INTO` removed, so decade splits the focused pane. The plugin connects with `sockconnect` when `ACRE_SOCKET` is set. Nobody has tried it in a window yet.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "60d64ff",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "0237012",
+      "branch": "dev"
+    }
   }
 }
