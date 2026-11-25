@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-13T08:08:34.550819599Z",
-  "updated_at": "2026-11-25T00:53:04.649059876Z",
+  "updated_at": "2026-11-25T01:11:28.01678828Z",
   "closed_at": "2026-11-25T00:53:04.649059876Z",
   "close_reason": "Landed in 53e1c92: text::breaks and text::hyphens find breaks inside words, and text::even_breaks chooses among them with plain TeX's penalties. Licence finding and decisions are in the last note.",
   "resolution": "done",
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Landed in 53e1c92.\n\nLicence: the `hyphenation` crate (0.8.4) is MIT or Apache-2.0, as acre is, and acre uses only its `embed_en-us` feature. Its en-US dictionary is built from `hyph-en-us.tex` in hyph-utf8, copyright Gerard D.C. Kuiken, under a permissive licence: copying and distribution, with or without modification, are allowed provided the copyright notice and the licence are preserved. That is compatible with acre's licences. The crate ships the patterns without that notice, so a binary release of acre should carry it.\n\nDecisions:\n- A break inside a word costs plain TeX's `\\hyphenpenalty` of 50. Two in a row add `\\doublehyphendemerits` of 10000.\n- The line before the last never ends inside a word. This is a hard rule rather than TeX's `\\finalhyphendemerits`. It is why `key-schemes` keeps its old render: its one candidate was \"ig-nores each 0.\" on a last line.\n- Minima are 2 letters before and 3 after, the values `hyph-en-us.tex` gives, and words under 5 letters never break.\n- A word that already holds a hyphen breaks only after it. Words with digits or apostrophes, mono text, code spans and formulas never break. A word set in more than one font, size or color never breaks.\n- The added hyphen glyph has an empty text range, and the PDF writer maps it to `-` through the cmap, so copied text keeps the hyphen as drawn.\n\nRenders: only `sufr-build` moved, in five side-panel paragraphs between 28 s and 186 s. Each now has evener spacing.",
       "commit": "53e1c92",
+      "branch": "dev"
+    },
+    {
+      "id": "9dd010e7",
+      "at": "2026-11-25T01:11:28.01678721Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "The pattern licence notice now ships in crates/acre/assets/hyphenation/hyph-en-us-LICENSE.txt (35a04f1), copied from the hyph-en-us.tex master file, and the README names it.",
+      "commit": "35a04f1",
       "branch": "dev"
     }
   ],
