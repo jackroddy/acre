@@ -863,7 +863,7 @@ impl App {
         let space = count(Key::Space);
         let across = count(Key::ArrowRight) - count(Key::ArrowLeft);
         let down = count(Key::ArrowDown) - count(Key::ArrowUp);
-        let delete = count(Key::Delete) > 0;
+        let delete = count(Key::Delete) + count(Key::Backspace) > 0;
 
         // the windowing layer turns Ctrl+C and Ctrl+V into these events,
         // reading the clipboard for a paste

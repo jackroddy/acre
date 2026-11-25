@@ -24,12 +24,12 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   connects talks to the viewer as one on stdin and stdout does, one
   editor at a time. When it disconnects, the viewer keeps running and
   watches its files again. acre-gui removes the socket when it closes.
-- File > Edit in neovim opens neovim on the drawing shown, with the
-  socket's path in `ACRE_SOCKET`, and the plugin links to the viewer.
-  Inside decade, neovim opens in ghostty in a pane split beside the
-  viewer. Elsewhere it opens in the terminal `xdg-terminal-exec` starts.
-  The item is disabled while an editor is linked and for a drawing with
-  no file.
+- File > Edit in neovim opens neovim on the drawing shown, and a command on
+  neovim's command line links the plugin to the viewer's socket. Inside
+  decade, neovim opens in ghostty in a pane split beside the viewer. On macOS
+  it opens in a new Ghostty window. Elsewhere it opens in the terminal `xdg-
+  terminal-exec` starts. The item is disabled while an editor is linked and
+  for a drawing with no file.
 - Hovering a file under File > Open Recent shows a small render of it
   at time 0 beside the menu. A spinner shows while the render is built.
   For a missing file or one with an error, the menu shows the first
@@ -51,6 +51,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Changed
 
+- Backspace deletes the selection, as Delete does, since the main delete key
+  on a Mac keyboard sends Backspace.
 - The File menu is the first button of the toolbar, and the tab bar sits
   under the toolbar. The File menu's own bar is gone. With `--stdio` the
   toolbar has no File menu, as before.
