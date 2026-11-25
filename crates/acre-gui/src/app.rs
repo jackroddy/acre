@@ -29,6 +29,9 @@ use crate::view::{MenuItem, View};
 /// How often an open file is checked for a change on disk.
 const DISK_CHECK: Duration = Duration::from_millis(500);
 
+/// The status line's reason for an edit refused while the view is locked.
+const LOCKED: &str = "locked";
+
 /// A viewer for one drawing. Its source comes from a file it watches, or
 /// from an editor over the link.
 pub struct App {
@@ -100,8 +103,9 @@ pub struct App {
 
 impl App {
     /// A viewer of `file`, or of the last file opened. With `link`, a
-    /// viewer of what the editor at its other end sends.
-    pub fn new(file: Option<PathBuf>, link: Option<Link>) -> Self {
+    /// viewer of what the editor at its other end sends. With `locked`,
+    /// it refuses edits until the toolbar unlocks it.
+    pub fn new(file: Option<PathBuf>, link: Option<Link>, locked: bool) -> Self {
         let mut app = App {
             recent: Recent::load(),
             closing: false,
@@ -134,6 +138,7 @@ impl App {
             missing: Vec::new(),
             title: String::new(),
         };
+        app.view.locked = locked;
         if app.link.is_none() {
             let file = file.or_else(|| app.recent.files.first().filter(|f| f.exists()).cloned());
             if let Some(file) = file {
@@ -491,6 +496,9 @@ impl App {
     /// Ask the editor to make `edits`, or make them in the file and show
     /// it again.
     fn write(&mut self, edits: &[TextEdit]) -> Result<(), String> {
+        if self.view.locked {
+            return Err(LOCKED.to_string());
+        }
         if self.link.is_some() {
             self.nudge.admit()?;
             self.send_edits(edits);
@@ -511,6 +519,10 @@ impl App {
     fn open_field(&mut self, node: lang::Span) {
         let Some(program) = &self.program else { return };
         self.selection = Selection::of(program, &[node]);
+        if self.view.locked {
+            self.notice = Some(LOCKED.to_string());
+            return;
+        }
 
         // with an error, the scene shown was built from an earlier
         // text, so its spans do not point into `text`
@@ -644,10 +656,11 @@ impl App {
         });
     }
 
-    /// The buttons that zoom the render, the snap and grid toggles, and
-    /// the tools, with Done and Cancel while a path is being drawn, and
-    /// the buttons that align two or more selected nodes and space out
-    /// three or more.
+    /// The buttons that zoom the render, the snap, grid and lock toggles,
+    /// and the tools, with Done and Cancel while a path is being drawn,
+    /// and the buttons that align two or more selected nodes and space
+    /// out three or more. While locked, only the Select tool is on and
+    /// no arrange button is.
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("−").on_hover_text("zoom out").clicked() {
@@ -677,10 +690,24 @@ impl App {
                     .suffix(" px"),
             )
             .on_hover_text("the grid's spacing in canvas pixels");
+            if ui
+                .toggle_value(&mut self.view.locked, "🔒 Lock")
+                .on_hover_text("refuse every edit to the source")
+                .clicked()
+                && self.view.locked
+            {
+                self.view.tool = Tool::Select;
+                self.view.path.clear();
+            }
+            let locked = self.view.locked;
             ui.separator();
             for t in Tool::ALL {
+                let enabled = !locked || t == Tool::Select;
                 if ui
-                    .selectable_label(self.view.tool == t, t.label())
+                    .add_enabled(
+                        enabled,
+                        egui::Button::selectable(self.view.tool == t, t.label()),
+                    )
                     .on_hover_text(t.hint())
                     .clicked()
                 {
@@ -703,7 +730,11 @@ impl App {
                 ui.separator();
                 let space: &[Arrange] = if selected >= 3 { &Arrange::SPACE } else { &[] };
                 for &how in Arrange::ALIGN.iter().chain(space) {
-                    if ui.button(how.label()).on_hover_text(how.hint()).clicked() {
+                    if ui
+                        .add_enabled(!locked, egui::Button::new(how.label()))
+                        .on_hover_text(how.hint())
+                        .clicked()
+                    {
                         self.arrange(how);
                     }
                 }
@@ -778,7 +809,9 @@ impl App {
             self.playback.toggle(now);
         }
         if !self.selection.spans().is_empty() {
-            self.nudge.press(across as f64, down as f64);
+            if (across, down) != (0, 0) && !self.refuse_locked() {
+                self.nudge.press(across as f64, down as f64);
+            }
         } else if let Some(fps) = fps
             && self.playback.duration() > 0.0
             && across != 0
@@ -794,6 +827,15 @@ impl App {
         if let Some(text) = pasted {
             self.paste(&text);
         }
+    }
+
+    /// Whether the view is locked, with the reason on the status line
+    /// when it is.
+    fn refuse_locked(&mut self) -> bool {
+        if self.view.locked {
+            self.notice = Some(LOCKED.to_string());
+        }
+        self.view.locked
     }
 
     /// What `work` makes of the source, or the reason for the status line
@@ -817,7 +859,7 @@ impl App {
     /// Delete the selected nodes, or name on the status line why not.
     fn delete(&mut self) {
         let nodes = self.selection.spans().to_vec();
-        if nodes.is_empty() {
+        if nodes.is_empty() || self.refuse_locked() {
             return;
         }
         let deleted = self
@@ -852,6 +894,10 @@ impl App {
     /// below where they were, and select them, or name on the status
     /// line why not.
     fn paste(&mut self, text: &str) {
+        if self.refuse_locked() {
+            return;
+        }
+
         // the error's place may be in `text` or in the source, so the
         // reason names no line
         let edits = match &self.error {
@@ -1160,6 +1206,9 @@ impl App {
             .collect();
         self.properties
             .read(self.version, &self.text, self.selection.spans(), fonts);
+        if self.view.locked {
+            ui.disable();
+        }
         self.properties.ui(ui, self.selection.paths());
     }
 
@@ -1287,6 +1336,7 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 self.view.target = match (&self.program, &self.scene) {
+                    _ if self.view.locked => None,
                     (Some(program), Some(scene)) => {
                         handle::target(program, scene, self.selection.spans())
                     }

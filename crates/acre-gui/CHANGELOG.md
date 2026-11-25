@@ -7,6 +7,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Added
+
+- The toolbar has a Lock toggle next to Snap and Grid. While it is on,
+  acre-gui refuses every edit to the source. A drag on an object only
+  selects it. No handles show. The creation tools and the arrange buttons
+  are disabled. Delete, paste, Duplicate, the arrow-key moves and a
+  double-click on text change nothing. The status line then says
+  "locked". The properties panel shows values with its controls
+  disabled. Selection, box selection, pan, zoom, Ctrl+C and playback
+  still work.
+- `acre-gui --locked` starts the viewer locked.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

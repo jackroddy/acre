@@ -30,6 +30,11 @@ struct Cli {
     #[arg(long, conflicts_with = "file")]
     stdio: bool,
 
+    /// Start with every edit to the source refused until the toolbar's
+    /// Lock is turned off
+    #[arg(long)]
+    locked: bool,
+
     /// The drawing to show [default: the last one opened]
     #[arg(value_name = "file")]
     file: Option<PathBuf>,
@@ -52,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // egui's own Ctrl+= and Ctrl+- zoom of the whole window
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
             let link = cli.stdio.then(|| link::Link::start(cc.egui_ctx.clone()));
-            Ok(Box::new(app::App::new(cli.file, link)))
+            Ok(Box::new(app::App::new(cli.file, link, cli.locked)))
         }),
     )?;
     Ok(())

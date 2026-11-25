@@ -25,6 +25,8 @@ pub struct Drag {
     /// drag moves, and the index among them of the child the node goes
     /// before, or their count for after the last.
     reorder: Option<(Siblings, usize)>,
+    /// Whether the press only clicks, however far the pointer goes.
+    still: bool,
     /// Where the press was, on screen.
     from: Pos2,
     /// Where the pointer is, on screen.
@@ -67,6 +69,7 @@ impl Drag {
             create: false,
             grip: None,
             reorder: None,
+            still: false,
             from,
             to: from,
             by: None,
@@ -85,6 +88,15 @@ impl Drag {
     pub fn grip(target: Target, grip: Grip, from: Pos2) -> Self {
         Drag {
             grip: Some((target, grip)),
+            ..Drag::new(Vec::new(), from)
+        }
+    }
+
+    /// A press that comes to a click wherever it is let go, and draws
+    /// nothing meanwhile.
+    pub fn click(from: Pos2) -> Self {
+        Drag {
+            still: true,
             ..Drag::new(Vec::new(), from)
         }
     }
@@ -143,7 +155,7 @@ impl Drag {
     /// The corners on screen of the selection box, once the pointer has
     /// gone past the threshold on empty canvas.
     pub fn boxed(&self) -> Option<(Pos2, Pos2)> {
-        let selecting = self.nodes.is_empty() && !self.create && self.grip.is_none();
+        let selecting = self.nodes.is_empty() && !self.create && self.grip.is_none() && !self.still;
         (selecting && self.by.is_some()).then_some((self.from, self.to))
     }
 
@@ -161,7 +173,7 @@ impl Drag {
     }
 
     pub fn release(self) -> Release {
-        let Some(by) = self.by else {
+        let Some(by) = self.by.filter(|_| !self.still) else {
             return Release::Click(self.from);
         };
         if let Some((target, grip)) = self.grip {
@@ -307,6 +319,17 @@ mod tests {
                 by: Point::new(11.0, 0.0),
             }
         );
+    }
+
+    #[test]
+    fn a_press_that_only_clicks_draws_nothing_and_clicks_where_pressed() {
+        let mut drag = Drag::click(pos2(10.0, 10.0));
+        drag.follow(pos2(80.0, 40.0), 1.0);
+        assert_eq!(drag.moving(), None);
+        assert_eq!(drag.boxed(), None);
+        assert_eq!(drag.creating(), None);
+        assert_eq!(drag.gripping(), None);
+        assert_eq!(drag.release(), Release::Click(pos2(10.0, 10.0)));
     }
 
     #[test]

@@ -58,6 +58,8 @@ pub struct View {
     pub grid: bool,
     /// The grid's spacing in canvas pixels.
     pub spacing: f64,
+    /// Whether the view refuses every edit to the source.
+    pub locked: bool,
     pub tool: Tool,
     /// The points placed so far of the polygon or polyline being drawn,
     /// in canvas pixels.
@@ -153,6 +155,7 @@ impl View {
             snap: true,
             grid: false,
             spacing: 10.0,
+            locked: false,
             tool: Tool::Select,
             path: Vec::new(),
             target: None,
@@ -263,18 +266,16 @@ impl View {
         {
             let p = self.to_canvas(rect, at);
             let grip = target.and_then(|target| Some((target, target.grip_at(p, handle_reach)?)));
-            self.drag = Some(match (self.tool, grip) {
-                (Tool::Select, Some((target, grip))) => Drag::grip(target.clone(), grip, at),
-                (Tool::Select, None) => {
-                    let nodes = node_at(scene, p, t)
-                        .map_or(Vec::new(), |node| selection::dragged(selected, node));
-                    if let [node] = nodes[..] {
-                        shown.pressed = Some(node);
-                    }
-                    Drag::new(nodes, at)
-                }
-                _ => Drag::create(at),
-            });
+            let nodes =
+                node_at(scene, p, t).map_or(Vec::new(), |node| selection::dragged(selected, node));
+            if let [node] = nodes[..]
+                && self.tool == Tool::Select
+                && grip.is_none()
+                && !self.locked
+            {
+                shown.pressed = Some(node);
+            }
+            self.drag = Some(press(self.tool, self.locked, grip, nodes, at));
         }
         self.context_menu(&response, scene, rect, t, &mut shown);
 
@@ -566,7 +567,10 @@ impl View {
                 (MenuItem::Delete, "Delete"),
                 (MenuItem::Duplicate, "Duplicate"),
             ] {
-                if ui.button(label).clicked() {
+                if ui
+                    .add_enabled(!self.locked, egui::Button::new(label))
+                    .clicked()
+                {
                     shown.chosen = Some(item);
                     ui.close();
                 }
@@ -809,6 +813,30 @@ impl View {
     }
 }
 
+/// The drag a press at screen point `at` starts with `tool`: on the
+/// handle `grip`, on an object whose drag moves `nodes`, or on empty
+/// canvas when `nodes` is empty. While `locked`, a press on an object or
+/// a handle only clicks, and one on empty canvas draws a selection box.
+fn press(
+    tool: Tool,
+    locked: bool,
+    grip: Option<(&Target, Grip)>,
+    nodes: Vec<Span>,
+    at: Pos2,
+) -> Drag {
+    if locked {
+        return match (grip, nodes.is_empty()) {
+            (None, true) => Drag::new(nodes, at),
+            _ => Drag::click(at),
+        };
+    }
+    match (tool, grip) {
+        (Tool::Select, Some((target, grip))) => Drag::grip(target.clone(), grip, at),
+        (Tool::Select, None) => Drag::new(nodes, at),
+        _ => Drag::create(at),
+    }
+}
+
 /// The node that drew the object of `scene` at canvas point `p` at time
 /// `t`, when a node did.
 fn node_at(scene: &Scene, p: Point, t: f64) -> Option<Span> {
@@ -1016,6 +1044,46 @@ mod tests {
             "canvas { size 300 200; box { at 0 0; size 20 10; } box { at 200 150; size 20 10; } }";
         let out = dragged(src, Point::new(41.6, 20.4));
         assert!(out.contains("at 42 20;"), "{out}");
+    }
+
+    fn press_on(tool: Tool, locked: bool, grip: bool, nodes: Vec<Span>) -> Release {
+        let target = Target::Path {
+            node: Span { start: 0, end: 9 },
+            points: vec![Point::new(0.0, 0.0), Point::new(10.0, 0.0)],
+            open: true,
+        };
+        let grip = grip.then_some((&target, Grip::Vertex(1)));
+        let mut drag = press(tool, locked, grip, nodes, pos2(0.0, 0.0));
+        drag.follow(pos2(40.0, 30.0), 1.0);
+        drag.release()
+    }
+
+    #[test]
+    fn a_locked_press_on_an_object_or_a_handle_only_clicks() {
+        let node = Span { start: 0, end: 9 };
+        let click = Release::Click(pos2(0.0, 0.0));
+        assert_eq!(press_on(Tool::Select, true, false, vec![node]), click);
+        assert_eq!(press_on(Tool::Select, true, true, vec![node]), click);
+        assert_eq!(press_on(Tool::Box, true, false, vec![node]), click);
+        assert!(matches!(
+            press_on(Tool::Select, false, false, vec![node]),
+            Release::Move { .. }
+        ));
+        assert!(matches!(
+            press_on(Tool::Select, false, true, vec![node]),
+            Release::Grip { .. }
+        ));
+    }
+
+    #[test]
+    fn a_locked_press_on_empty_canvas_still_draws_a_selection_box() {
+        let boxed = Release::Select(pos2(0.0, 0.0), pos2(40.0, 30.0));
+        assert_eq!(press_on(Tool::Select, true, false, Vec::new()), boxed);
+        assert_eq!(press_on(Tool::Box, true, false, Vec::new()), boxed);
+        assert!(matches!(
+            press_on(Tool::Box, false, false, Vec::new()),
+            Release::Create(..)
+        ));
     }
 
     fn texture_side(d: &Drawn) -> f32 {
