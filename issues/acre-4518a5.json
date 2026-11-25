@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-01T00:56:28.378409085Z",
-  "updated_at": "2026-11-25T00:00:38.518487568Z",
+  "updated_at": "2026-11-25T00:53:04.6257012Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -341,6 +341,14 @@
       "author": "Jack Roddy/0c799e42",
       "text": "Blended colors (acre-07da80, commit 9b6886c). `(mix A B F)` is the color F of the way from color A to color B, with F a number from 0 to 1. It uses the group the parser already reads for arithmetic and for `(NAME N)` list picks. The parser now also takes `#rrggbb` and `#rrggbbaa` inside `( ... )`. A and B may be color literals, `let` names or nested mixes. The blend is component-wise in sRGB, alpha included, and a half rounds up. `mix` became a word a `let` may not take. The form is provisional, like the rest of the syntax.",
       "commit": "9b6886c",
+      "branch": "dev"
+    },
+    {
+      "id": "350a778a",
+      "at": "2026-11-25T00:53:04.62569917Z",
+      "author": "Jack Roddy/0c799e42",
+      "text": "Justified text may now break words at hyphenation points (acre-7b3a3b, commit 53e1c92), and no property turns that off. Every `text-align justify` paragraph may hyphenate, and ragged text never does. The patterns are English only. Both choices are provisional: a property to turn hyphenation off, or to name a language, can come when a figure needs one.",
+      "commit": "53e1c92",
       "branch": "dev"
     }
   ],
