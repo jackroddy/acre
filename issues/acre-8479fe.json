@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-27T01:33:28.446424001Z",
   "defer_until": null,
   "created_at": "2026-11-27T01:18:25.782696885Z",
-  "updated_at": "2026-11-27T01:34:45.069539518Z",
+  "updated_at": "2026-11-27T01:34:45.080876781Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -47,6 +47,14 @@
       "at": "2026-11-27T01:34:45.069538848Z",
       "author": "Jack Roddy/6787394a",
       "text": "Handles, outlines, the snap and anchor reaches and the polygon's close circle are sized in points of `unit` pixels, where `unit` is the chrome font's cell height over the small style's mockup height of 18. With no window scale from una (una-f17e35) this keeps handles grabbable on a scaled screen, while the zoom stays one screen pixel per canvas pixel at 100%.",
+      "commit": "1a987b1",
+      "branch": "dev"
+    },
+    {
+      "id": "58c3dfa8",
+      "at": "2026-11-27T01:34:45.080875811Z",
+      "author": "Jack Roddy/6787394a",
+      "text": "With `--stdio`, the stdin thread in `Link::stdio` ends the process when stdin closes, as falx-gui's does, since una runs no frame while the compositor hides the window (una-a928af). Replies to the editor still go out from `App::talk` in a frame, so a hidden window answers once it is shown again.",
       "commit": "1a987b1",
       "branch": "dev"
     }
