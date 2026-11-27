@@ -1,0 +1,28 @@
+{
+  "id": "acre-e0fda6",
+  "title": "acre-gui ignores SIGTERM",
+  "body": "A release build of acre-gui at e8db7f9, open in a decade scratch pane, stayed running after `kill` sent it SIGTERM. Its state stayed `S (sleeping)`, and `kill -9` ended it. Nobody has looked for the cause, or checked whether the egui viewer did the same.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-27T02:52:19.104244645Z",
+  "updated_at": "2026-11-27T02:52:19.104244645Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "e8db7f9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
