@@ -10,6 +10,7 @@ mod drag;
 mod field;
 mod handle;
 mod link;
+mod marks;
 mod neovim;
 mod nudge;
 mod playback;
@@ -17,18 +18,22 @@ mod preview;
 mod properties;
 mod recent;
 mod reorder;
+mod screen;
 mod selection;
 mod snap;
 mod tabs;
+mod time_bar;
 mod tool;
 mod view;
 
 use std::env;
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
 
 use clap::Parser;
-use eframe::egui;
+
+use crate::link::{Link, Wake};
 
 #[derive(Parser)]
 #[command(name = "acre-gui", about = "a viewer for acre drawings")]
@@ -49,36 +54,23 @@ struct Cli {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("acre")
-            .with_app_id("acre-gui")
-            .with_inner_size([900.0, 720.0])
-            .with_decorations(false),
-        ..Default::default()
+    let window = una::App::new("acre-gui")?;
+    let waker = window.waker();
+    let wake: Wake = Arc::new(move || waker.wake());
+    let link = if cli.stdio {
+        Some(Link::stdio(wake))
+    } else {
+        let path = link::socket_path(
+            env::var_os("XDG_RUNTIME_DIR").as_deref(),
+            env::var_os("USER").as_deref(),
+            process::id(),
+        );
+        Link::listen(wake, path)
+            .inspect_err(|e| eprintln!("acre-gui: no socket for an editor: {e}"))
+            .ok()
     };
-    eframe::run_native(
-        "acre-gui",
-        options,
-        Box::new(move |cc| {
-            // egui's own Ctrl+= and Ctrl+- zoom of the whole window
-            cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            let ctx = cc.egui_ctx.clone();
-            let link = if cli.stdio {
-                Some(link::Link::stdio(ctx))
-            } else {
-                let path = link::socket_path(
-                    env::var_os("XDG_RUNTIME_DIR").as_deref(),
-                    env::var_os("USER").as_deref(),
-                    process::id(),
-                );
-                link::Link::listen(ctx, path)
-                    .inspect_err(|e| eprintln!("acre-gui: no socket for an editor: {e}"))
-                    .ok()
-            };
-            let recent = recent::Recent::load();
-            Ok(Box::new(app::App::new(cli.file, recent, link, cli.locked)))
-        }),
-    )?;
+    let recent = recent::Recent::load();
+    let mut app = app::App::new(cli.file, recent, link, cli.locked);
+    window.run(|ui| app.frame(ui));
     Ok(())
 }

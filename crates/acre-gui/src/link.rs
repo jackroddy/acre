@@ -29,12 +29,17 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::process;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use acre::scene::edit::TextEdit;
-use eframe::egui;
 use serde::{Deserialize, Serialize};
+
+/// A function that wakes the window so it draws a frame, callable from
+/// any thread.
+pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -133,14 +138,16 @@ pub struct Link {
 }
 
 impl Link {
-    /// Read stdin on a thread of its own, asking `ctx` to repaint after
-    /// each message.
-    pub fn stdio(ctx: egui::Context) -> Self {
+    /// Read stdin on a thread of its own, calling `wake` after each
+    /// message. The process ends when stdin does.
+    pub fn stdio(wake: Wake) -> Self {
         let (tx, events) = channel();
         thread::spawn(move || {
-            read(io::stdin().lock(), &tx, &ctx);
-            let _ = tx.send(Event::Closed);
-            ctx.request_repaint();
+            read(io::stdin().lock(), &tx, &wake);
+
+            // here and not in a frame, since the window draws no frame
+            // while the compositor hides it
+            process::exit(0);
         });
         Link {
             events,
@@ -150,9 +157,9 @@ impl Link {
     }
 
     /// Listen on a socket at `path`, taking one editor at a time on a
-    /// thread of its own, and asking `ctx` to repaint after each message.
-    /// A socket left at `path` is replaced.
-    pub fn listen(ctx: egui::Context, path: PathBuf) -> io::Result<Self> {
+    /// thread of its own, and calling `wake` after each message. A socket
+    /// left at `path` is replaced.
+    pub fn listen(wake: Wake, path: PathBuf) -> io::Result<Self> {
         if let Some(dir) = path.parent() {
             DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
         }
@@ -168,11 +175,11 @@ impl Link {
                 if tx.send(Event::Opened(Editor::Socket(writer))).is_err() {
                     return;
                 }
-                let open = read(BufReader::new(stream), &tx, &ctx);
+                let open = read(BufReader::new(stream), &tx, &wake);
                 if !open || tx.send(Event::Closed).is_err() {
                     return;
                 }
-                ctx.request_repaint();
+                wake();
             }
         });
         Ok(Link {
@@ -230,14 +237,14 @@ impl Drop for Link {
 
 /// Pass on each message read from `lines` until it ends. A line that is
 /// not a message is skipped. False once the receiver has gone.
-fn read(lines: impl BufRead, tx: &Sender<Event>, ctx: &egui::Context) -> bool {
+fn read(lines: impl BufRead, tx: &Sender<Event>, wake: &Wake) -> bool {
     for line in lines.lines() {
         let Ok(line) = line else { break };
         if let Ok(message) = serde_json::from_str::<Incoming>(&line) {
             if tx.send(Event::Message(message)).is_err() {
                 return false;
             }
-            ctx.request_repaint();
+            wake();
         }
     }
     true

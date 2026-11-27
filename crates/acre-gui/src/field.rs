@@ -1,7 +1,6 @@
 use acre::lang::{Program, Span};
 use acre::scene::edit::{self, TextEdit};
 use acre::scene::{Point, Scene};
-use eframe::egui::{self, Event, Key, KeyboardShortcut, Modifiers};
 
 /// A field over an object that edits the text of the node that drew it.
 pub struct Field {
@@ -11,7 +10,8 @@ pub struct Field {
     path: Vec<usize>,
     /// The text when the field opened.
     original: String,
-    /// The text in the field, markup included.
+    /// The text in the field, markup included, with each line break
+    /// written as `\n`, since the field holds one line.
     pub text: String,
     /// Whether the field has had the keyboard focus.
     focused: bool,
@@ -31,6 +31,7 @@ impl Field {
             }
         };
         let path = edit::node_path(program, node).ok_or("no node has this span")?;
+        let text = text.replace('\n', "\\n");
         Ok(Field {
             path,
             original: text.clone(),
@@ -44,37 +45,14 @@ impl Field {
         edit::node_span(program, &self.path)
     }
 
-    /// Draw the field `width` points wide in `ui`, and say whether it
-    /// has just been left by Enter, Escape, Tab or a click elsewhere: the
-    /// moment to write its text. Shift+Enter starts a new line.
-    pub fn ui(&mut self, ui: &mut egui::Ui, width: f32) -> bool {
-        // read before the field takes its keys: Shift+Enter is its
-        // return key, so it leaves a plain Enter in the events
-        let enter = ui.input(|i| {
-            i.events.iter().any(|e| {
-                matches!(e, Event::Key { key: Key::Enter, pressed: true, modifiers, .. }
-                    if !modifiers.shift)
-            })
-        });
-        let edit = egui::TextEdit::multiline(&mut self.text)
-            .desired_rows(1)
-            .desired_width(width)
-            .return_key(KeyboardShortcut::new(Modifiers::SHIFT, Key::Enter));
-        let response = ui.add(edit);
-        if !self.focused {
-            response.request_focus();
-        }
-        let mut focus = response.has_focus();
-        if focus && enter {
-            response.surrender_focus();
-            focus = false;
-        }
-        self.left(focus)
+    /// Whether the field has had the keys since it opened.
+    pub fn has_had_focus(&self) -> bool {
+        self.focused
     }
 
     /// Note whether the field has the focus this frame, and say whether
     /// it has just lost the focus it had.
-    fn left(&mut self, has_focus: bool) -> bool {
+    pub fn left(&mut self, has_focus: bool) -> bool {
         if has_focus {
             self.focused = true;
             return false;
@@ -90,7 +68,8 @@ impl Field {
             return Ok(Vec::new());
         }
         let node = self.node(program).ok_or("the node edited is gone")?;
-        edit::text_edits(source, node, &self.text).map_err(|e| {
+        let text = self.text.replace("\\n", "\n");
+        edit::text_edits(source, node, &text).map_err(|e| {
             let (line, col) = e.line_col(source);
             format!("cannot edit text: {line}:{col}: {}", e.message)
         })
@@ -136,7 +115,7 @@ mod tests {
         assert_eq!(field.edits(SRC, &parse(SRC).unwrap()), Ok(Vec::new()));
 
         let field = open(SRC, Point::new(205.0, 25.0)).unwrap();
-        assert_eq!(field.text, "two\nlines");
+        assert_eq!(field.edits(SRC, &parse(SRC).unwrap()), Ok(Vec::new()));
     }
 
     #[test]
@@ -183,38 +162,16 @@ mod tests {
         assert!(field.left(false));
     }
 
-    /// Whether `field` is left after a frame that gives it the focus and
-    /// a frame with `key` pressed with `modifiers` held.
-    fn press(field: &mut Field, key: Key, modifiers: Modifiers) -> bool {
-        let ctx = egui::Context::default();
-        let event = Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers,
-        };
-        let mut left = false;
-        for events in [vec![], vec![event]] {
-            let input = egui::RawInput {
-                events,
-                ..Default::default()
-            };
-            let mut output = ctx.run_ui(input, |ui| left = field.ui(ui, 200.0));
-            output.textures_delta.clear();
-        }
-        left
-    }
-
     #[test]
-    fn shift_enter_starts_a_new_line_and_enter_leaves_the_field() {
-        let mut field = open(SRC, Point::new(20.0, 20.0)).unwrap();
-        assert!(!press(&mut field, Key::Enter, Modifiers::SHIFT));
-        assert_eq!(field.text, "one\n");
+    fn a_line_break_shows_as_backslash_n_and_one_typed_starts_a_new_line() {
+        let field = open(SRC, Point::new(205.0, 25.0)).unwrap();
+        assert_eq!(field.text, "two\\nlines");
 
         let mut field = open(SRC, Point::new(20.0, 20.0)).unwrap();
-        assert!(press(&mut field, Key::Enter, Modifiers::NONE));
-        assert_eq!(field.text, "one");
+        field.text = "one\\ntwo".into();
+        let program = parse(SRC).unwrap();
+        let out = edit::apply(SRC, &field.edits(SRC, &program).unwrap());
+        assert!(out.contains(r#"text "one\ntwo";"#), "{out}");
     }
 
     #[test]

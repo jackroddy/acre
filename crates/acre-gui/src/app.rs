@@ -1,15 +1,15 @@
+use std::collections::HashSet;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use acre::lang;
+use acre::scene;
 use acre::scene::edit::{self, NewNode, TextEdit};
-use acre::scene::{self, Section};
-use eframe::egui::collapsing_header::CollapsingState;
-use eframe::egui::text::{LayoutJob, TextWrapping};
-use eframe::egui::{
-    self, Align2, Color32, Event, FontId, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextStyle,
-    Vec2, ViewportCommand,
+use una::{
+    Align, Answer, Choice, Event, Flow, Key, Layer, Length, Look, MenuEntry, PickFile, PickMode,
+    Picked, Rgba, Spec, Style, Surface, Ui,
 };
 
 use crate::anchor;
@@ -22,18 +22,66 @@ use crate::neovim;
 use crate::nudge::Nudge;
 use crate::playback;
 use crate::preview::Previews;
+use crate::properties::number_text;
 use crate::recent::Recent;
 use crate::selection::{self, Selection};
 use crate::snap;
 use crate::tabs;
+use crate::time_bar::TimeBar;
 use crate::tool::{self, Step, Tool};
 use crate::view::{MenuItem, Toolbar};
 
-/// How often an open file is checked for a change on disk.
-const DISK_CHECK: Duration = Duration::from_millis(500);
+/// How often, in milliseconds, an open file is checked for a change on
+/// disk.
+const DISK_CHECK: u64 = 500;
+
+/// How often, in milliseconds, a frame is drawn while the scene plays.
+const PLAYING: u64 = 16;
 
 /// The status line's reason for an edit refused while the view is locked.
 const LOCKED: &str = "locked";
+
+/// The columns of the sections and properties columns.
+const COLUMN: u16 = 32;
+
+/// The width of the field over a node that edits its text, at least,
+/// in pixels at the chrome style's mockup size.
+const FIELD_WIDTH: i32 = 160;
+
+/// Glyphs from the icon font.
+const CLOSE_ICON: char = '\u{f0156}';
+const FOLDED_ICON: char = '\u{f0142}';
+const UNFOLDED_ICON: char = '\u{f0140}';
+
+/// The arrow keys' commands with a selection, and how far each moves it.
+const MOVES: [(&str, &str, f64, f64); 4] = [
+    ("Move left", "left", -1.0, 0.0),
+    ("Move right", "right", 1.0, 0.0),
+    ("Move up", "up", 0.0, -1.0),
+    ("Move down", "down", 0.0, 1.0),
+];
+
+/// The arrow keys' commands with no selection, and the frames each steps.
+const STEPS: [(&str, &str, i64); 2] = [
+    ("Step back a frame", "left", -1),
+    ("Step forward a frame", "right", 1),
+];
+
+/// The entries of the File menu.
+#[derive(Clone, Copy, PartialEq)]
+enum FileItem {
+    Open,
+    OpenRecent,
+    EditInNeovim,
+    Quit,
+}
+
+const FILE_MENU: [(FileItem, &str); 4] = [
+    (FileItem::Open, "Open…"),
+    (FileItem::OpenRecent, "Open Recent…"),
+    (FileItem::EditInNeovim, "Edit in neovim"),
+    (FileItem::Quit, "Quit"),
+];
 
 /// A viewer of drawings. Each drawing's source comes from a file it
 /// watches, or from an editor over the link.
@@ -46,7 +94,9 @@ pub struct App {
     docs: Vec<Document>,
     /// The index in `docs` of the drawing shown.
     active: usize,
-    last_check: Instant,
+    /// When the files are next checked, in the milliseconds of
+    /// `Ui::now_ms`.
+    next_check: u64,
     /// The link an editor sends the source over. While an editor is
     /// connected, acre-gui watches no file.
     link: Option<Link>,
@@ -61,10 +111,27 @@ pub struct App {
     goto: Option<usize>,
     nudge: Nudge,
     bar: Toolbar,
+    /// The grid's spacing as typed in the toolbar's field.
+    spacing: String,
+    /// Whether the spacing field had the keys at the last frame.
+    spacing_focused: bool,
     /// Whether the panel that lists the scene's sections is open.
     sections_open: bool,
-    /// The render pane's size at the last frame.
-    pane: Vec2,
+    /// The titles of the sections whose subsections show.
+    unfolded: HashSet<String>,
+    /// The pane the drawing is drawn in.
+    canvas: Surface,
+    time_bar: TimeBar,
+    /// Whether the file picker shows.
+    picking: bool,
+    /// Where the list of recent files shows, in the window, while it does.
+    recent_at: Option<una::Point>,
+    /// The recent file whose preview shows beside the list.
+    recent_hovered: Option<usize>,
+    /// The File menu button, as of the last frame.
+    file_button: Option<una::Rect>,
+    /// Whether a text field has the keys in this frame.
+    typing: bool,
     /// The canvas point under the pointer.
     hover: Option<scene::Point>,
     /// The latest message that is not a source error.
@@ -78,19 +145,30 @@ impl App {
     /// link over stdin and stdout, of that alone. With `locked`, it
     /// refuses edits until the toolbar unlocks it.
     pub fn new(file: Option<PathBuf>, recent: Recent, link: Option<Link>, locked: bool) -> Self {
+        let bar = Toolbar::new();
+        let spacing = number_text(bar.spacing);
         let mut app = App {
             recent,
             previews: Previews::default(),
             closing: None,
             docs: vec![Document::blank()],
             active: 0,
-            last_check: Instant::now(),
+            next_check: 0,
             link,
             goto: None,
             nudge: Nudge::default(),
-            bar: Toolbar::new(),
+            bar,
+            spacing,
+            spacing_focused: false,
             sections_open: true,
-            pane: Vec2::ZERO,
+            unfolded: HashSet::new(),
+            canvas: Surface::new(),
+            time_bar: TimeBar::new(),
+            picking: false,
+            recent_at: None,
+            recent_hovered: None,
+            file_button: None,
+            typing: false,
             hover: None,
             notice: None,
             title: String::new(),
@@ -163,6 +241,7 @@ impl App {
     /// ask the editor to show its file when the editor shows another.
     fn shown_changed(&mut self) {
         self.notice = None;
+        self.docs[self.active].view.forget();
         let doc = &self.docs[self.active];
         if let Some(editor) = self.editor()
             && !doc.linked
@@ -200,17 +279,13 @@ impl App {
     }
 
     /// Take what the editor sent, and tell it about the source's error
-    /// when that changed. False once the editor at the other end of
-    /// stdin and stdout has gone.
-    fn talk(&mut self) -> bool {
+    /// when that changed.
+    fn talk(&mut self) {
         let Some(link) = &mut self.link else {
-            return true;
+            return;
         };
         let received = link.received();
         if received.closed {
-            if link.is_stdio() {
-                return false;
-            }
             self.unlink();
         }
         let mut texts: Vec<(String, Option<PathBuf>, u64)> = Vec::new();
@@ -242,7 +317,7 @@ impl App {
         // after the text, so the offset is read against the source
         // of the newest program
         let Some(doc) = self.docs.iter_mut().find(|d| d.linked) else {
-            return true;
+            return;
         };
         if let Some(offset) = cursor
             && Some(offset) != goto
@@ -263,7 +338,6 @@ impl App {
             });
             doc.reported = true;
         }
-        true
     }
 
     /// Watch each drawing's file again, once the editor has gone.
@@ -545,9 +619,10 @@ impl App {
         }
     }
 
-    /// Draw the open field over its node's objects in the pane at
-    /// `rect`, and write its text once it loses the focus.
-    fn edit_field(&mut self, ui: &mut egui::Ui, rect: Rect) {
+    /// Build the open field over its node's objects, in the pane at
+    /// `pane` in the window, and write its text once it is left by Enter,
+    /// Tab or a click elsewhere. Escape closes it and writes nothing.
+    fn edit_field(&mut self, ui: &mut Ui, pane: crate::screen::Rect) {
         let doc = &mut self.docs[self.active];
         let (Some(f), Some(scene), Some(program)) = (&mut doc.field, &doc.scene, &doc.program)
         else {
@@ -556,21 +631,45 @@ impl App {
         let bounds = f
             .node(program)
             .and_then(|n| field::bounds(scene, n, doc.time));
-        let left = match bounds {
-            Some((min, max)) => {
-                let (min, max) = (doc.view.to_screen(rect, min), doc.view.to_screen(rect, max));
-                let width = (max.x - min.x).max(160.0);
-                egui::Area::new(ui.scope_id().with("text field"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(min)
-                    .show(ui.ctx(), |ui| f.ui(ui, width))
-                    .inner
-            }
 
-            // the node draws nothing now, so the field has nothing to
-            // sit over
-            None => true,
-        };
+        // with no bounds the node draws nothing now, so the field has
+        // nothing to sit over and is left
+        let mut left = true;
+        let mut cancelled = false;
+        if let Some((min, max)) = bounds {
+            let (min, max) = (doc.view.to_screen(min), doc.view.to_screen(max));
+            let style = Style::small(ui.palette());
+            let width = ((max.x - min.x) as i32).max(style.px(ui, FIELD_WIDTH));
+            let at = una::Point {
+                x: (pane.min.x + min.x) as i32,
+                y: (pane.min.y + min.y) as i32,
+            };
+            let id = ui.id("text field");
+            ui.layer(Layer::Popup, |ui| {
+                let spec = Spec {
+                    width: Length::Px(width),
+                    float: Some(at),
+                    look: Look {
+                        fill: Some(ui.palette().background),
+                        ..Look::default()
+                    },
+                    ..Spec::default()
+                };
+                ui.group(spec, |ui| {
+                    if !f.has_had_focus() {
+                        ui.focus(id);
+                    }
+                    let signal = ui.field(id, &mut f.text, "text");
+                    left = f.left(signal.signal.focused) || signal.submitted;
+                    cancelled = signal.cancelled;
+                    self.typing |= signal.signal.focused;
+                });
+            });
+        }
+        if cancelled {
+            doc.field = None;
+            return;
+        }
         if !left {
             return;
         }
@@ -627,61 +726,148 @@ impl App {
         }
     }
 
-    fn menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("File", |ui| {
-            if ui.button("Open…").clicked() {
-                let dialog = rfd::FileDialog::new().add_filter("acre drawing", &["acre"]);
-                if let Some(path) = dialog.pick_file() {
-                    self.open(&path);
-                }
-                ui.close();
-            }
-            ui.menu_button("Open Recent", |ui| {
-                if self.recent.files.is_empty() {
-                    ui.label("nothing yet");
-                }
-                let mut chosen = None;
-                for file in &self.recent.files {
-                    let button = ui
-                        .button(file.to_string_lossy())
-                        .on_hover_ui(|ui| self.previews.show(ui, file));
-                    if button.clicked() {
-                        chosen = Some(file.clone());
-                    }
-                }
-                if let Some(file) = chosen {
-                    self.open(&file);
-                    ui.close();
-                }
-            });
-            self.edit_in_neovim(ui);
-            ui.separator();
-            if ui.button("Quit").clicked() {
-                ui.ctx().send_viewport_cmd(ViewportCommand::Close);
-            }
+    /// The File menu, and what its entries do.
+    fn file_menu(&mut self, ui: &mut Ui) {
+        let entries = FILE_MENU.map(|(item, label)| MenuEntry {
+            available: item != FileItem::OpenRecent || !self.recent.files.is_empty(),
+            ..MenuEntry::new(label)
         });
+        let chosen = ui.menu_button("File", &entries);
+        self.file_button = ui.rect(ui.id("File"));
+        match chosen.map(|i| FILE_MENU[i].0) {
+            Some(FileItem::Open) => self.picking = true,
+            Some(FileItem::OpenRecent) => {
+                self.recent_at = self.file_button.map(|b| una::Point {
+                    x: b.x,
+                    y: b.bottom(),
+                });
+                self.recent_hovered = None;
+            }
+            Some(FileItem::EditInNeovim) => self.edit_in_neovim(),
+            Some(FileItem::Quit) => ui.close(),
+            None => {}
+        }
     }
 
-    /// The menu item that opens neovim on the drawing shown, linked to
-    /// this viewer. It is disabled while an editor is connected.
-    fn edit_in_neovim(&mut self, ui: &mut egui::Ui) {
-        let file = self.doc().path.clone();
-        let socket = self.link.as_ref().and_then(Link::socket);
-        let why_not = match (&file, socket) {
-            _ if self.editor().is_some() => Some("an editor is linked already"),
-            (None, _) => Some("this drawing has no file"),
-            (_, None) => Some("acre-gui has no socket for neovim to link to"),
-            _ => None,
-        };
-        let button = ui
-            .add_enabled(why_not.is_none(), egui::Button::new("Edit in neovim"))
-            .on_disabled_hover_text(why_not.unwrap_or_default());
-        if button.clicked()
-            && let (Some(file), Some(socket)) = (file, socket)
-        {
-            self.notice = neovim::open(&file, socket).err();
+    /// The commands of the File menu, which the command palette lists.
+    fn file_commands(&mut self, ui: &mut Ui) {
+        if self.stdio() {
+            return;
+        }
+        if ui.command("Open…", None) {
+            self.picking = true;
+        }
+        if ui.command("Edit in neovim", None) {
+            self.edit_in_neovim();
+        }
+        if ui.command("Quit", None) {
             ui.close();
         }
+    }
+
+    /// Ask for a drawing to open in the file picker while it shows, and
+    /// open the one chosen.
+    fn pick(&mut self, ui: &mut Ui) {
+        if !self.picking {
+            return;
+        }
+        let start = (self.doc().path.as_deref())
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| env::current_dir().ok())
+            .unwrap_or_default();
+        let request = PickFile {
+            title: "Open a drawing",
+            mode: PickMode::Open,
+            start: &start,
+            line: "",
+        };
+        let picked = ui.pick_file(ui.id("open"), &request);
+        match picked {
+            Some(Picked::Chosen(paths)) => {
+                self.picking = false;
+                if let Some(path) = paths.first() {
+                    self.open(path);
+                }
+            }
+            Some(Picked::Cancelled) => self.picking = false,
+            None => {}
+        }
+    }
+
+    /// The list of recent files under the File menu while it shows, with
+    /// a preview of the file under the pointer beside it. A click opens a
+    /// file, and Escape or a press outside closes the list.
+    fn recent_list(&mut self, ui: &mut Ui) {
+        let Some(at) = self.recent_at else { return };
+        let id = ui.id("recent files");
+        let outside = ui.events().iter().any(|e| match e {
+            Event::PointerButton {
+                pressed: true, at, ..
+            } => ui.rect(id).is_some_and(|r| !r.contains(at.0, at.1)),
+            Event::Key(key) => key.pressed && key.key == Key::Escape,
+            _ => false,
+        });
+        if outside {
+            self.recent_at = None;
+            return;
+        }
+        let palette = ui.palette().clone();
+        let style = Style::small(&palette);
+        let pad = style.px(ui, style.padding);
+        let panel = Spec {
+            id,
+            flow: Flow::Row,
+            pad: [pad; 4],
+            float: Some(at),
+            radius: style.px(ui, style.radius),
+            look: Look {
+                fill: Some(palette.raised_background),
+                border: Some(palette.border),
+                ..Look::default()
+            },
+            ..Spec::default()
+        };
+        let mut chosen = None;
+        ui.layer(Layer::Popup, |ui| {
+            ui.group(panel, |ui| {
+                ui.group(Spec::default(), |ui| {
+                    for (i, file) in self.recent.files.iter().enumerate() {
+                        ui.keyed(i, |ui| {
+                            let row = ui.button(&file.to_string_lossy());
+                            if row.hovered {
+                                self.recent_hovered = Some(i);
+                            }
+                            if row.clicked {
+                                chosen = Some(file.clone());
+                            }
+                        });
+                    }
+                });
+                let hovered = self.recent_hovered.and_then(|i| self.recent.files.get(i));
+                if let Some(file) = hovered {
+                    ui.space(Length::Px(pad));
+                    ui.group(Spec::default(), |ui| self.previews.show(ui, file));
+                }
+            });
+        });
+        if let Some(file) = chosen {
+            self.recent_at = None;
+            self.open(&file);
+        }
+    }
+
+    /// Open neovim on the drawing shown, linked to this viewer, or say on
+    /// the status line why not.
+    fn edit_in_neovim(&mut self) {
+        let file = self.doc().path.clone();
+        let socket = self.link.as_ref().and_then(Link::socket);
+        self.notice = match (&file, socket) {
+            _ if self.editor().is_some() => Some("an editor is linked already".to_string()),
+            (None, _) => Some("this drawing has no file".to_string()),
+            (_, None) => Some("acre-gui has no socket for neovim to link to".to_string()),
+            (Some(file), Some(socket)) => neovim::open(file, socket).err(),
+        };
     }
 
     /// Take up `tool`, dropping the points placed of any polygon or
@@ -694,159 +880,199 @@ impl App {
     }
 
     /// The File menu unless linked over stdio, the buttons that zoom the
-    /// render, the snap, grid and lock toggles, and the tools, with Done and Cancel while a path is being drawn,
-    /// and the buttons that align two or more selected nodes and space
-    /// out three or more. While locked, only the Select tool is on and
-    /// no arrange button is.
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if !self.stdio() {
-                self.menu(ui);
-                ui.separator();
-            }
-            let pane = self.pane;
-            if ui.button("−").on_hover_text("zoom out").clicked() {
-                self.doc_mut().view.zoom_by(0.8, pane);
-            }
-            if ui.button("+").on_hover_text("zoom in").clicked() {
-                self.doc_mut().view.zoom_by(1.25, pane);
-            }
-            if ui.button("Fit").clicked() {
-                self.doc_mut().view.fit();
-            }
-            if ui
-                .button("100%")
-                .on_hover_text("one screen point to a canvas pixel")
-                .clicked()
-            {
-                self.doc_mut().view.actual_size(pane);
-            }
+    /// render, the snap, grid and lock toggles, and the tools, with Done
+    /// and Cancel while a path is being drawn, and the buttons that align
+    /// two or more selected nodes and space out three or more. While
+    /// locked, only the Select tool is on and no arrange button is.
+    fn toolbar(&mut self, ui: &mut Ui) {
+        let now = ui.now_ms();
+        let gap = |ui: &mut Ui| ui.space(Length::Cells(1));
+        let rule = |ui: &mut Ui| {
+            ui.space(Length::Cells(1));
             ui.separator();
-            ui.toggle_value(&mut self.bar.snap, "Snap")
-                .on_hover_text("snap a dragged object to other objects and the grid");
-            ui.toggle_value(&mut self.bar.grid, "Grid")
-                .on_hover_text("draw the grid and snap to it");
-            ui.add(
-                egui::DragValue::new(&mut self.bar.spacing)
-                    .range(1.0..=1000.0)
-                    .suffix(" px"),
-            )
-            .on_hover_text("the grid's spacing in canvas pixels");
-            if ui
-                .toggle_value(&mut self.bar.locked, "🔒 Lock")
-                .on_hover_text("refuse every edit to the source")
-                .clicked()
-                && self.bar.locked
-            {
-                self.set_tool(Tool::Select);
-            }
-            let locked = self.bar.locked;
-            ui.separator();
-            for t in Tool::ALL {
-                let enabled = !locked || t == Tool::Select;
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::Button::selectable(self.bar.tool == t, t.label()),
-                    )
-                    .on_hover_text(t.hint())
-                    .clicked()
-                {
-                    self.set_tool(t);
+            ui.space(Length::Cells(1));
+        };
+        ui.keyed("toolbar", |ui| {
+            ui.row(|ui| {
+                if !self.stdio() {
+                    self.file_menu(ui);
+                    rule(ui);
                 }
-            }
-            if self.bar.tool.draws_path() && !self.doc().view.path.is_empty() {
-                ui.separator();
-                if ui.button("Done").clicked() {
-                    self.finish_path();
+                let out = ui.button("−");
+                ui.tooltip(out, "zoom out");
+                if out.clicked {
+                    self.doc_mut().view.zoom_by(0.8, now);
                 }
-                if ui.button("Cancel").clicked() {
+                let zoom_in = ui.button("+");
+                ui.tooltip(zoom_in, "zoom in");
+                if zoom_in.clicked {
+                    self.doc_mut().view.zoom_by(1.25, now);
+                }
+                if ui.button("Fit").clicked {
+                    self.doc_mut().view.fit();
+                }
+                let actual = ui.button("100%");
+                ui.tooltip(actual, "one pixel on screen to a canvas pixel");
+                if actual.clicked {
+                    self.doc_mut().view.actual_size(now);
+                }
+                rule(ui);
+                let snap = ui.toggle("Snap", &mut self.bar.snap);
+                ui.tooltip(snap, "snap a dragged object to other objects and the grid");
+                let grid = ui.toggle("Grid", &mut self.bar.grid);
+                ui.tooltip(grid, "draw the grid and snap to it");
+                gap(ui);
+                self.spacing_field(ui);
+                gap(ui);
+                let lock = ui.toggle("Lock", &mut self.bar.locked);
+                ui.tooltip(lock, "refuse every edit to the source");
+                if lock.clicked && self.bar.locked {
                     self.set_tool(Tool::Select);
                 }
-            }
-            let selected = arrange::outermost(self.doc().selection.spans()).len();
-            if selected >= 2 {
-                ui.separator();
-                let space: &[Arrange] = if selected >= 3 { &Arrange::SPACE } else { &[] };
-                for &how in Arrange::ALIGN.iter().chain(space) {
-                    if ui
-                        .add_enabled(!locked, egui::Button::new(how.label()))
-                        .on_hover_text(how.hint())
-                        .clicked()
-                    {
-                        self.arrange(how);
-                    }
+                rule(ui);
+                self.tools(ui);
+                let selected = arrange::outermost(self.doc().selection.spans()).len();
+                if selected >= 2 {
+                    rule(ui);
+                    let space: &[Arrange] = if selected >= 3 { &Arrange::SPACE } else { &[] };
+                    ui.disabled(self.bar.locked, |ui| {
+                        for &how in Arrange::ALIGN.iter().chain(space) {
+                            let button = ui.button(how.label());
+                            ui.tooltip(button, how.hint());
+                            if button.clicked {
+                                self.arrange(how);
+                            }
+                        }
+                    });
                 }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("×").on_hover_text("close acre-gui").clicked() {
+                ui.space(Length::Fill(1));
+                let close = ui.icon_button(ui.id("close"), CLOSE_ICON);
+                ui.tooltip(close, "close acre-gui");
+                if close.clicked {
                     self.closing = Some(Closing::Window);
                 }
             });
         });
     }
 
+    /// The tools, one toggle each, with Done and Cancel while a path is
+    /// being drawn.
+    fn tools(&mut self, ui: &mut Ui) {
+        let locked = self.bar.locked;
+        for t in Tool::ALL {
+            let mut on = self.bar.tool == t;
+            let mut clicked = false;
+            ui.disabled(locked && t != Tool::Select, |ui| {
+                let toggle = ui.toggle(t.label(), &mut on);
+                ui.tooltip(toggle, t.hint());
+                clicked = toggle.clicked;
+            });
+            if clicked {
+                self.set_tool(t);
+            }
+        }
+        if self.bar.tool.draws_path() && !self.doc().view.path.is_empty() {
+            ui.space(Length::Cells(1));
+            if ui.button("Done").clicked {
+                self.finish_path();
+            }
+            if ui.button("Cancel").clicked {
+                self.set_tool(Tool::Select);
+            }
+        }
+    }
+
+    /// The field that sets the grid's spacing in canvas pixels. It takes
+    /// a number from 1 to 1000 on Enter or once it loses the keys, and
+    /// puts back the spacing for anything else.
+    fn spacing_field(&mut self, ui: &mut Ui) {
+        let spec = Spec {
+            width: Length::Cells(6),
+            ..Spec::default()
+        };
+        let mut signal = None;
+        ui.group(spec, |ui| {
+            signal = Some(ui.field(ui.id("spacing"), &mut self.spacing, "px"));
+        });
+        let Some(signal) = signal else { return };
+        ui.tooltip(signal.signal, "the grid's spacing in canvas pixels");
+        ui.label(" px");
+        let focused = signal.signal.focused;
+        let left = self.spacing_focused && !focused;
+        self.spacing_focused = focused;
+        self.typing |= focused;
+        if signal.submitted || left || signal.cancelled {
+            let typed = self.spacing.trim().parse::<f64>().ok();
+            if let Some(spacing) = typed.filter(|s| (1.0..=1000.0).contains(s) && !signal.cancelled)
+            {
+                self.bar.spacing = spacing;
+            }
+            self.spacing = number_text(self.bar.spacing);
+        }
+    }
+
     /// Ask whether to close what `closing` names, and close it on
-    /// Close. A click on Cancel or outside the dialog keeps it open.
-    fn confirm_close(&mut self, ctx: &egui::Context, closing: Closing) {
+    /// Close. Cancel or Escape keeps it open.
+    fn confirm_close(&mut self, ui: &mut Ui) {
+        let Some(closing) = self.closing else { return };
         let question = match closing {
             Closing::Window => "Close acre-gui?".to_string(),
             Closing::Tab(i) => format!("Close {}?", self.docs[i].name()),
         };
-        let shown = egui::Modal::new(egui::Id::unique("close")).show(ctx, |ui| {
-            ui.label(question);
-            ui.add_space(8.0);
-            ui.horizontal(|ui| (ui.button("Close").clicked(), ui.button("Cancel").clicked()))
-                .inner
-        });
-        let (close, cancel) = shown.inner;
-        if close || cancel || shown.backdrop_response.clicked() {
-            self.closing = None;
-        }
+        let choices = [
+            Choice {
+                label: "Close",
+                key: 'c',
+                destructive: true,
+            },
+            Choice {
+                label: "Cancel",
+                key: 'n',
+                destructive: false,
+            },
+        ];
+        let Some(answer) = ui.dialog(ui.id("close dialog"), &question, "", &choices) else {
+            return;
+        };
+        self.closing = None;
         match closing {
-            Closing::Window if close => ctx.send_viewport_cmd(ViewportCommand::Close),
-            Closing::Tab(i) if close => self.close_tab(i),
+            Closing::Window if answer == Answer::Choice(0) => ui.close(),
+            Closing::Tab(i) if answer == Answer::Choice(0) => self.close_tab(i),
             _ => {}
         }
     }
 
-    /// One tab for each drawing open, by its file's name, with its path
-    /// on hover and a × that asks to close it. A click on a tab shows its
-    /// drawing. The blank drawing has no tab.
-    fn tabs(&mut self, ui: &mut egui::Ui) {
-        let mut chosen = None;
-        ui.horizontal(|ui| {
-            for (i, doc) in self.docs.iter().enumerate().filter(|(_, d)| !d.blank) {
-                let path = doc
-                    .path
-                    .as_ref()
-                    .map_or("untitled".into(), |p| p.display().to_string());
-                let tab = ui.selectable_label(i == self.active, doc.name());
-                if tab.on_hover_text(path).clicked() {
-                    chosen = Some(i);
-                }
-                if ui
-                    .small_button("×")
-                    .on_hover_text("close this tab")
-                    .clicked()
-                {
-                    self.closing = Some(Closing::Tab(i));
-                }
-                ui.separator();
-            }
-        });
-        if let Some(i) = chosen {
-            self.activate(i);
+    /// One tab for each drawing open, by its file's name, with a close
+    /// mark that asks to close it. A click on a tab shows its drawing.
+    /// The blank drawing has no tab.
+    fn tabs(&mut self, ui: &mut Ui) {
+        let open: Vec<usize> = (0..self.docs.len())
+            .filter(|&i| !self.docs[i].blank)
+            .collect();
+        if open.is_empty() {
+            return;
+        }
+        let names: Vec<String> = open.iter().map(|&i| self.docs[i].name()).collect();
+        let labels: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut shown = open.iter().position(|&i| i == self.active).unwrap_or(0);
+        let signal = ui.tabs(ui.id("tabs"), &labels, &mut shown, true);
+        if let Some(closed) = signal.closed {
+            self.closing = Some(Closing::Tab(open[closed]));
+        } else if open[shown] != self.active {
+            self.activate(open[shown]);
         }
     }
 
-    /// Space plays and pauses. With a selection the arrow keys move it a
-    /// canvas pixel, and with none Left and Right step a frame. Delete
-    /// deletes the selection, and Ctrl+C and Ctrl+V copy and paste. No
-    /// key acts while a text field has the keys.
-    fn keys(&mut self, ctx: &egui::Context) {
-        if !ctx.text_edit_focused() {
-            self.take_keys(ctx);
+    /// The keys, as commands that una keeps from a text field with the
+    /// keys: Space plays and pauses, with a selection the arrow keys move
+    /// it a canvas pixel, and with none Left and Right step a frame.
+    /// Delete and Backspace delete the selection. None is declared while
+    /// a dialog, the file picker or the recent files show, so their own
+    /// keys reach them.
+    fn keys(&mut self, ui: &mut Ui) {
+        let overlay = self.closing.is_some() || self.picking || self.recent_at.is_some();
+        if !overlay {
+            self.commands(ui);
         }
         if let Some((dx, dy)) = self.nudge.ready() {
             let nodes = self.doc().selection.spans().to_vec();
@@ -856,52 +1082,71 @@ impl App {
         }
     }
 
-    fn take_keys(&mut self, ctx: &egui::Context) {
-        // consumed before the bar is laid out, so a focused button does
-        // not take the same press
-        let count = |key| ctx.input_mut(|i| i.count_and_consume_key(Modifiers::NONE, key)) as i64;
-        let space = count(Key::Space);
-        let across = count(Key::ArrowRight) - count(Key::ArrowLeft);
-        let down = count(Key::ArrowDown) - count(Key::ArrowUp);
-        let delete = count(Key::Delete) + count(Key::Backspace) > 0;
-
-        // the windowing layer turns Ctrl+C and Ctrl+V into these events,
-        // reading the clipboard for a paste
-        let (copy, pasted) = ctx.input_mut(|i| {
-            let copy = i.events.contains(&Event::Copy);
-            let pasted = i.events.iter().find_map(|e| match e {
-                Event::Paste(text) => Some(text.clone()),
-                _ => None,
-            });
-            i.events
-                .retain(|e| !matches!(e, Event::Copy | Event::Paste(_)));
-            (copy, pasted)
-        });
-
+    fn commands(&mut self, ui: &mut Ui) {
         let now = Instant::now();
-        let doc = &mut self.docs[self.active];
-        let fps = doc.scene.as_ref().map(|s| s.canvas.fps);
-        if doc.playback.duration() > 0.0 && space % 2 == 1 {
-            doc.playback.toggle(now);
-        }
-        if !doc.selection.spans().is_empty() {
-            if (across, down) != (0, 0) && !self.refuse_locked() {
-                self.nudge.press(across as f64, down as f64);
+        if ui.command("Play or pause", Some("space")) {
+            let playback = &mut self.doc_mut().playback;
+            if playback.duration() > 0.0 {
+                playback.toggle(now);
             }
-        } else if let Some(fps) = fps
-            && doc.playback.duration() > 0.0
-            && across != 0
-        {
-            doc.playback.step(now, across, fps);
         }
-        if delete {
+        if self.doc().selection.spans().is_empty() {
+            for (title, chord, frames) in STEPS {
+                let doc = self.doc_mut();
+                if ui.command(title, Some(chord))
+                    && let Some(fps) = doc.scene.as_ref().map(|s| s.canvas.fps)
+                    && doc.playback.duration() > 0.0
+                {
+                    doc.playback.step(now, frames, fps);
+                }
+            }
+        } else {
+            for (title, chord, dx, dy) in MOVES {
+                if ui.command(title, Some(chord)) && !self.refuse_locked() {
+                    self.nudge.press(dx, dy);
+                }
+            }
+        }
+
+        // both declared every frame, so neither hides the other's chord
+        let delete = ui.command("Delete", Some("delete"));
+        let backspace = ui.command("Delete with Backspace", Some("backspace"));
+        if delete || backspace {
             self.delete();
         }
-        if copy {
-            self.copy(ctx);
+    }
+
+    /// Ctrl+C copies the selection and Ctrl+V pastes, read from the raw
+    /// keys, since a command's chord would take them from a text field.
+    /// They do nothing while a text field has the keys.
+    fn clipboard_keys(&mut self, ui: &mut Ui) {
+        if self.typing || self.closing.is_some() || self.picking {
+            return;
         }
-        if let Some(text) = pasted {
-            self.paste(&text);
+        let pressed: Vec<Key> = (ui.events().iter())
+            .filter_map(|e| match e {
+                Event::Key(key)
+                    if key.pressed
+                        && key.mods.ctrl
+                        && !key.mods.shift
+                        && !key.mods.alt
+                        && !key.mods.logo =>
+                {
+                    Some(key.key)
+                }
+                _ => None,
+            })
+            .collect();
+        for key in pressed {
+            match key {
+                Key::Char('c') => self.copy(ui),
+                Key::Char('v') => {
+                    if let Some(text) = ui.clipboard().map(str::to_string) {
+                        self.paste(&text);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -953,7 +1198,7 @@ impl App {
 
     /// Put the selected nodes' source on the clipboard, or name on the
     /// status line why not.
-    fn copy(&mut self, ctx: &egui::Context) {
+    fn copy(&mut self, ui: &mut Ui) {
         let nodes = self.doc().selection.spans().to_vec();
         if nodes.is_empty() {
             return;
@@ -961,7 +1206,7 @@ impl App {
         match self.on_source("copy", |text| edit::copy_text(text, &nodes)) {
             Ok(text) => {
                 self.notice = None;
-                ctx.copy_text(text);
+                ui.set_clipboard(&text);
             }
             Err(why) => self.notice = Some(why),
         }
@@ -1065,7 +1310,7 @@ impl App {
                 let p = self.snapped(point);
                 let closed = self.bar.tool == Tool::Polygon;
                 let view = &mut self.docs[self.active].view;
-                let close = (tool::CLOSE / view.zoom()) as f64;
+                let close = view.reach(tool::CLOSE);
                 if tool::click_path(&mut view.path, p, close, closed) == Step::Done {
                     self.finish_path();
                 }
@@ -1198,31 +1443,36 @@ impl App {
     }
 
     /// The bar that plays, pauses and scrubs the scene's time.
-    fn transport(&mut self, ui: &mut egui::Ui) {
+    fn transport(&mut self, ui: &mut Ui) {
         let now = Instant::now();
         let doc = &mut self.docs[self.active];
         let duration = doc.playback.duration();
-        ui.horizontal(|ui| {
-            let label = if doc.playback.playing() {
-                "Pause"
-            } else {
-                "Play"
-            };
-            if ui.button(label).on_hover_text("space").clicked() {
-                doc.playback.toggle(now);
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let sections = doc.scene.as_ref().map_or(&[][..], |s| &s.sections);
-                if !sections.is_empty() {
-                    ui.toggle_value(&mut self.sections_open, "Sections");
+        let sections = doc.scene.as_ref().map_or(&[][..], |s| &s.sections);
+        ui.keyed("transport", |ui| {
+            ui.row(|ui| {
+                let label = if doc.playback.playing() {
+                    "Pause"
+                } else {
+                    "Play"
+                };
+                let play = ui.button(label);
+                ui.tooltip(play, "space");
+                if play.clicked {
+                    doc.playback.toggle(now);
                 }
+                ui.space(Length::Cells(1));
+                if let Some(t) = self.time_bar.show(ui, sections, duration, doc.time) {
+                    doc.playback.seek(now, t);
+                }
+                ui.space(Length::Cells(1));
+                ui.label(&format!("{:.2} s / {duration:.2} s", doc.time));
+                ui.space(Length::Cells(1));
                 let mut looping = doc.playback.looping();
-                if ui.toggle_value(&mut looping, "Loop").changed() {
+                if ui.toggle("Loop", &mut looping).clicked {
                     doc.playback.set_looping(now, looping);
                 }
-                ui.label(format!("{:.2} s / {duration:.2} s", doc.time));
-                if let Some(t) = time_bar(ui, sections, duration, doc.time) {
-                    doc.playback.seek(now, t);
+                if !sections.is_empty() {
+                    ui.toggle("Sections", &mut self.sections_open);
                 }
             });
         });
@@ -1230,84 +1480,117 @@ impl App {
     }
 
     /// The scene's sections, each with its start, the current one
-    /// marked. Clicking one goes to its start.
-    fn sections(&mut self, ui: &mut egui::Ui) {
-        let doc = self.doc_mut();
+    /// marked. Clicking one goes to its start. A section with
+    /// subsections folds them away.
+    fn sections(&mut self, ui: &mut Ui) {
+        let doc = &mut self.docs[self.active];
         let Some(scene) = &doc.scene else { return };
         let current = playback::current(&scene.sections, doc.time);
+        let style = Style::small(ui.palette());
+        let pad = style.px(ui, style.padding);
+        let spec = Spec {
+            id: ui.id("sections"),
+            width: Length::Cells(COLUMN),
+            height: Length::Fill(1),
+            pad: [pad; 4],
+            ..Spec::default()
+        };
         let mut chosen = None;
-        for (i, section) in scene.sections.iter().enumerate() {
-            let here = current == Some(i);
-            let text = format!("{:.2} s  {}", section.start, section.title);
-            if section.subsections.is_empty() {
-                ui.horizontal(|ui| {
-                    // the width of a fold arrow, so titles line up
-                    ui.add_space(ui.spacing().indent);
-                    if ui.selectable_label(here, text).clicked() {
-                        chosen = Some(section.start);
-                    }
-                });
-                continue;
-            }
-
-            // keyed by title, so a section stays open or folded
-            // when an edit moves its start
-            let id = ui.make_persistent_id(("section", &section.title));
-            let sub = playback::current_subsection(section, doc.time).filter(|_| here);
-            CollapsingState::load_with_default_open(ui.ctx(), id, false)
-                .show_header(ui, |ui| {
-                    if ui.selectable_label(here, text).clicked() {
-                        chosen = Some(section.start);
-                    }
-                })
-                .body(|ui| {
-                    for (j, s) in section.subsections.iter().enumerate() {
-                        let text = format!("{:.2} s  {}", s.start, s.title);
-                        if ui.selectable_label(sub == Some(j), text).clicked() {
-                            chosen = Some(s.start);
+        let mut fold = None;
+        ui.scroll(spec, |ui| {
+            for (i, section) in scene.sections.iter().enumerate() {
+                let here = current == Some(i);
+                let open = self.unfolded.contains(&section.title);
+                ui.keyed(i, |ui| {
+                    ui.row(|ui| {
+                        if section.subsections.is_empty() {
+                            ui.space(Length::Cells(2));
+                        } else {
+                            let icon = if open { UNFOLDED_ICON } else { FOLDED_ICON };
+                            if ui.icon_button(ui.id("fold"), icon).clicked {
+                                fold = Some(section.title.clone());
+                            }
                         }
+                        let mut on = here;
+                        let text = format!("{:.2} s  {}", section.start, section.title);
+                        if ui.toggle(&text, &mut on).clicked {
+                            chosen = Some(section.start);
+                        }
+                    });
+                    if !open {
+                        return;
+                    }
+                    let sub = playback::current_subsection(section, doc.time).filter(|_| here);
+                    for (j, s) in section.subsections.iter().enumerate() {
+                        ui.keyed(j, |ui| {
+                            ui.row(|ui| {
+                                ui.space(Length::Cells(4));
+                                let mut on = sub == Some(j);
+                                let text = format!("{:.2} s  {}", s.start, s.title);
+                                if ui.toggle(&text, &mut on).clicked {
+                                    chosen = Some(s.start);
+                                }
+                            });
+                        });
                     }
                 });
-        }
+            }
+        });
         if let Some(t) = chosen {
             doc.playback.seek(Instant::now(), t);
         }
+
+        // by title, so a section stays open or folded when an edit moves
+        // its start
+        if let Some(title) = fold
+            && !self.unfolded.remove(&title)
+        {
+            self.unfolded.insert(title);
+        }
     }
 
-    /// The panel that changes the selected nodes' colors, strokes and
+    /// The column that changes the selected nodes' colors, strokes and
     /// fonts.
-    fn properties(&mut self, ui: &mut egui::Ui) {
+    fn properties(&mut self, ui: &mut Ui) {
         let locked = self.bar.locked;
-        let doc = self.doc_mut();
-
-        // with an error, the scene shown was built from an earlier
-        // text, so the selection's spans do not point into `text`
-        if doc.error.is_some() {
-            ui.label("fix the source's error before changing properties");
-            return;
-        }
-        let fonts = doc
-            .program
-            .as_ref()
-            .and_then(|p| scene::font_files(p).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|f| f.name)
-            .filter(|name| name != "math")
-            .collect();
-        doc.properties
-            .read(doc.version, &doc.text, doc.selection.spans(), fonts);
-        if locked {
-            ui.disable();
-        }
-        doc.properties.ui(ui, doc.selection.paths());
+        let doc = &mut self.docs[self.active];
+        let style = Style::small(ui.palette());
+        let pad = style.px(ui, style.padding);
+        let spec = Spec {
+            id: ui.id("properties"),
+            width: Length::Cells(COLUMN),
+            height: Length::Fill(1),
+            pad: [pad; 4],
+            ..Spec::default()
+        };
+        let mut typing = false;
+        ui.scroll(spec, |ui| {
+            // with an error, the scene shown was built from an earlier
+            // text, so the selection's spans do not point into `text`
+            if doc.error.is_some() {
+                ui.label("fix the source's error first");
+                return;
+            }
+            let fonts = doc
+                .program
+                .as_ref()
+                .and_then(|p| scene::font_files(p).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|f| f.name)
+                .filter(|name| name != "math")
+                .collect();
+            doc.properties
+                .read(doc.version, &doc.text, doc.selection.spans(), fonts);
+            typing = doc.properties.ui(ui, doc.selection.paths(), locked);
+        });
+        self.typing |= typing;
     }
 
-    /// Write the first change in the properties panel not yet written,
-    /// once no pointer button is held, so that a drag in a color picker
-    /// writes once, and once the editor has taken the last edit.
-    fn write_property(&mut self, ctx: &egui::Context) {
-        if self.nudge.waiting() || ctx.input(|i| i.pointer.any_down()) {
+    /// Write the first change in the properties column not yet written,
+    /// once the editor has taken the last edit.
+    fn write_property(&mut self) {
+        if self.nudge.waiting() {
             return;
         }
         let doc = self.doc_mut();
@@ -1326,7 +1609,7 @@ impl App {
                 self.write(&edits).map(|()| true)
             });
 
-        // a refusal or a change that made no edit leaves the panel
+        // a refusal or a change that made no edit leaves the column
         // showing a value the source does not hold
         match written {
             Ok(true) => self.notice = None,
@@ -1338,46 +1621,71 @@ impl App {
         }
     }
 
-    fn status(&self, ui: &mut egui::Ui) {
+    fn status(&self, ui: &mut Ui) {
         let doc = self.doc();
-        ui.horizontal(|ui| {
-            let where_ = doc
-                .path
-                .as_ref()
-                .map_or("untitled".into(), |p| p.display().to_string());
-            ui.label(where_);
+        let palette = ui.palette().clone();
+        let gap = |ui: &mut Ui| {
+            ui.space(Length::Cells(1));
             ui.separator();
-            ui.label(format!("{:.0}%", doc.view.zoom() * 100.0));
-            ui.separator();
-            if let Some(p) = self.hover {
-                ui.label(format!("{:.0}, {:.0}", p.x, p.y));
-                ui.separator();
-            }
-            if let Some(e) = &doc.error {
-                let (line, col) = e.line_col(&doc.text);
-                ui.colored_label(
-                    Color32::from_rgb(0xf7, 0x76, 0x8e),
-                    format!("{line}:{col}: {}", e.message),
-                );
-            } else if let Some(notice) = &self.notice {
-                ui.label(notice);
-            } else if let Some(&c) = doc.missing.first() {
-                let more = match doc.missing.len() - 1 {
-                    0 => String::new(),
-                    n => format!(", and {n} more"),
-                };
-                ui.colored_label(
-                    Color32::from_rgb(0xe0, 0xaf, 0x68),
-                    format!("{}{more}", document::missing_glyph(c)),
-                );
-            }
+            ui.space(Length::Cells(1));
+        };
+        ui.keyed("status", |ui| {
+            ui.row(|ui| {
+                let where_ = doc
+                    .path
+                    .as_ref()
+                    .map_or("untitled".into(), |p| p.display().to_string());
+                ui.label(&where_);
+                gap(ui);
+                ui.label(&format!("{:.0}%", doc.view.zoom() * 100.0));
+                gap(ui);
+                if let Some(p) = self.hover {
+                    ui.label(&format!("{:.0}, {:.0}", p.x, p.y));
+                    gap(ui);
+                }
+                if let Some(e) = &doc.error {
+                    let (line, col) = e.line_col(&doc.text);
+                    colored(ui, &format!("{line}:{col}: {}", e.message), palette.red);
+                } else if let Some(notice) = &self.notice {
+                    ui.label(notice);
+                } else if let Some(&c) = doc.missing.first() {
+                    let more = match doc.missing.len() - 1 {
+                        0 => String::new(),
+                        n => format!(", and {n} more"),
+                    };
+                    let text = format!("{}{more}", document::missing_glyph(c));
+                    colored(ui, &text, palette.yellow);
+                }
+            });
         });
     }
 
     /// The render pane: the drawing shown, and what the person did to it
-    /// this frame.
-    fn canvas(&mut self, ui: &mut egui::Ui) {
+    /// this frame. The blank drawing shows how to open one.
+    fn canvas(&mut self, ui: &mut Ui) {
         let doc = &mut self.docs[self.active];
+        if doc.blank {
+            let text = if self.stdio() {
+                ""
+            } else {
+                "Open a drawing with File › Open"
+            };
+            let muted = ui.palette().muted;
+            ui.leaf(Spec {
+                text,
+                width: Length::Fill(1),
+                height: Length::Fill(1),
+                align: Align::Center,
+                pad: [0, 0, 0, 0],
+                look: Look {
+                    text: Some(muted),
+                    ..Look::default()
+                },
+                ..Spec::default()
+            });
+            self.hover = None;
+            return;
+        }
         doc.view.target = match (&doc.program, &doc.scene) {
             _ if self.bar.locked => None,
             (Some(program), Some(scene)) => handle::target(program, scene, doc.selection.spans()),
@@ -1389,24 +1697,18 @@ impl App {
             (Some(program), Some(scene)) if ends => anchor::outlines(program, scene, doc.time),
             _ => Vec::new(),
         };
+        let style = Style::small(ui.palette());
+        let unit = style.px(ui, style.mockup) as f32 / style.mockup as f32;
         let shown = doc.view.show(
             ui,
+            &mut self.canvas,
+            unit,
             &self.bar,
             doc.scene.as_mut(),
             doc.version,
             doc.time,
             doc.selection.spans(),
         );
-        if doc.blank && !self.stdio() {
-            ui.painter().text(
-                shown.rect.center(),
-                Align2::CENTER_CENTER,
-                "Open a drawing with File › Open",
-                FontId::proportional(16.0),
-                ui.visuals().weak_text_color(),
-            );
-        }
-        self.pane = shown.rect.size();
         self.hover = shown.hover;
         if let Some(point) = shown.clicked {
             self.click(point);
@@ -1450,64 +1752,71 @@ impl App {
         }
         self.edit_field(ui, shown.rect);
     }
-}
 
-impl eframe::App for App {
-    fn on_exit(&mut self) {
-        // dropping the link removes its socket
-        self.link = None;
-    }
-
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if !self.talk() {
-            ctx.send_viewport_cmd(ViewportCommand::Close);
+    /// Build one frame of the window.
+    pub fn frame(&mut self, ui: &mut Ui) {
+        self.typing = false;
+        if ui.close_requested() {
+            self.closing = Some(Closing::Window);
         }
-        if self.last_check.elapsed() >= DISK_CHECK {
-            self.last_check = Instant::now();
+        self.talk();
+        let now = ui.now_ms();
+        if now >= self.next_check {
+            self.next_check = now + DISK_CHECK;
             self.check_disk();
         }
-        ctx.request_repaint_after(DISK_CHECK);
+        ui.wake_at(self.next_check);
         let title = format!("{} - acre", self.doc().name());
         if title != self.title {
-            ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
+            ui.set_title(&title);
             self.title = title;
         }
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.keys(ui.ctx());
+        self.file_commands(ui);
+        self.keys(ui);
         let doc = self.doc_mut();
         doc.time = doc.playback.time(Instant::now());
-        egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
-        egui::Panel::top("tabs").show(ui, |ui| self.tabs(ui));
-        if let Some(closing) = self.closing {
-            self.confirm_close(ui.ctx(), closing);
-        }
-        egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
-        if self.doc().playback.duration() > 0.0 {
-            egui::Panel::bottom("transport").show(ui, |ui| self.transport(ui));
-        }
-        let pane = ui.available_rect_before_wrap();
-        let doc = self.doc();
-        let has_sections = doc.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
-        if self.sections_open && has_sections {
-            side_panel(ui, "sections", pane, Align2::LEFT_TOP, |ui| {
-                self.sections(ui)
+
+        let fill = Spec {
+            width: Length::Fill(1),
+            height: Length::Fill(1),
+            ..Spec::default()
+        };
+        ui.group(fill, |ui| {
+            self.toolbar(ui);
+            self.tabs(ui);
+            ui.separator();
+            let body = Spec {
+                flow: Flow::Row,
+                ..fill
+            };
+            ui.group(body, |ui| {
+                let doc = self.doc();
+                let has_sections = doc.scene.as_ref().is_some_and(|s| !s.sections.is_empty());
+                if self.sections_open && has_sections {
+                    self.sections(ui);
+                    ui.separator();
+                }
+                self.canvas(ui);
+                let doc = self.doc();
+                if !doc.selection.spans().is_empty() && doc.selection.made_in_viewer() {
+                    self.write_property();
+                    ui.separator();
+                    self.properties(ui);
+                }
             });
-        }
-        let doc = self.doc();
-        if !doc.selection.spans().is_empty() && doc.selection.made_in_viewer() {
-            self.write_property(ui.ctx());
-            side_panel(ui, "properties", pane, Align2::RIGHT_TOP, |ui| {
-                self.properties(ui)
-            });
-        }
+            ui.separator();
+            if self.doc().playback.duration() > 0.0 {
+                self.transport(ui);
+            }
+            self.status(ui);
+        });
+        self.recent_list(ui);
+        self.pick(ui);
+        self.confirm_close(ui);
+        self.clipboard_keys(ui);
         if self.doc().playback.playing() {
-            ui.ctx().request_repaint();
+            ui.wake_at(ui.now_ms() + PLAYING);
         }
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| self.canvas(ui));
     }
 }
 
@@ -1520,121 +1829,21 @@ enum Closing {
     Tab(usize),
 }
 
-/// The width of a side panel, as egui gives a side panel by default.
-const PANEL_WIDTH: f32 = 200.0;
-
-/// Draw `contents` in a panel over the `side` edge of the render pane at
-/// `pane`, as tall as the pane and scrolled when taller. The pane keeps
-/// its size, and the pointer over the panel reaches the panel alone.
-fn side_panel(
-    ui: &egui::Ui,
-    id: &str,
-    pane: Rect,
-    side: Align2,
-    contents: impl FnOnce(&mut egui::Ui),
-) {
-    egui::Area::new(ui.scope_id().with(id))
-        .order(egui::Order::Middle)
-        .movable(false)
-        .fade_in(false)
-        .constrain_to(pane)
-        .anchor(side, Vec2::ZERO)
-        .show(ui.ctx(), |ui| {
-            let frame = egui::Frame::side_top_panel(ui.style());
-            let margin = frame.total_margin().sum();
-            let height = pane.height() - margin.y;
-            let rect = frame
-                .show(ui, |ui| {
-                    ui.set_min_size(Vec2::new(PANEL_WIDTH - margin.x, height));
-                    egui::ScrollArea::vertical()
-                        .max_height(height)
-                        .show(ui, contents);
-                })
-                .response
-                .rect;
-            let edge = if side == Align2::LEFT_TOP {
-                rect.right()
-            } else {
-                rect.left()
-            };
-            let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
-            ui.painter().vline(edge, rect.y_range(), stroke);
-        });
-}
-
-/// Draw the bar that scrubs over `0..=duration`, divided into
-/// `sections`, with the playhead at `time`. Returns the time the pointer
-/// presses or drags to.
-fn time_bar(ui: &mut egui::Ui, sections: &[Section], duration: f64, time: f64) -> Option<f64> {
-    let size = Vec2::new(ui.available_width(), ui.spacing().interact_size.y * 1.4);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-    let x = |t: f64| rect.left() + (t / duration) as f32 * rect.width();
-    let painter = ui.painter_at(rect);
-    let visuals = ui.visuals();
-    painter.rect_filled(rect, 3.0, visuals.extreme_bg_color);
-    let played = Rect::from_min_max(rect.min, Pos2::new(x(time), rect.max.y));
-    painter.rect_filled(played, 3.0, visuals.selection.bg_fill.gamma_multiply(0.5));
-
-    let font = TextStyle::Small.resolve(ui.style());
-    let current = playback::current(sections, time);
-    for (i, section) in sections.iter().enumerate() {
-        let left = x(section.start);
-        let right = sections.get(i + 1).map_or(rect.right(), |s| x(s.start));
-        if section.start > 0.0 {
-            painter.vline(
-                left,
-                rect.y_range(),
-                visuals.widgets.noninteractive.bg_stroke,
-            );
-        }
-        let color = if current == Some(i) {
-            visuals.strong_text_color()
-        } else {
-            visuals.weak_text_color()
-        };
-        let tick = (rect.bottom() - rect.height() * 0.3)..=rect.bottom();
-        for s in section
-            .subsections
-            .iter()
-            .filter(|s| s.start > section.start)
-        {
-            painter.vline(
-                x(s.start),
-                tick.clone(),
-                visuals.widgets.noninteractive.bg_stroke,
-            );
-        }
-        let mut job = LayoutJob::simple_singleline(section.title.clone(), font.clone(), color);
-        job.wrap = TextWrapping::truncate_at_width(right - left - 8.0);
-        let galley = painter.layout_job(job);
-        let at = Pos2::new(
-            (left + right - galley.size().x) / 2.0,
-            rect.center().y - galley.size().y / 2.0,
-        );
-        painter.galley(at, galley, color);
-    }
-    painter.vline(
-        x(time),
-        rect.y_range(),
-        Stroke::new(2.0, visuals.strong_text_color()),
-    );
-
-    let time_at = |p: Pos2| ((p.x - rect.left()) / rect.width()) as f64 * duration;
-    if rect.width() <= 0.0 {
-        return None;
-    }
-    let pressed = response.interact_pointer_pos().map(time_at);
-    if let Some(t) = response.hover_pos().map(time_at)
-        && let Some(i) = playback::current(sections, t)
-    {
-        let section = &sections[i];
-        let place = match playback::current_subsection(section, t) {
-            Some(j) => format!("{} › {}", section.title, section.subsections[j].title),
-            None => section.title.clone(),
-        };
-        response.on_hover_text_at_pointer(place);
-    }
-    pressed
+/// A label of `text` in `color`, one row of the small style high.
+pub fn colored(ui: &mut Ui, text: &str, color: Rgba) {
+    let style = Style::small(ui.palette());
+    let room = (style.px(ui, style.row) - style.px(ui, style.mockup)).max(0);
+    ui.leaf(Spec {
+        text,
+        width: Length::Text,
+        height: Length::Text,
+        pad: [0, room / 2, 0, room - room / 2],
+        look: Look {
+            text: Some(color),
+            ..Look::default()
+        },
+        ..Spec::default()
+    });
 }
 
 #[cfg(test)]
@@ -1642,6 +1851,8 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, ErrorKind, Write};
     use std::os::unix::net::UnixStream;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     /// The next line the viewer sends to `editor`, with the viewer
     /// taking messages meanwhile.
@@ -1649,7 +1860,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut line = String::new();
         while Instant::now() < deadline {
-            assert!(app.talk());
+            app.talk();
             match editor.read_line(&mut line) {
                 Ok(_) if line.ends_with('\n') => return line,
                 Err(e) if e.kind() != ErrorKind::WouldBlock && e.kind() != ErrorKind::TimedOut => {
@@ -1664,7 +1875,7 @@ mod tests {
     #[test]
     fn an_editor_on_the_socket_gets_answers_and_leaves_the_viewer_running() {
         let path = std::env::temp_dir().join(format!("acre-gui-test-{}.sock", std::process::id()));
-        let link = Link::listen(egui::Context::default(), path.clone()).unwrap();
+        let link = Link::listen(Arc::new(|| {}), path.clone()).unwrap();
         let mut app = App::new(None, Recent::default(), Some(link), false);
         assert!(app.editor().is_none());
 
@@ -1698,10 +1909,13 @@ mod tests {
         drop(editor);
         let deadline = Instant::now() + Duration::from_secs(5);
         while app.editor().is_some() && Instant::now() < deadline {
-            assert!(app.talk(), "the viewer stays open when the editor goes");
+            app.talk();
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert!(app.editor().is_none());
+        assert!(
+            app.editor().is_none(),
+            "the viewer stays open when the editor goes"
+        );
         assert!(!app.doc().linked);
 
         drop(app);

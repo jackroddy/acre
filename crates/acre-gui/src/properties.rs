@@ -1,7 +1,9 @@
 use acre::lang::{Span, ValueKind};
 use acre::scene::edit::{self, Origin};
 use acre::scene::schema;
-use eframe::egui;
+use una::{Length, Style, Ui};
+
+use crate::app::colored;
 
 /// The properties the panel lists, in its order, for the kinds that
 /// take them.
@@ -21,6 +23,10 @@ const FONTS: [&str; 5] = ["mono", "mono-bold", "sans", "sans-bold", "sans-italic
 
 /// The value a widget starts from where the default applies.
 const GREY: [u8; 4] = [128, 128, 128, 255];
+
+/// The glyph of the button that takes a node's own value away, from the
+/// icon font.
+const CLEAR_ICON: char = '\u{f0156}';
 
 /// A value as the panel shows it.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +72,10 @@ pub struct Properties {
     /// goes in the source, for the nodes at `paths`.
     pending: Vec<(&'static str, String)>,
     paths: Vec<Vec<usize>>,
+    /// The text in each entry's field, as typed, in the order of `entries`.
+    texts: Vec<String>,
+    /// The key of the entry whose field had the focus at the last frame.
+    editing: Option<&'static str>,
 }
 
 impl Properties {
@@ -80,6 +90,7 @@ impl Properties {
             Ok(entries) => (entries, None),
             Err(why) => (Vec::new(), Some(why)),
         };
+        self.texts = self.entries.iter().map(field_text).collect();
         self.fonts = fonts;
         self.read_for = Some(key);
     }
@@ -99,160 +110,226 @@ impl Properties {
         (!self.pending.is_empty()).then(|| self.pending.remove(0))
     }
 
-    /// Draw the panel's rows for the nodes at `paths`.
-    pub fn ui(&mut self, ui: &mut egui::Ui, paths: &[Vec<usize>]) {
+    /// Build the panel's rows for the nodes at `paths`, with every
+    /// control disabled when `locked`. True while one of its fields has
+    /// the keys.
+    pub fn ui(&mut self, ui: &mut Ui, paths: &[Vec<usize>], locked: bool) -> bool {
         if let Some(why) = &self.unread {
             ui.label(why.as_str());
-            return;
+            return false;
         }
         if self.entries.is_empty() {
             ui.label("nothing here to change");
-            return;
+            return false;
         }
         let mut changed = Vec::new();
-        egui::Grid::new("properties")
-            .num_columns(3)
-            .striped(true)
-            .show(ui, |ui| {
-                for entry in &mut self.entries {
-                    ui.label(entry.key);
-                    if let Some(text) = widget(ui, entry, &self.fonts) {
-                        changed.push((entry.key, text));
-                    }
-                    ui.horizontal(|ui| {
-                        ui.weak(match &entry.origin {
+        let mut editing = None;
+        let muted = ui.palette().muted;
+        ui.disabled(locked, |ui| {
+            for (entry, text) in self.entries.iter_mut().zip(&mut self.texts) {
+                ui.keyed(entry.key, |ui| {
+                    ui.row(|ui| {
+                        ui.label(entry.key);
+                        ui.space(Length::Fill(1));
+                        let origin = match &entry.origin {
                             Some(Origin::Node) => "node".to_string(),
                             Some(Origin::Style(name)) => format!("style {name}"),
                             Some(Origin::Default) => "default".to_string(),
                             None => "mixed".to_string(),
-                        });
-                        if entry.origin == Some(Origin::Node)
-                            && ui
-                                .small_button("×")
-                                .on_hover_text("take the node's own value away")
-                                .clicked()
-                        {
-                            changed.push((entry.key, String::new()));
+                        };
+                        colored(ui, &origin, muted);
+                        if entry.origin == Some(Origin::Node) {
+                            let clear = ui.icon_button(ui.id("clear"), CLEAR_ICON);
+                            ui.tooltip(clear, "take the node's own value away");
+                            if clear.clicked {
+                                changed.push((entry.key, String::new()));
+                            }
                         }
                     });
-                    ui.end_row();
+                    ui.row(|ui| {
+                        let edited = widget(ui, entry, text, &self.fonts, self.editing);
+                        if edited.focused {
+                            editing = Some(entry.key);
+                        }
+                        if let Some(value) = edited.value {
+                            changed.push((entry.key, value));
+                        }
+                    });
+                    ui.space(Length::Px(Style::small(ui.palette()).px(ui, 4)));
+                });
+            }
+        });
+        self.editing = editing;
+        if !changed.is_empty() {
+            if self.paths != paths {
+                self.pending.clear();
+                self.paths = paths.to_vec();
+            }
+            for (key, text) in changed {
+                match self.pending.iter_mut().find(|(k, _)| *k == key) {
+                    Some(p) => p.1 = text,
+                    None => self.pending.push((key, text)),
                 }
-            });
-        if changed.is_empty() {
-            return;
-        }
-        if self.paths != paths {
-            self.pending.clear();
-            self.paths = paths.to_vec();
-        }
-        for (key, text) in changed {
-            match self.pending.iter_mut().find(|(k, _)| *k == key) {
-                Some(p) => p.1 = text,
-                None => self.pending.push((key, text)),
             }
         }
-
-        // the change is written on a later frame, once no button is held
-        ui.ctx().request_repaint();
+        editing.is_some()
     }
 }
 
-/// Draw the widget that edits `entry`, and give the new value as it goes
-/// in the source when it changed.
-fn widget(ui: &mut egui::Ui, entry: &mut Entry, fonts: &[String]) -> Option<String> {
-    let key = entry.key;
-    ui.horizontal(|ui| match key {
+/// What the widget of one entry did this frame.
+struct Edited {
+    /// The new value as it goes in the source, when it changed.
+    value: Option<String>,
+    /// Whether its field has the keys.
+    focused: bool,
+}
+
+/// Build the widget that edits `entry`, whose field holds `text`, and
+/// give the new value as it goes in the source when it changed. A field
+/// gives its value on Enter, or once it loses the keys while `editing`
+/// names its entry.
+fn widget(
+    ui: &mut Ui,
+    entry: &mut Entry,
+    text: &mut String,
+    fonts: &[String],
+    editing: Option<&'static str>,
+) -> Edited {
+    let unchanged = Edited {
+        value: None,
+        focused: false,
+    };
+    let set = |entry: &mut Entry, text: &mut String, shown: Shown| {
+        entry.shown = shown;
+        *text = field_text(entry);
+        Edited {
+            value: Some(value_text(&entry.shown)),
+            focused: false,
+        }
+    };
+    match entry.key {
         "fill" | "stroke" | "color" | "text-color" => {
             let mut none = entry.shown == Shown::NoColor;
-            if entry.takes_none && ui.toggle_value(&mut none, "none").changed() {
-                entry.shown = if none {
+            if entry.takes_none && ui.toggle("none", &mut none).clicked {
+                let shown = if none {
                     Shown::NoColor
                 } else {
                     Shown::Color(GREY)
                 };
-                return Some(value_text(&entry.shown));
+                return set(entry, text, shown);
             }
             if none {
-                return None;
+                return unchanged;
             }
-            let mut rgba = match entry.shown {
-                Shown::Color(c) => c,
-                _ => GREY,
-            };
-            if ui.color_edit_button_srgba_unmultiplied(&mut rgba).changed() {
-                entry.shown = Shown::Color(rgba);
-                return Some(value_text(&entry.shown));
-            }
-            None
+            ui.space(Length::Cells(1));
+            field(ui, entry, text, "#rrggbb", editing)
         }
-        "stroke-width" | "text-size" => {
-            let mut n = match entry.shown {
-                Shown::Number(n) => n,
-                _ if key == "text-size" => 16.0,
-                _ => 2.0,
-            };
-            let drag = egui::DragValue::new(&mut n)
-                .speed(0.1)
-                .range(0.0..=1000.0)
-                .max_decimals(2);
-            if ui.add(drag).changed() {
-                entry.shown = Shown::Number(n);
-                return Some(value_text(&entry.shown));
-            }
-            None
-        }
+        "stroke-width" | "text-size" => field(ui, entry, text, "a number", editing),
         "dash" => {
-            let mut dash = match entry.shown {
-                Shown::Dash(d) => d,
-                _ => [6.0, 4.0],
-            };
-            if matches!(entry.shown, Shown::Default | Shown::Mixed) {
-                if ui.button("add").clicked() {
-                    entry.shown = Shown::Dash(dash);
-                    return Some(value_text(&entry.shown));
-                }
-                return None;
+            if !matches!(entry.shown, Shown::Default | Shown::Mixed) {
+                return field(ui, entry, text, "on off", editing);
             }
-            let mut changed = false;
-            for n in &mut dash {
-                let drag = egui::DragValue::new(n)
-                    .speed(0.1)
-                    .range(0.0..=1000.0)
-                    .max_decimals(2);
-                changed |= ui.add(drag).changed();
+            if ui.button("add").clicked {
+                return set(entry, text, Shown::Dash([6.0, 4.0]));
             }
-            if changed {
-                entry.shown = Shown::Dash(dash);
-                return Some(value_text(&entry.shown));
-            }
-            None
+            unchanged
         }
         "font" => {
             let current = match &entry.shown {
                 Shown::Font(f) => f.clone(),
                 _ => String::new(),
             };
-            let mut chosen = None;
-            egui::ComboBox::from_id_salt("font")
-                .selected_text(current.as_str())
-                .show_ui(ui, |ui| {
-                    for f in FONTS
-                        .iter()
-                        .copied()
-                        .chain(fonts.iter().map(String::as_str))
-                    {
-                        if ui.selectable_label(f == current, f).clicked() {
-                            chosen = Some(f.to_string());
-                        }
-                    }
-                });
-            let chosen = chosen.filter(|f| *f != current)?;
-            entry.shown = Shown::Font(chosen);
-            Some(value_text(&entry.shown))
+            let options: Vec<&str> = (FONTS.iter().copied())
+                .chain(fonts.iter().map(String::as_str))
+                .collect();
+            let shown = options.iter().position(|f| *f == current);
+            let mut chosen = shown.unwrap_or(usize::MAX);
+            ui.dropdown(ui.id("font"), &options, &mut chosen);
+            match options.get(chosen) {
+                Some(font) if Some(chosen) != shown => {
+                    set(entry, text, Shown::Font(font.to_string()))
+                }
+                _ => unchanged,
+            }
         }
+        _ => unchanged,
+    }
+}
+
+/// Build the one-line field for `entry`, holding `text` and showing
+/// `hint` while empty. It gives its value on Enter, or once it loses the
+/// keys while `editing` names its entry. Escape, or a value the key does
+/// not take, puts back the text of the entry's value.
+fn field(
+    ui: &mut Ui,
+    entry: &mut Entry,
+    text: &mut String,
+    hint: &str,
+    editing: Option<&'static str>,
+) -> Edited {
+    let signal = ui.field(ui.id("value"), text, hint);
+    let focused = signal.signal.focused;
+    let left = editing == Some(entry.key) && !focused;
+    if signal.cancelled {
+        *text = field_text(entry);
+    }
+    let mut edited = Edited {
+        value: None,
+        focused,
+    };
+    if !(signal.submitted || left) || *text == field_text(entry) {
+        return edited;
+    }
+    match parse(entry.key, text) {
+        Some(shown) => {
+            entry.shown = shown;
+            edited.value = Some(value_text(&entry.shown));
+        }
+        None => *text = field_text(entry),
+    }
+    edited
+}
+
+/// The text a field shows for `entry`: its value, or the value its
+/// widget starts from where the default applies.
+fn field_text(entry: &Entry) -> String {
+    match (&entry.shown, entry.key) {
+        (Shown::Color(_) | Shown::Number(_) | Shown::Dash(_), _) => value_text(&entry.shown),
+        (_, "stroke-width") => "2".to_string(),
+        (_, "text-size") => "16".to_string(),
+        (_, "dash") => "6 4".to_string(),
+        (_, "fill" | "stroke" | "color" | "text-color") => value_text(&Shown::Color(GREY)),
+        _ => String::new(),
+    }
+}
+
+/// The value typed for `key` as `text`, or `None` when it is not one the
+/// key takes: a colour as `#rrggbb` or `#rrggbbaa`, a number from 0 to
+/// 1000, or two such numbers for a dash.
+fn parse(key: &str, text: &str) -> Option<Shown> {
+    let number = |word: &str| {
+        let n: f64 = word.parse().ok()?;
+        (0.0..=1000.0).contains(&n).then_some(n)
+    };
+    let text = text.trim();
+    match key {
+        "fill" | "stroke" | "color" | "text-color" => {
+            let hex = text.strip_prefix('#').unwrap_or(text);
+            let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+            let alpha = match hex.len() {
+                6 => 255,
+                8 => byte(6)?,
+                _ => return None,
+            };
+            Some(Shown::Color([byte(0)?, byte(2)?, byte(4)?, alpha]))
+        }
+        "stroke-width" | "text-size" => number(text).map(Shown::Number),
+        "dash" => match text.split_whitespace().collect::<Vec<_>>()[..] {
+            [on, off] => Some(Shown::Dash([number(on)?, number(off)?])),
+            _ => None,
+        },
         _ => None,
-    })
-    .inner
+    }
 }
 
 /// The entries for the nodes at `nodes` in `source`: the properties of
@@ -345,7 +422,7 @@ pub fn value_text(shown: &Shown) -> String {
 }
 
 /// `n` rounded to two decimals, written with no trailing zeros.
-fn number_text(n: f64) -> String {
+pub fn number_text(n: f64) -> String {
     let text = format!("{:.2}", (n * 100.0).round() / 100.0);
     let text = text.trim_end_matches('0').trim_end_matches('.');
     match text {
@@ -462,6 +539,42 @@ mod tests {
         );
         let width = entry(&entries, "stroke-width");
         assert_eq!(width.shown, Shown::Number(2.0));
+    }
+
+    #[test]
+    fn a_typed_value_is_read_as_its_key_takes_it() {
+        assert_eq!(
+            parse("fill", "#ff1000"),
+            Some(Shown::Color([255, 16, 0, 255]))
+        );
+        assert_eq!(
+            parse("stroke", "ff100080"),
+            Some(Shown::Color([255, 16, 0, 128]))
+        );
+        assert_eq!(parse("fill", "#ff10"), None);
+        assert_eq!(parse("fill", "#gg1000"), None);
+        assert_eq!(parse("stroke-width", " 2.5 "), Some(Shown::Number(2.5)));
+        assert_eq!(parse("text-size", "-1"), None);
+        assert_eq!(parse("dash", "6 2.5"), Some(Shown::Dash([6.0, 2.5])));
+        assert_eq!(parse("dash", "6"), None);
+    }
+
+    #[test]
+    fn a_field_starts_from_the_value_or_from_the_default_its_widget_starts_at() {
+        let entry = |key, shown| Entry {
+            key,
+            shown,
+            origin: None,
+            takes_none: false,
+        };
+        assert_eq!(
+            field_text(&entry("fill", Shown::Color([1, 2, 3, 255]))),
+            "#010203"
+        );
+        assert_eq!(field_text(&entry("fill", Shown::Mixed)), "#808080");
+        assert_eq!(field_text(&entry("stroke-width", Shown::Default)), "2");
+        assert_eq!(field_text(&entry("text-size", Shown::Default)), "16");
+        assert_eq!(field_text(&entry("dash", Shown::Dash([4.0, 2.0]))), "4 2");
     }
 
     #[test]

@@ -3,21 +3,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use acre::{lang, render};
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
+use una::{Image, Ui};
 
 use crate::document;
 
-/// The box in points a preview fits into.
-const SIZE: Vec2 = Vec2::new(240.0, 160.0);
+/// The box a preview fits into, in pixels at the chrome style's mockup
+/// size.
+const SIZE: [i32; 2] = [240, 160];
 
 /// The most rows an error takes in a preview.
 const ERROR_ROWS: usize = 4;
 
-/// How often the menu draws again while a preview is being built.
-const POLL: Duration = Duration::from_millis(50);
+/// The columns of an error's rows in a preview.
+const ERROR_COLUMNS: usize = 30;
+
+/// How often, in milliseconds, the list draws again while a preview is
+/// being built.
+const POLL: u64 = 50;
 
 /// Small renders of drawings at time 0, built on a background thread
 /// and kept for the session by path and modification time.
@@ -35,9 +40,17 @@ struct Entry {
 
 enum State {
     Pending,
-    Image(ColorImage),
-    Texture(TextureHandle),
+    Pixels(Pixels),
+    Image(Image),
     Failed(String),
+}
+
+/// A render as straight-alpha RGBA bytes.
+#[derive(Debug)]
+struct Pixels {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
 }
 
 struct Request {
@@ -50,7 +63,7 @@ struct Request {
 struct Reply {
     path: PathBuf,
     modified: Option<SystemTime>,
-    image: Result<ColorImage, String>,
+    image: Result<Pixels, String>,
 }
 
 impl Previews {
@@ -86,54 +99,61 @@ impl Previews {
                 && entry.modified == reply.modified
             {
                 entry.state = match reply.image {
-                    Ok(image) => State::Image(image),
+                    Ok(pixels) => State::Pixels(pixels),
                     Err(e) => State::Failed(e),
                 };
             }
         }
     }
 
-    /// Draw the preview of `path`: the render, a spinner while it is
-    /// built, or the first line of the error that stopped it.
-    pub fn show(&mut self, ui: &mut egui::Ui, path: &Path) {
-        ui.set_width(SIZE.x);
-        let ppp = ui.ctx().pixels_per_point();
-        let fit = [(SIZE.x * ppp) as f64, (SIZE.y * ppp) as f64];
+    /// Show the preview of `path`: the render, a note while it is
+    /// built, or the start of the error that stopped it.
+    pub fn show(&mut self, ui: &mut Ui, path: &Path) {
+        let style = una::Style::small(ui.palette());
+        let fit = SIZE.map(|side| style.px(ui, side) as f64);
         self.request(path, document::modified(path), fit);
         self.receive();
         let Some(entry) = self.cache.get_mut(path) else {
             return;
         };
-        if let State::Image(image) = &entry.state {
-            let texture = ui
-                .ctx()
-                .load_texture("preview", image.clone(), TextureOptions::LINEAR);
-            entry.state = State::Texture(texture);
+        if let State::Pixels(pixels) = &entry.state {
+            let image = ui.load_image(pixels.width, pixels.height, &pixels.rgba);
+            entry.state = State::Image(image);
         }
         match &entry.state {
-            State::Pending | State::Image(_) => {
-                ui.spinner();
-                ui.ctx().request_repaint_after(POLL);
+            State::Pending | State::Pixels(_) => {
+                ui.label("drawing…");
+                ui.wake_at(ui.now_ms() + POLL);
             }
-            State::Texture(texture) => {
-                let size = texture.size_vec2() / ppp;
-                ui.image((texture.id(), size));
+            State::Image(image) => {
+                ui.image(image);
             }
             State::Failed(e) => {
-                let style = ui.style();
-                let mut job = egui::text::LayoutJob::simple(
-                    e.lines().next().unwrap_or_default().to_owned(),
-                    egui::TextStyle::Body.resolve(style),
-                    style.visuals.text_color(),
-                    SIZE.x,
-                );
-                // a path has no spaces to break at
-                job.wrap.break_anywhere = true;
-                job.wrap.max_rows = ERROR_ROWS;
-                ui.label(job);
+                let first = e.lines().next().unwrap_or_default();
+                for row in rows(first, ERROR_COLUMNS, ERROR_ROWS) {
+                    ui.label(&row);
+                }
             }
         }
     }
+}
+
+/// `text` broken into rows of `columns` characters, anywhere, since a
+/// path has no spaces to break at, and cut to `most` rows.
+fn rows(text: &str, columns: usize, most: usize) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut rows: Vec<String> = chars
+        .chunks(columns.max(1))
+        .map(|row| row.iter().collect())
+        .collect();
+    if rows.len() > most {
+        rows.truncate(most);
+        if let Some(last) = rows.last_mut() {
+            last.pop();
+            last.push('…');
+        }
+    }
+    rows
 }
 
 fn start() -> (Sender<Request>, Receiver<Reply>) {
@@ -157,7 +177,7 @@ fn start() -> (Sender<Request>, Receiver<Reply>) {
 
 /// The drawing at `path` at time 0, scaled to fit `fit` pixels, with its
 /// font and data files read from its folder.
-fn draw(path: &Path, fit: [f64; 2]) -> Result<ColorImage, String> {
+fn draw(path: &Path, fit: [f64; 2]) -> Result<Pixels, String> {
     let text =
         fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let scene = lang::parse(&text)
@@ -172,8 +192,17 @@ fn draw(path: &Path, fit: [f64; 2]) -> Result<ColorImage, String> {
         return Err("the canvas is too thin to preview".into());
     }
     let pixmap = render::draw_frame(&scene, 0.0, scale);
-    let pixels = [pixmap.width() as usize, pixmap.height() as usize];
-    Ok(ColorImage::from_rgba_premultiplied(pixels, pixmap.data()))
+    let rgba = (pixmap.pixels().iter())
+        .flat_map(|pixel| {
+            let c = pixel.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect();
+    Ok(Pixels {
+        width: pixmap.width(),
+        height: pixmap.height(),
+        rgba,
+    })
 }
 
 #[cfg(test)]
@@ -196,7 +225,7 @@ mod tests {
         let mut previews = Previews::default();
         let path = Path::new("no such file.acre");
         assert!(previews.request(path, Some(SystemTime::UNIX_EPOCH), FIT));
-        let later = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let later = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1);
         assert!(previews.request(path, Some(later), FIT));
         assert!(!previews.request(path, Some(later), FIT));
     }
@@ -215,6 +244,13 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../acre/examples/layers.acre");
         let image = draw(&path, FIT).unwrap();
         // the canvas is 640 by 200, so its width sets the scale
-        assert_eq!(image.size, [240, 75]);
+        assert_eq!((image.width, image.height), (240, 75));
+        assert_eq!(image.rgba.len(), 240 * 75 * 4);
+    }
+
+    #[test]
+    fn an_error_breaks_anywhere_and_is_cut_to_its_rows() {
+        assert_eq!(rows("abcdefg", 3, 4), ["abc", "def", "g"]);
+        assert_eq!(rows("abcdefghij", 3, 2), ["abc", "de…"]);
     }
 }

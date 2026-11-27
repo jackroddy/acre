@@ -1,19 +1,17 @@
-use std::time::{Duration, Instant};
-
 use acre::lang::Span;
 use acre::render;
 use acre::scene::edit::Siblings;
 use acre::scene::{Animation, Point, Scene, Track};
-use eframe::egui::{
-    self, Color32, CursorIcon, PointerButton, Popup, Pos2, Rect, Sense, SetOpenCommand, Shape,
-    Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2, pos2,
-};
+use tiny_skia as sk;
+use una::{Buffer, Button, Event, Format, MenuEntry, Palette, Rgba, Surface, Ui};
 
 use crate::anchor::{self, Anchor, Outline};
 use crate::arrange;
 use crate::drag::{Drag, Release};
-use crate::handle::{self, Edge, Grip, Reshape, Target};
+use crate::handle::{self, Grip, Reshape, Target};
+use crate::marks::{self, Mark};
 use crate::reorder;
+use crate::screen;
 use crate::selection;
 use crate::snap::{self, Bounds, Guide, Snapped};
 use crate::tool::{self, Tool};
@@ -24,13 +22,15 @@ const MAX_ZOOM: f32 = 40.0;
 /// The fraction of the pane a fitted canvas fills.
 const FIT_MARGIN: f32 = 0.96;
 
-/// How much of the pane's width and height the texture holds past each
-/// edge, so a pan shows drawn content until the scene is drawn again.
-const OVERDRAW: f32 = 0.25;
-
 /// How long the view waits after the last pan or zoom before it draws
-/// the scene again.
-const SETTLE: Duration = Duration::from_millis(150);
+/// the scene again, in milliseconds.
+const SETTLE: u64 = 150;
+
+/// How much one notch of the wheel zooms.
+const ZOOM_STEP: f32 = 1.25;
+
+const GRID: Rgba = [0.5, 0.5, 0.5, 0.31];
+const WHITE: Rgba = [1.0, 1.0, 1.0, 1.0];
 
 /// The render pane: the scene drawn at the pane's own pixels, zoomed and
 /// panned by the person.
@@ -38,15 +38,30 @@ pub struct View {
     /// Whether the canvas follows the pane's size, until the person
     /// zooms or pans.
     fit: bool,
-    /// Screen points per canvas pixel.
+    /// Pixels on screen per canvas pixel.
     zoom: f32,
     /// Where the canvas's top-left corner sits, from the pane's.
-    origin: Vec2,
-    texture: Option<TextureHandle>,
-    /// What the texture shows, to draw again only when that changes.
+    origin: screen::Point,
+    /// The pane's size at the last frame.
+    pane: screen::Point,
+    /// Pixels on screen per point of the sizes of handles, outlines and
+    /// reaches, which grows with the window's text.
+    unit: f32,
+    /// What `base` shows.
     drawn: Option<Drawn>,
-    /// When the person last panned or zoomed.
-    moved: Option<Instant>,
+    /// The scene drawn for `drawn`, on the window's background.
+    base: Option<sk::Pixmap>,
+    /// The marks drawn over `base` in the buffer presented last.
+    marks: Vec<Mark>,
+    /// The size of the buffer of background alone presented while there
+    /// is no scene to draw.
+    cleared: Option<(u32, u32)>,
+    /// When the person last panned or zoomed, in the milliseconds of
+    /// `Ui::now_ms`.
+    moved: Option<u64>,
+    /// Where the pointer was in the window while the middle button
+    /// pans, until it is let go.
+    panning: Option<(f64, f64)>,
     /// The primary press in the pane, until it is let go.
     drag: Option<Drag>,
     /// The nodes let go of after a drag, and how far, drawn there until
@@ -89,8 +104,8 @@ impl Toolbar {
 
 /// What the person did in the pane this frame.
 pub struct Shown {
-    /// Where the pane is on screen.
-    pub rect: Rect,
+    /// Where the pane is in the window.
+    pub rect: screen::Rect,
     /// The canvas point under the pointer.
     pub hover: Option<Point>,
     /// The canvas point clicked.
@@ -126,35 +141,20 @@ pub enum MenuItem {
     Duplicate,
 }
 
-/// The view the texture was drawn for.
+const MENU: [MenuItem; 2] = [MenuItem::Delete, MenuItem::Duplicate];
+
+/// The view the base was drawn for.
 #[derive(Clone, PartialEq)]
 struct Drawn {
-    pane: Vec2,
-    pixels_per_point: f32,
-    /// The longest side, in pixels, the GPU takes for a texture.
-    max_side: f32,
+    /// The pane's size in pixels.
+    pane: (u32, u32),
     zoom: f32,
-    origin: Vec2,
+    origin: screen::Point,
     scene: u64,
     time: f64,
     /// The nodes drawn moved by a drag, and how far.
     preview: Option<(Vec<Span>, Point)>,
-}
-
-impl Drawn {
-    /// How far past each edge of the pane the texture reaches, in points,
-    /// cut back so the texture fits within `max_side`.
-    fn overdraw(&self) -> Vec2 {
-        let room = (Vec2::splat(self.max_side / self.pixels_per_point) - self.pane) / 2.0;
-        (self.pane * OVERDRAW).min(room.max(Vec2::ZERO)).floor()
-    }
-
-    /// Texture pixels per point: the screen's, or fewer when the pane
-    /// alone is wider or taller than `max_side` pixels.
-    fn texture_pixels_per_point(&self) -> f32 {
-        let area = self.pane + self.overdraw() * 2.0;
-        self.pixels_per_point.min(self.max_side / area.max_elem())
-    }
+    background: Rgba,
 }
 
 impl View {
@@ -162,10 +162,15 @@ impl View {
         View {
             fit: true,
             zoom: 1.0,
-            origin: Vec2::ZERO,
-            texture: None,
+            origin: screen::Point::ZERO,
+            pane: screen::Point::ZERO,
+            unit: 1.0,
             drawn: None,
+            base: None,
+            marks: Vec::new(),
+            cleared: None,
             moved: None,
+            panning: None,
             drag: None,
             held: None,
             path: Vec::new(),
@@ -188,6 +193,14 @@ impl View {
         self.held = None;
     }
 
+    /// Draw the scene again on the next frame, as the pane has shown
+    /// another drawing since.
+    pub fn forget(&mut self) {
+        self.drawn = None;
+        self.base = None;
+        self.cleared = None;
+    }
+
     pub fn zoom(&self) -> f32 {
         self.zoom
     }
@@ -196,51 +209,74 @@ impl View {
         self.fit = true;
     }
 
-    /// Zoom by `factor` about the middle of the pane of size `pane`.
-    pub fn zoom_by(&mut self, factor: f32, pane: Vec2) {
-        self.zoom_about(factor, pane / 2.0);
+    /// Zoom by `factor` about the middle of the pane.
+    pub fn zoom_by(&mut self, factor: f32, now: u64) {
+        self.zoom_about(factor, self.pane / 2.0, now);
     }
 
-    /// Show the canvas at one screen point to a canvas pixel.
-    pub fn actual_size(&mut self, pane: Vec2) {
-        self.zoom_about(1.0 / self.zoom, pane / 2.0);
+    /// Show the canvas at one pixel on screen to a canvas pixel.
+    pub fn actual_size(&mut self, now: u64) {
+        self.zoom_about(1.0 / self.zoom, self.pane / 2.0, now);
     }
 
-    fn zoom_about(&mut self, factor: f32, at: Vec2) {
+    fn zoom_about(&mut self, factor: f32, at: screen::Point, now: u64) {
         let zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
         let factor = zoom / self.zoom;
         self.origin = at - (at - self.origin) * factor;
         self.zoom = zoom;
         self.fit = false;
-        self.moved = Some(Instant::now());
+        self.moved = Some(now);
     }
 
-    /// Lay the pane out in `ui`, take the person's zoom, pan and drag
-    /// with the toolbar's settings `bar`, and draw `scene`, whose version is `version`, at time `t`, with an
-    /// outline around each object the nodes at `selected` draw. While
-    /// nodes are dragged, their objects are drawn where they are dragged
-    /// to, snapped, and outlined, with a guide for each snap. A drag that reorders a child of a stack or grid outlines
-    /// it at the pointer and marks the place it would land. A drag on
-    /// empty canvas draws a selection box. A
-    /// double-click on no object fits the canvas to the pane. With a tool
-    /// other than Select, a press draws a new node, outlined as it goes.
-    /// A right-click on an object opens its menu. With the Select tool,
-    /// the node in `target` shows handles, and a drag on one draws the outline it
-    /// makes, snapped. With the Line and Arrow tools, and while the end of
-    /// a line is dragged, the thing under the pointer shows the dots an
-    /// end snaps to.
+    /// How far `points` reach on the canvas, in canvas pixels.
+    pub fn reach(&self, points: f32) -> f64 {
+        (points * self.unit / self.zoom) as f64
+    }
+
+    /// How far, in canvas pixels, the pointer reaches to an anchor.
+    pub fn anchor_reach(&self) -> f64 {
+        self.reach(anchor::REACH)
+    }
+
+    /// Lay the pane out in `ui` as `surface`, take the person's zoom, pan
+    /// and drag with the toolbar's settings `bar`, and draw `scene`, whose
+    /// version is `version`, at time `t`, with an outline around each
+    /// object the nodes at `selected` draw. `unit` is the pixels on screen
+    /// to a point of the marks drawn over the scene.
+    ///
+    /// While nodes are dragged, their objects are drawn where they are
+    /// dragged to, snapped, and outlined, with a guide for each snap. A
+    /// drag that reorders a child of a stack or grid outlines it at the
+    /// pointer and marks the place it would land. A drag on empty canvas
+    /// draws a selection box. A double-click on no object fits the canvas
+    /// to the pane. With a tool other than Select, a press draws a new
+    /// node, outlined as it goes. A right-click on an object opens its
+    /// menu. With the Select tool, the node in `target` shows handles,
+    /// and a drag on one draws the outline it makes, snapped. With the
+    /// Line and Arrow tools, and while the end of a line is dragged, the
+    /// thing under the pointer shows the dots an end snaps to.
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
+        surface: &mut Surface,
+        unit: f32,
         bar: &Toolbar,
         scene: Option<&mut Scene>,
         version: u64,
         t: f64,
         selected: &[Span],
     ) -> Shown {
-        let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        let pane = ui.surface(surface);
+        let signal = pane.signal;
+        let now = ui.now_ms();
+        self.unit = unit;
+        self.pane = screen::Point::new(pane.size.0 as f32, pane.size.1 as f32);
         let mut shown = Shown {
-            rect,
+            rect: screen::Rect {
+                min: screen::Point::new(signal.rect.x as f32, signal.rect.y as f32),
+                size: self.pane,
+            },
             hover: None,
             clicked: None,
             double_clicked: None,
@@ -253,30 +289,36 @@ impl View {
             pressed: None,
             reordered: None,
         };
+        self.pan(ui, signal.rect, now);
+        let menu = ui.id("object menu");
+        let entries = MENU.map(|item| MenuEntry {
+            available: !bar.locked,
+            ..MenuEntry::new(match item {
+                MenuItem::Delete => "Delete",
+                MenuItem::Duplicate => "Duplicate",
+            })
+        });
         let Some(scene) = scene else {
             self.drag = None;
+            shown.chosen = ui.menu(menu, &entries).map(|i| MENU[i]);
+            self.clear(surface, pane.size, ui.palette().background);
             return shown;
         };
-        let canvas = Vec2::new(scene.canvas.width as f32, scene.canvas.height as f32);
+        let canvas = screen::Point::new(scene.canvas.width as f32, scene.canvas.height as f32);
         let target = self.target.clone().filter(|_| bar.tool == Tool::Select);
         let target = target.as_ref();
-        let handle_reach = ((handle::HANDLE + 2.0) / self.zoom) as f64;
-
-        let (pressed, down, pointer) = ui.input(|i| {
-            (
-                i.pointer.primary_pressed(),
-                i.pointer.primary_down(),
-                i.pointer.interact_pos(),
-            )
-        });
+        let handle_reach = self.reach(handle::HANDLE + 2.0);
+        let pointer = signal
+            .at
+            .map(|(x, y)| screen::Point::new(x as f32, y as f32));
+        let hover = pointer.filter(|_| signal.hovered);
 
         // before this frame's pan and zoom, so the press lands on what
         // the last frame showed
-        if pressed
-            && response.contains_pointer()
+        if signal.pressed
             && let Some(at) = pointer
         {
-            let p = self.to_canvas(rect, at);
+            let p = self.to_canvas(at);
             let grip = target.and_then(|target| Some((target, target.grip_at(p, handle_reach)?)));
             let nodes =
                 node_at(scene, p, t).map_or(Vec::new(), |node| selection::dragged(selected, node));
@@ -289,40 +331,36 @@ impl View {
             }
             self.drag = Some(press(bar.tool, bar.locked, grip, nodes, at));
         }
-        self.context_menu(&response, bar.locked, scene, rect, t, &mut shown);
-
-        if response.double_clicked() && bar.tool == Tool::Select {
-            let node = pointer.and_then(|at| node_at(scene, self.to_canvas(rect, at), t));
-            match node {
+        if signal.right_clicked
+            && let Some(at) = pointer
+        {
+            shown.right_clicked = node_at(scene, self.to_canvas(at), t);
+            if shown.right_clicked.is_some() {
+                let at = una::Point {
+                    x: signal.rect.x + at.x as i32,
+                    y: signal.rect.y + at.y as i32,
+                };
+                ui.open_menu(menu, at);
+            }
+        }
+        shown.chosen = ui.menu(menu, &entries).map(|i| MENU[i]);
+        if signal.double_clicked && bar.tool == Tool::Select {
+            match pointer.and_then(|at| node_at(scene, self.to_canvas(at), t)) {
                 Some(node) => shown.double_clicked = Some(node),
                 None => self.fit = true,
             }
         }
-        if response.dragged_by(PointerButton::Middle) {
-            self.origin += response.drag_delta();
-            self.fit = false;
-            self.moved = Some(Instant::now());
-        }
-        if response.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0
-                && let Some(pointer) = response.hover_pos()
-            {
-                self.zoom_about((scroll / 200.0).exp(), pointer - rect.min);
-            }
+        if signal.scrolled.1 != 0.0
+            && let Some(at) = hover
+        {
+            self.zoom_about(ZOOM_STEP.powf(-signal.scrolled.1 as f32), at, now);
         }
         if self.fit {
-            let zoom = (rect.width() / canvas.x)
-                .min(rect.height() / canvas.y)
+            self.zoom = (self.pane.x / canvas.x)
+                .min(self.pane.y / canvas.y)
                 .clamp(MIN_ZOOM, MAX_ZOOM)
                 * FIT_MARGIN;
-            if zoom != self.zoom {
-                // the status line drew this frame's zoom before the
-                // view knew it
-                ui.ctx().request_repaint();
-            }
-            self.zoom = zoom;
-            self.origin = (rect.size() - canvas * self.zoom) / 2.0;
+            self.origin = (self.pane - canvas * self.zoom) / 2.0;
         }
 
         if let Some(drag) = &mut self.drag
@@ -331,57 +369,33 @@ impl View {
             drag.follow(at, self.zoom);
         }
         let mut guides = Vec::new();
+        let snap_reach = self.reach(snap::REACH);
         if let Some(drag) = &mut self.drag
             && let Some((nodes, by)) = drag.moving()
         {
-            let reach = (snap::REACH / self.zoom) as f64;
             let grid = bar.grid.then_some(bar.spacing);
-            let snapped = snap_drag(scene, nodes, by, t, bar.snap, reach, grid);
+            let snapped = snap_drag(scene, nodes, by, t, bar.snap, snap_reach, grid);
             drag.place(snapped.by);
             guides = snapped.guides;
         }
-        let place = pointer.and_then(|at| self.aim_reorder(scene, t, self.to_canvas(rect, at)));
+        let place = pointer.and_then(|at| self.aim_reorder(scene, t, self.to_canvas(at)));
         if let Some(drag) = &mut self.drag
             && let Some((target, grip, by)) = drag.gripping()
             && !matches!(grip, Grip::End(_))
             && let Some(at) = target.grip_point(grip)
         {
             let others: Vec<Bounds> = others(scene, target.node(), t);
-            let reach = (snap::REACH / self.zoom) as f64;
             let grid = bar.grid.then_some(bar.spacing);
             let axes = handle::axes(grip);
-            let (to, snaps) = handle::snap_handle(at + by, axes, &others, reach, grid, bar.snap);
+            let (to, snaps) =
+                handle::snap_handle(at + by, axes, &others, snap_reach, grid, bar.snap);
             drag.place(to - at);
             guides = snaps;
         }
-        if !down && let Some(drag) = self.drag.take() {
-            match drag.release() {
-                Release::Click(at) => shown.clicked = Some(self.to_canvas(rect, at)),
-                Release::Move { nodes, by } => {
-                    self.held = Some((nodes.clone(), by));
-                    shown.moved = Some((nodes, by));
-
-                    // the caller ends the move or shows the moved
-                    // source after this frame is drawn
-                    ui.ctx().request_repaint();
-                }
-                Release::Select(from, to) => {
-                    let (a, b) = (self.to_canvas(rect, from), self.to_canvas(rect, to));
-                    shown.boxed = Some((
-                        Point::new(a.x.min(b.x), a.y.min(b.y)),
-                        Point::new(a.x.max(b.x), a.y.max(b.y)),
-                    ));
-                }
-                Release::Create(from, to) => {
-                    shown.created = Some((self.to_canvas(rect, from), self.to_canvas(rect, to)));
-                }
-                Release::Grip { target, grip, by } => shown.reshaped = target.reshape(grip, by),
-                Release::Reorder {
-                    node,
-                    before,
-                    index,
-                } => shown.reordered = Some((node, before, index)),
-            }
+        if !signal.held
+            && let Some(drag) = self.drag.take()
+        {
+            self.release(drag, &mut shown);
         }
         let preview = match self.drag.as_ref().and_then(Drag::moving) {
             Some((nodes, by)) => Some((nodes.to_vec(), by)),
@@ -404,188 +418,284 @@ impl View {
             None => Vec::new(),
         };
 
-        let ppp = ui.ctx().pixels_per_point();
+        let palette = ui.palette().clone();
+        let hover_canvas = hover.map(|p| self.to_canvas(p));
+        let mut marks = self.marks_under(&palette, bar, scene, t, selected, &lifted, place);
+        guides.extend(self.draw_preview(&palette, bar, &mut marks, scene, t, hover_canvas));
+        if let Some(target) = target {
+            self.draw_target(&palette, bar, &mut marks, &mut guides, scene, t, target);
+        }
+        for g in &guides {
+            marks.push(Mark::Line {
+                from: self.to_screen(g.from),
+                to: self.to_screen(g.to),
+                width: unit,
+                color: palette.red,
+            });
+        }
         let wanted = Drawn {
-            pane: rect.size(),
-            pixels_per_point: ppp,
-            max_side: ui.ctx().input(|i| i.max_texture_side) as f32,
+            pane: pane.size,
             zoom: self.zoom,
             origin: self.origin,
             scene: version,
             time: t,
             preview,
+            background: palette.background,
         };
-        let painter = ui.painter_at(rect);
-        let mut cover = self.drawn.as_ref().map(|d| self.texture_rect(rect, d));
-
-        // between pans and zooms the last texture is moved and scaled
-        // into place, and the scene is drawn again only once the person
-        // stops, or when the texture no longer covers the pane
-        let settled = self.moved.is_none_or(|t| t.elapsed() >= SETTLE) && !response.dragged();
-        let stale = match &self.drawn {
-            None => true,
-            Some(d) => {
-                d.scene != version
-                    || d.time != t
-                    || d.pane != wanted.pane
-                    || d.pixels_per_point != ppp
-                    || d.preview != wanted.preview
-                    || (*d != wanted && settled)
-                    || !cover.is_some_and(|c| c.contains_rect(rect))
-            }
-        };
-        if stale && self.draw(ui.ctx(), scene, &wanted) {
-            cover = Some(self.texture_rect(rect, &wanted));
-        } else if self.drawn.as_ref() != Some(&wanted) {
-            ui.ctx().request_repaint_after(SETTLE);
-        }
-        if let (Some(texture), Some(cover)) = (&self.texture, cover) {
-            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-            painter.image(texture.id(), cover, uv, Color32::WHITE);
-        }
-        let to_screen = |p: Point| self.to_screen(rect, p);
-        if bar.grid {
-            let step = snap::grid_step(bar.spacing, self.zoom);
-            let (lo, hi) = (
-                self.to_canvas(rect, rect.min),
-                self.to_canvas(rect, rect.max),
-            );
-            let (width, height) = (canvas.x as f64, canvas.y as f64);
-            let (top, bottom) = (lo.y.max(0.0), hi.y.min(height));
-            let (left, right) = (lo.x.max(0.0), hi.x.min(width));
-            let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x80, 0x80, 0x80, 0x50));
-            for x in multiples(left, right, step) {
-                let ends = [Point::new(x, top), Point::new(x, bottom)];
-                painter.line_segment(ends.map(to_screen), stroke);
-            }
-            for y in multiples(top, bottom, step) {
-                let ends = [Point::new(left, y), Point::new(right, y)];
-                painter.line_segment(ends.map(to_screen), stroke);
-            }
-        }
-        for (min, max) in lifted.iter().filter_map(|&i| scene.bounds(i, t)) {
-            let mark = Rect::from_min_max(to_screen(min), to_screen(max)).expand(3.0);
-            painter.rect_stroke(
-                mark,
-                3.0,
-                Stroke::new(2.0, Color32::from_rgb(0xff, 0x9e, 0x64)),
-                StrokeKind::Outside,
-            );
-        }
-
-        // after the lift, so a dragged selection is outlined where it is
-        // drawn, and wider than a mark, so both show on one object
-        for i in drawn_by(scene, selected) {
-            let Some((min, max)) = scene.bounds(i, t) else {
-                continue;
-            };
-            let mark = Rect::from_min_max(to_screen(min), to_screen(max)).expand(7.0);
-            painter.rect_stroke(
-                mark,
-                4.0,
-                Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
-                StrokeKind::Outside,
-            );
-        }
-
-        if let Some(line) = place {
-            let orange = Color32::from_rgb(0xff, 0x9e, 0x64);
-            painter.line_segment(line.map(to_screen), Stroke::new(3.0, orange));
-        }
-        if let Some((node, _, by)) = self.drag.as_ref().and_then(Drag::reordering)
-            && let Some((min, max)) = arrange::bounds(scene, node, t)
-        {
-            let outline = Rect::from_min_max(to_screen(min + by), to_screen(max + by));
-            painter.rect_stroke(
-                outline,
-                3.0,
-                Stroke::new(2.0, Color32::from_rgb(0x7a, 0xa2, 0xf7)),
-                StrokeKind::Outside,
-            );
-        }
-
-        if let Some((from, to)) = self.drag.as_ref().and_then(Drag::boxed) {
-            let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
-            let area = Rect::from_two_pos(from, to);
-            painter.rect_filled(area, 0.0, blue.gamma_multiply(0.15));
-            painter.rect_stroke(area, 0.0, Stroke::new(1.0, blue), StrokeKind::Inside);
-        }
-
-        let hover = response.hover_pos().map(|p| self.to_canvas(rect, p));
-        guides.extend(self.draw_preview(bar, &painter, rect, scene, t, hover));
-        if let Some(target) = target {
-            let gripped = self.drag.as_ref().and_then(Drag::gripping);
-            let dragged = gripped.and_then(|(gripped, grip, by)| {
-                let Grip::End(_) = grip else {
-                    return reshaped(gripped, grip, by);
-                };
-                let from = gripped.grip_point(grip)?;
-                let (to, anchor, snaps) = self.end_point(bar, scene, from + by, t);
-                if let Some(anchor) = anchor {
-                    self.draw_anchor(&painter, rect, &anchor);
-                }
-                guides.extend(snaps);
-                reshaped(gripped, grip, to - from)
-            });
-            self.draw_handles(&painter, rect, dragged.as_ref().unwrap_or(target));
-            let grip = match (gripped, hover) {
-                (Some((_, grip, _)), _) => Some(grip),
-                (None, Some(p)) if self.drag.is_none() => target.grip_at(p, handle_reach),
-                _ => None,
-            };
-            if let Some(grip) = grip {
-                ui.ctx().set_cursor_icon(cursor(grip));
-            }
-        }
-        for g in &guides {
-            painter.line_segment(
-                [to_screen(g.from), to_screen(g.to)],
-                Stroke::new(1.0, Color32::from_rgb(0xf7, 0x76, 0x8e)),
-            );
-        }
+        self.present(ui, surface, scene, wanted, marks);
 
         for &i in &lifted {
             scene.objects[i].groups.pop();
         }
-
-        shown.hover = hover;
+        shown.hover = hover_canvas;
         shown
     }
 
-    /// Open a menu with Delete and Duplicate on a right-click on an
-    /// object of `scene` at time `t` in the pane at `rect`, whose
-    /// response is `response`, and note on `shown` the node and the
-    /// entry chosen.
-    fn context_menu(
-        &self,
-        response: &egui::Response,
-        locked: bool,
-        scene: &Scene,
-        rect: Rect,
-        t: f64,
-        shown: &mut Shown,
-    ) {
-        let open = if response.secondary_clicked() {
-            shown.right_clicked = response
-                .interact_pointer_pos()
-                .and_then(|at| node_at(scene, self.to_canvas(rect, at), t));
-            Some(SetOpenCommand::Bool(shown.right_clicked.is_some()))
-        } else if response.clicked() {
-            Some(SetOpenCommand::Bool(false))
-        } else {
-            None
-        };
-        Popup::context_menu(response).open_memory(open).show(|ui| {
-            for (item, label) in [
-                (MenuItem::Delete, "Delete"),
-                (MenuItem::Duplicate, "Duplicate"),
-            ] {
-                if ui.add_enabled(!locked, egui::Button::new(label)).clicked() {
-                    shown.chosen = Some(item);
-                    ui.close();
+    /// Pan by what the pointer travels while the middle button is down,
+    /// pressed in the pane at `pane` in the window.
+    fn pan(&mut self, ui: &Ui, pane: una::Rect, now: u64) {
+        for event in ui.events() {
+            match *event {
+                Event::PointerButton {
+                    button: Button::Middle,
+                    pressed,
+                    at,
+                    ..
+                } => {
+                    self.panning = (pressed && pane.contains(at.0, at.1)).then_some(at);
                 }
+                Event::PointerMoved { at } => {
+                    if let Some(from) = self.panning {
+                        let by = screen::Point::new((at.0 - from.0) as f32, (at.1 - from.1) as f32);
+                        self.origin = self.origin + by;
+                        self.fit = false;
+                        self.moved = Some(now);
+                        self.panning = Some(at);
+                    }
+                }
+                _ => {}
             }
+        }
+    }
+
+    /// Note on `shown` what `drag`, let go of this frame, comes to.
+    fn release(&mut self, drag: Drag, shown: &mut Shown) {
+        match drag.release() {
+            Release::Click(at) => shown.clicked = Some(self.to_canvas(at)),
+            Release::Move { nodes, by } => {
+                self.held = Some((nodes.clone(), by));
+                shown.moved = Some((nodes, by));
+            }
+            Release::Select(from, to) => {
+                let (a, b) = (self.to_canvas(from), self.to_canvas(to));
+                shown.boxed = Some((
+                    Point::new(a.x.min(b.x), a.y.min(b.y)),
+                    Point::new(a.x.max(b.x), a.y.max(b.y)),
+                ));
+            }
+            Release::Create(from, to) => {
+                shown.created = Some((self.to_canvas(from), self.to_canvas(to)));
+            }
+            Release::Grip { target, grip, by } => shown.reshaped = target.reshape(grip, by),
+            Release::Reorder {
+                node,
+                before,
+                index,
+            } => shown.reordered = Some((node, before, index)),
+        }
+    }
+
+    /// The marks under the previews and handles: the grid, the outlines
+    /// of the objects lifted by a drag and of the selection, and the
+    /// place and outline of a reorder.
+    #[allow(clippy::too_many_arguments)]
+    fn marks_under(
+        &self,
+        palette: &Palette,
+        bar: &Toolbar,
+        scene: &Scene,
+        t: f64,
+        selected: &[Span],
+        lifted: &[usize],
+        place: Option<[Point; 2]>,
+    ) -> Vec<Mark> {
+        let unit = self.unit;
+        let mut marks = Vec::new();
+        if bar.grid {
+            let step = snap::grid_step(bar.spacing, self.zoom / unit);
+            let (lo, hi) = (
+                self.to_canvas(screen::Point::ZERO),
+                self.to_canvas(self.pane),
+            );
+            let (width, height) = (scene.canvas.width as f64, scene.canvas.height as f64);
+            let (top, bottom) = (lo.y.max(0.0), hi.y.min(height));
+            let (left, right) = (lo.x.max(0.0), hi.x.min(width));
+            let line = |from: Point, to: Point| Mark::Line {
+                from: self.to_screen(from),
+                to: self.to_screen(to),
+                width: 1.0,
+                color: GRID,
+            };
+            for x in multiples(left, right, step) {
+                marks.push(line(Point::new(x, top), Point::new(x, bottom)));
+            }
+            for y in multiples(top, bottom, step) {
+                marks.push(line(Point::new(left, y), Point::new(right, y)));
+            }
+        }
+        let outline = |min: Point, max: Point, gap: f32, color: Rgba| {
+            let width = 2.0 * unit;
+            let rect = screen::Rect::from_corners(self.to_screen(min), self.to_screen(max));
+            Mark::Frame {
+                rect: rect.expand(gap + width / 2.0),
+                width,
+                color,
+            }
+        };
+        for (min, max) in lifted.iter().filter_map(|&i| scene.bounds(i, t)) {
+            marks.push(outline(min, max, 3.0 * unit, palette.yellow));
+        }
+
+        // after the lift, so a dragged selection is outlined where it is
+        // drawn, and wider than a mark, so both show on one object
+        for (min, max) in drawn_by(scene, selected)
+            .into_iter()
+            .filter_map(|i| scene.bounds(i, t))
+        {
+            marks.push(outline(min, max, 7.0 * unit, palette.accent));
+        }
+        if let Some([from, to]) = place {
+            marks.push(Mark::Line {
+                from: self.to_screen(from),
+                to: self.to_screen(to),
+                width: 3.0 * unit,
+                color: palette.yellow,
+            });
+        }
+        if let Some((node, _, by)) = self.drag.as_ref().and_then(Drag::reordering)
+            && let Some((min, max)) = arrange::bounds(scene, node, t)
+        {
+            marks.push(outline(min + by, max + by, 0.0, palette.accent));
+        }
+        if let Some((from, to)) = self.drag.as_ref().and_then(Drag::boxed) {
+            let rect = screen::Rect::from_corners(from, to);
+            let [red, green, blue, _] = palette.accent;
+            marks.push(Mark::Fill {
+                rect,
+                color: [red, green, blue, 0.15],
+            });
+            marks.push(Mark::Frame {
+                rect: rect.expand(-0.5),
+                width: 1.0,
+                color: palette.accent,
+            });
+        }
+        marks
+    }
+
+    /// Add the handles of `target` to `marks`, with the outline a drag of
+    /// one makes and the guides of its snaps.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_target(
+        &self,
+        palette: &Palette,
+        bar: &Toolbar,
+        marks: &mut Vec<Mark>,
+        guides: &mut Vec<Guide>,
+        scene: &Scene,
+        t: f64,
+        target: &Target,
+    ) {
+        let gripped = self.drag.as_ref().and_then(Drag::gripping);
+        let dragged = gripped.and_then(|(gripped, grip, by)| {
+            let Grip::End(_) = grip else {
+                return reshaped(gripped, grip, by);
+            };
+            let from = gripped.grip_point(grip)?;
+            let (to, anchor, snaps) = self.end_point(bar, scene, from + by, t);
+            if let Some(anchor) = anchor {
+                self.draw_anchor(palette, marks, &anchor);
+            }
+            guides.extend(snaps);
+            reshaped(gripped, grip, to - from)
         });
+        self.draw_handles(palette, marks, dragged.as_ref().unwrap_or(target));
+    }
+
+    /// Present `marks` over the scene drawn for `wanted` on `surface`.
+    /// Between pans and zooms the last buffer is moved and stretched into
+    /// place, and the scene is drawn again only once the person stops.
+    fn present(
+        &mut self,
+        ui: &mut Ui,
+        surface: &mut Surface,
+        scene: &Scene,
+        wanted: Drawn,
+        marks: Vec<Mark>,
+    ) {
+        let (width, height) = wanted.pane;
+        if width == 0 || height == 0 {
+            return;
+        }
+        let now = ui.now_ms();
+        let settles = self.moved.map_or(0, |moved| moved + SETTLE);
+        let settled = now >= settles && self.panning.is_none();
+        let stale = match &self.drawn {
+            None => true,
+            Some(d) => {
+                d.scene != wanted.scene
+                    || d.time != wanted.time
+                    || d.pane != wanted.pane
+                    || d.preview != wanted.preview
+                    || d.background != wanted.background
+                    || (*d != wanted && settled)
+            }
+        };
+        if stale {
+            self.base = Some(draw(scene, &wanted));
+            self.drawn = Some(wanted);
+        }
+        let (Some(drawn), Some(base)) = (&self.drawn, &self.base) else {
+            return;
+        };
+        if drawn.zoom != self.zoom || drawn.origin != self.origin {
+            let [x, y, w, h] = stretched(drawn, self.zoom, self.origin);
+            surface.view(x, y, w, h);
+            if self.panning.is_none() {
+                ui.wake_at(settles);
+            }
+            return;
+        }
+        if stale || marks != self.marks {
+            let mut buffer = Buffer::new(width, height, Format::Rgba);
+            buffer.pixels().copy_from_slice(base.data());
+            if let Some(mut pixmap) = sk::PixmapMut::from_bytes(buffer.pixels(), width, height) {
+                marks::paint(&mut pixmap, &marks);
+            }
+            surface.present(buffer);
+            self.marks = marks;
+            self.cleared = None;
+        }
+        surface.view(0.0, 0.0, width as f64, height as f64);
+    }
+
+    /// Present the background alone, once for each size of the pane, so
+    /// the pane shows no other drawing's render.
+    fn clear(&mut self, surface: &mut Surface, size: (u32, u32), background: Rgba) {
+        let (width, height) = size;
+        if self.cleared == Some(size) || width == 0 || height == 0 {
+            return;
+        }
+        let mut buffer = Buffer::new(width, height, Format::Rgba);
+        if let Some(mut pixmap) = sk::PixmapMut::from_bytes(buffer.pixels(), width, height) {
+            let [red, green, blue, alpha] = background;
+            pixmap.fill(sk::Color::from_rgba(red, green, blue, alpha).unwrap_or(sk::Color::BLACK));
+        }
+        surface.present(buffer);
+        surface.view(0.0, 0.0, width as f64, height as f64);
+        self.cleared = Some(size);
+        self.drawn = None;
+        self.base = None;
     }
 
     /// Canvas point `p` snapped to the edges and centres of the objects
@@ -606,7 +716,7 @@ impl View {
         let others: Vec<Bounds> = (0..scene.objects.len())
             .filter_map(|i| scene.bounds(i, t))
             .collect();
-        let reach = (snap::REACH / self.zoom) as f64;
+        let reach = self.reach(snap::REACH);
         let grid = bar.grid.then_some(bar.spacing);
         let snapped = snap::snap((p, p), &others, Point::ZERO, reach, grid);
         (p + snapped.by, snapped.guides)
@@ -630,19 +740,19 @@ impl View {
         (slot != from && slot != from + 1).then_some(line)
     }
 
-    /// Draw the outline of the node the tool is drawing, with the
-    /// pointer at canvas point `hover`, and give the guides of its snaps.
+    /// Add to `marks` the outline of the node the tool is drawing, with
+    /// the pointer at canvas point `hover`, and give the guides of its
+    /// snaps.
     fn draw_preview(
         &self,
+        palette: &Palette,
         bar: &Toolbar,
-        painter: &egui::Painter,
-        rect: Rect,
+        marks: &mut Vec<Mark>,
         scene: &Scene,
         t: f64,
         hover: Option<Point>,
     ) -> Vec<Guide> {
-        let stroke = Stroke::new(1.5, Color32::from_rgb(0x7a, 0xa2, 0xf7));
-        let to_screen = |p: Point| self.to_screen(rect, p);
+        let (width, color) = (1.5 * self.unit, palette.accent);
         let mut guides = Vec::new();
         let line = matches!(bar.tool, Tool::Line | Tool::Arrow);
         if line
@@ -650,15 +760,15 @@ impl View {
             && let Some(hover) = hover
             && let (_, Some(anchor), _) = self.end_point(bar, scene, hover, t)
         {
-            self.draw_anchor(painter, rect, &anchor);
+            self.draw_anchor(palette, marks, &anchor);
         }
         if let Some((from, to)) = self.drag.as_ref().and_then(Drag::creating) {
-            let (from, to) = (self.to_canvas(rect, from), self.to_canvas(rect, to));
+            let (from, to) = (self.to_canvas(from), self.to_canvas(to));
             let (from, to) = if line {
                 let (from, from_anchor, _) = self.end_point(bar, scene, from, t);
                 let (to, to_anchor, snaps) = self.end_point(bar, scene, to, t);
                 for anchor in [from_anchor, to_anchor].iter().flatten() {
-                    self.draw_anchor(painter, rect, anchor);
+                    self.draw_anchor(palette, marks, anchor);
                 }
                 guides = snaps;
                 (from, to)
@@ -668,41 +778,49 @@ impl View {
                 guides = snaps;
                 (from, to)
             };
-            let (a, b) = (to_screen(from), to_screen(to));
+            let (from, to) = (self.to_screen(from), self.to_screen(to));
+            let rect = screen::Rect::from_corners(from, to);
             match bar.tool {
-                Tool::Box => {
-                    painter.rect_stroke(Rect::from_two_pos(a, b), 0.0, stroke, StrokeKind::Middle);
-                }
-                Tool::Ellipse => {
-                    let area = Rect::from_two_pos(a, b);
-                    painter.add(Shape::ellipse_stroke(
-                        area.center(),
-                        area.size() / 2.0,
-                        stroke,
-                    ));
-                }
-                Tool::Line => {
-                    painter.line_segment([a, b], stroke);
-                }
-                Tool::Arrow => {
-                    painter.arrow(a, b - a, stroke);
-                }
+                Tool::Box => marks.push(Mark::Frame { rect, width, color }),
+                Tool::Ellipse => marks.push(Mark::Oval { rect, width, color }),
+                Tool::Line => marks.push(Mark::Line {
+                    from,
+                    to,
+                    width,
+                    color,
+                }),
+                Tool::Arrow => marks.push(Mark::Arrow {
+                    from,
+                    to,
+                    width,
+                    color,
+                }),
                 _ => {}
             }
         }
         if bar.tool.draws_path() && !self.path.is_empty() {
-            let mut points: Vec<Pos2> = self.path.iter().copied().map(to_screen).collect();
+            let mut points: Vec<screen::Point> =
+                self.path.iter().map(|&p| self.to_screen(p)).collect();
             if let Some(hover) = hover {
                 let (at, snaps) = self.snap_point(bar, scene, hover, t);
-                points.push(to_screen(at));
+                points.push(self.to_screen(at));
                 guides = snaps;
             }
-            if bar.tool == Tool::Polygon {
-                painter.circle_stroke(points[0], tool::CLOSE, stroke);
-                painter.add(Shape::closed_line(points, stroke));
-            } else {
-                painter.add(Shape::line(points, stroke));
+            let closed = bar.tool == Tool::Polygon;
+            if closed {
+                marks.push(Mark::Ring {
+                    at: points[0],
+                    radius: tool::CLOSE * self.unit,
+                    width,
+                    color,
+                });
             }
+            marks.push(Mark::Path {
+                points,
+                closed,
+                width,
+                color,
+            });
         }
         guides
     }
@@ -726,117 +844,124 @@ impl View {
         }
     }
 
-    /// How far, in canvas pixels, the pointer reaches to an anchor.
-    pub fn anchor_reach(&self) -> f64 {
-        (anchor::REACH / self.zoom) as f64
-    }
-
-    /// Draw the dots of the thing `anchor` is on, and mark the spot it
-    /// takes, which may lie between the dots.
-    fn draw_anchor(&self, painter: &egui::Painter, rect: Rect, anchor: &Anchor) {
-        let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
+    /// Add to `marks` the dots of the thing `anchor` is on, and a mark on
+    /// the spot it takes, which may lie between the dots.
+    fn draw_anchor(&self, palette: &Palette, marks: &mut Vec<Mark>, anchor: &Anchor) {
+        let unit = self.unit;
         for (_, at) in anchor.outline.dots() {
-            let at = self.to_screen(rect, at);
-            painter.circle_filled(at, 3.0, Color32::WHITE);
-            painter.circle_stroke(at, 3.0, Stroke::new(1.0, blue));
+            let at = self.to_screen(at);
+            marks.push(Mark::Dot {
+                at,
+                radius: 3.0 * unit,
+                color: WHITE,
+            });
+            marks.push(Mark::Ring {
+                at,
+                radius: 3.0 * unit,
+                width: unit,
+                color: palette.accent,
+            });
         }
-        painter.circle_filled(self.to_screen(rect, anchor.at), 4.5, blue);
+        marks.push(Mark::Dot {
+            at: self.to_screen(anchor.at),
+            radius: 4.5 * unit,
+            color: palette.accent,
+        });
     }
 
-    /// Draw the outline of `target` and a square on each of its handles.
-    fn draw_handles(&self, painter: &egui::Painter, rect: Rect, target: &Target) {
-        let blue = Color32::from_rgb(0x7a, 0xa2, 0xf7);
-        let stroke = Stroke::new(1.5, blue);
-        let to_screen = |p: Point| self.to_screen(rect, p);
+    /// Add to `marks` the outline of `target` and a square on each of its
+    /// handles.
+    fn draw_handles(&self, palette: &Palette, marks: &mut Vec<Mark>, target: &Target) {
+        let (width, color) = (1.5 * self.unit, palette.accent);
         match target {
             Target::Box { bounds, oval, .. } => {
-                let area = Rect::from_min_max(to_screen(bounds.0), to_screen(bounds.1));
+                let rect =
+                    screen::Rect::from_corners(self.to_screen(bounds.0), self.to_screen(bounds.1));
                 if *oval {
-                    painter.add(Shape::ellipse_stroke(
-                        area.center(),
-                        area.size() / 2.0,
-                        stroke,
-                    ));
+                    marks.push(Mark::Oval { rect, width, color });
                 }
-                painter.rect_stroke(area, 0.0, stroke, StrokeKind::Middle);
+                marks.push(Mark::Frame { rect, width, color });
             }
-            Target::Path { points, open, .. } => {
-                let points: Vec<Pos2> = points.iter().copied().map(to_screen).collect();
-                painter.add(if *open {
-                    Shape::line(points, stroke)
-                } else {
-                    Shape::closed_line(points, stroke)
-                });
-            }
-            Target::Line { ends, .. } => {
-                painter.line_segment(ends.map(to_screen), stroke);
-            }
+            Target::Path { points, open, .. } => marks.push(Mark::Path {
+                points: points.iter().map(|&p| self.to_screen(p)).collect(),
+                closed: !*open,
+                width,
+                color,
+            }),
+            Target::Line { ends, .. } => marks.push(Mark::Line {
+                from: self.to_screen(ends[0]),
+                to: self.to_screen(ends[1]),
+                width,
+                color,
+            }),
         }
+        let side = handle::HANDLE * self.unit;
         for (_, at) in target.handles() {
-            let square = Rect::from_center_size(to_screen(at), Vec2::splat(2.0 * handle::HANDLE));
-            painter.rect_filled(square, 1.0, Color32::WHITE);
-            painter.rect_stroke(square, 1.0, Stroke::new(1.0, blue), StrokeKind::Middle);
+            let at = self.to_screen(at);
+            let rect = screen::Rect::from_corners(
+                at - screen::Point::new(side, side),
+                at + screen::Point::new(side, side),
+            );
+            marks.push(Mark::Fill { rect, color: WHITE });
+            marks.push(Mark::Frame {
+                rect,
+                width: self.unit,
+                color,
+            });
         }
     }
 
-    /// The screen point at canvas point `p` in a pane at `rect`.
-    pub fn to_screen(&self, rect: Rect, p: Point) -> Pos2 {
-        rect.min + self.origin + Vec2::new(p.x as f32, p.y as f32) * self.zoom
+    /// The point in the pane at canvas point `p`.
+    pub fn to_screen(&self, p: Point) -> screen::Point {
+        self.origin + screen::Point::new(p.x as f32, p.y as f32) * self.zoom
     }
 
-    /// The canvas point at screen point `p` in a pane at `rect`.
-    fn to_canvas(&self, rect: Rect, p: Pos2) -> Point {
-        let v = (p - rect.min - self.origin) / self.zoom;
+    /// The canvas point at point `p` in the pane.
+    fn to_canvas(&self, p: screen::Point) -> Point {
+        let v = (p - self.origin) / self.zoom;
         Point::new(v.x as f64, v.y as f64)
-    }
-
-    /// Draw `scene` into the texture for the view `wanted`, with the
-    /// overdraw around the pane. False when the pane has no pixels.
-    fn draw(&mut self, ctx: &egui::Context, scene: &Scene, wanted: &Drawn) -> bool {
-        let overdraw = wanted.overdraw();
-        let area = wanted.pane + overdraw * 2.0;
-        let ppp = wanted.texture_pixels_per_point();
-        let max_side = wanted.max_side as usize;
-        let pixels = [
-            ((area.x * ppp).round() as usize).min(max_side),
-            ((area.y * ppp).round() as usize).min(max_side),
-        ];
-        if pixels[0] == 0 || pixels[1] == 0 {
-            return false;
-        }
-        let origin = (wanted.origin + overdraw) * ppp;
-        let pixmap = render::draw_view(
-            scene,
-            wanted.time,
-            pixels[0] as u32,
-            pixels[1] as u32,
-            (wanted.zoom * ppp) as f64,
-            Point::new(origin.x as f64, origin.y as f64),
-        );
-        let image = egui::ColorImage::from_rgba_premultiplied(pixels, pixmap.data());
-        match &mut self.texture {
-            Some(texture) => texture.set(image, TextureOptions::LINEAR),
-            None => {
-                self.texture = Some(ctx.load_texture("render", image, TextureOptions::LINEAR));
-            }
-        }
-        self.drawn = Some(wanted.clone());
-        true
-    }
-
-    /// Where on screen the texture drawn for `drawn` goes for the current
-    /// zoom and origin, in a pane at `rect`.
-    fn texture_rect(&self, rect: Rect, drawn: &Drawn) -> Rect {
-        // a point at x on the old screen is now at
-        //   origin + (x - old origin) * zoom / old zoom
-        let scale = self.zoom / drawn.zoom;
-        let overdraw = drawn.overdraw();
-        let min = rect.min + self.origin + (-overdraw - drawn.origin) * scale;
-        Rect::from_min_size(min, (drawn.pane + overdraw * 2.0) * scale)
     }
 }
 
-/// The drag a press at screen point `at` starts with `tool`: on the
+/// `scene` drawn for the view `wanted`, on its background.
+fn draw(scene: &Scene, wanted: &Drawn) -> sk::Pixmap {
+    let (width, height) = wanted.pane;
+    let origin = Point::new(wanted.origin.x as f64, wanted.origin.y as f64);
+    let drawn = render::draw_view(
+        scene,
+        wanted.time,
+        width,
+        height,
+        wanted.zoom as f64,
+        origin,
+    );
+    let mut base = sk::Pixmap::new(width, height).expect("the pane has a nonzero size");
+    let [red, green, blue, alpha] = wanted.background;
+    base.fill(sk::Color::from_rgba(red, green, blue, alpha).unwrap_or(sk::Color::BLACK));
+    base.draw_pixmap(
+        0,
+        0,
+        drawn.as_ref(),
+        &sk::PixmapPaint::default(),
+        sk::Transform::identity(),
+        None,
+    );
+    base
+}
+
+/// The part of the buffer drawn for `drawn` that fills the pane at the
+/// current `zoom` and `origin`, as x, y, width and height in its pixels.
+fn stretched(drawn: &Drawn, zoom: f32, origin: screen::Point) -> [f64; 4] {
+    // the canvas point at pane point s is (s - origin) / zoom, and the
+    // buffer shows it at drawn.origin + (s - origin) / zoom * drawn.zoom
+    let scale = (drawn.zoom / zoom) as f64;
+    let x = drawn.origin.x as f64 - origin.x as f64 * scale;
+    let y = drawn.origin.y as f64 - origin.y as f64 * scale;
+    let (width, height) = drawn.pane;
+    [x, y, width as f64 * scale, height as f64 * scale]
+}
+
+/// The drag a press at pane point `at` starts with `tool`: on the
 /// handle `grip`, on an object whose drag moves `nodes`, or on empty
 /// canvas when `nodes` is empty. While `locked`, a press on an object or
 /// a handle only clicks, and one on empty canvas draws a selection box.
@@ -845,7 +970,7 @@ fn press(
     locked: bool,
     grip: Option<(&Target, Grip)>,
     nodes: Vec<Span>,
-    at: Pos2,
+    at: screen::Point,
 ) -> Drag {
     if locked {
         return match (grip, nodes.is_empty()) {
@@ -944,17 +1069,6 @@ fn reshaped(target: &Target, grip: Grip, by: Point) -> Option<Target> {
     Some(out)
 }
 
-/// The pointer's look over the handle `grip`.
-fn cursor(grip: Grip) -> CursorIcon {
-    match grip {
-        Grip::Box([Edge::Middle, _]) => CursorIcon::ResizeVertical,
-        Grip::Box([_, Edge::Middle]) => CursorIcon::ResizeHorizontal,
-        Grip::Box([x, y]) if x == y => CursorIcon::ResizeNwSe,
-        Grip::Box(_) => CursorIcon::ResizeNeSw,
-        Grip::Vertex(_) | Grip::End(_) => CursorIcon::Move,
-    }
-}
-
 /// The multiples of `step` from `lo` to `hi`.
 fn multiples(lo: f64, hi: f64, step: f64) -> impl Iterator<Item = f64> {
     let first = (lo / step).ceil() as i64;
@@ -966,45 +1080,40 @@ fn multiples(lo: f64, hi: f64, step: f64) -> impl Iterator<Item = f64> {
 mod tests {
     use super::*;
 
-    fn drawn(zoom: f32, origin: Vec2) -> Drawn {
+    fn drawn(zoom: f32, origin: screen::Point) -> Drawn {
         Drawn {
-            pane: Vec2::new(400.0, 200.0),
-            pixels_per_point: 1.0,
-            max_side: 8192.0,
+            pane: (400, 200),
             zoom,
             origin,
             scene: 0,
             time: 0.0,
             preview: None,
+            background: [0.0; 4],
         }
     }
 
     #[test]
-    fn an_unmoved_texture_covers_the_pane_and_its_overdraw() {
-        let mut view = View::new();
-        view.zoom = 2.0;
-        view.origin = Vec2::new(30.0, 40.0);
-        let rect = Rect::from_min_size(pos2(10.0, 20.0), Vec2::new(400.0, 200.0));
-        let cover = view.texture_rect(rect, &drawn(2.0, view.origin));
-        assert_eq!(cover, rect.expand2(Vec2::new(100.0, 50.0)));
+    fn an_unmoved_buffer_fills_the_pane() {
+        let origin = screen::Point::new(30.0, 40.0);
+        let view = stretched(&drawn(2.0, origin), 2.0, origin);
+        assert_eq!(view, [0.0, 0.0, 400.0, 200.0]);
     }
 
     #[test]
-    fn a_texture_follows_a_pan_and_scales_with_a_zoom() {
-        let mut view = View::new();
-        let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 200.0));
-        view.zoom = 1.0;
-        view.origin = Vec2::new(25.0, 0.0);
-        let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
-        assert_eq!(cover.min, pos2(-75.0, -50.0));
+    fn a_stretched_buffer_follows_a_pan_and_scales_with_a_zoom() {
+        let last = drawn(1.0, screen::Point::ZERO);
 
-        // zoomed 2x about the pane's top-left corner, the canvas origin
-        // stays at the corner and everything else spreads out
-        view.zoom_about(2.0, Vec2::ZERO);
-        view.origin = Vec2::ZERO;
-        let cover = view.texture_rect(rect, &drawn(1.0, Vec2::ZERO));
-        assert_eq!(cover.min, pos2(-200.0, -100.0));
-        assert_eq!(cover.size(), Vec2::new(1200.0, 600.0));
+        // panned 25 pixels right, the pane shows the buffer from 25
+        // pixels left of its edge
+        let view = stretched(&last, 1.0, screen::Point::new(25.0, 0.0));
+        assert_eq!(view, [-25.0, 0.0, 400.0, 200.0]);
+
+        // zoomed 2x about the pane's top-left corner, the pane shows
+        // the buffer's top-left quarter
+        let mut view_of = View::new();
+        view_of.zoom_about(2.0, screen::Point::ZERO, 0);
+        let view = stretched(&last, view_of.zoom, view_of.origin);
+        assert_eq!(view, [0.0, 0.0, 200.0, 100.0]);
     }
 
     /// The left and right edges of object `i` of `src` at time 0.
@@ -1076,15 +1185,15 @@ mod tests {
             open: true,
         };
         let grip = grip.then_some((&target, Grip::Vertex(1)));
-        let mut drag = press(tool, locked, grip, nodes, pos2(0.0, 0.0));
-        drag.follow(pos2(40.0, 30.0), 1.0);
+        let mut drag = press(tool, locked, grip, nodes, screen::Point::ZERO);
+        drag.follow(screen::Point::new(40.0, 30.0), 1.0);
         drag.release()
     }
 
     #[test]
     fn a_locked_press_on_an_object_or_a_handle_only_clicks() {
         let node = Span { start: 0, end: 9 };
-        let click = Release::Click(pos2(0.0, 0.0));
+        let click = Release::Click(screen::Point::ZERO);
         assert_eq!(press_on(Tool::Select, true, false, vec![node]), click);
         assert_eq!(press_on(Tool::Select, true, true, vec![node]), click);
         assert_eq!(press_on(Tool::Box, true, false, vec![node]), click);
@@ -1100,40 +1209,12 @@ mod tests {
 
     #[test]
     fn a_locked_press_on_empty_canvas_still_draws_a_selection_box() {
-        let boxed = Release::Select(pos2(0.0, 0.0), pos2(40.0, 30.0));
+        let boxed = Release::Select(screen::Point::ZERO, screen::Point::new(40.0, 30.0));
         assert_eq!(press_on(Tool::Select, true, false, Vec::new()), boxed);
         assert_eq!(press_on(Tool::Box, true, false, Vec::new()), boxed);
         assert!(matches!(
             press_on(Tool::Box, false, false, Vec::new()),
             Release::Create(..)
         ));
-    }
-
-    fn texture_side(d: &Drawn) -> f32 {
-        ((d.pane + d.overdraw() * 2.0) * d.texture_pixels_per_point())
-            .round()
-            .max_elem()
-    }
-
-    #[test]
-    fn a_wide_pane_gives_up_overdraw_to_fit_the_gpu() {
-        // 3217 points at 2 pixels a point, 1.5x for overdraw, is 9651
-        // pixels; 8192 leaves 879 points to share between the two edges
-        let mut d = drawn(1.0, Vec2::ZERO);
-        d.pane = Vec2::new(3217.0, 1200.0);
-        d.pixels_per_point = 2.0;
-        assert_eq!(d.overdraw(), Vec2::new(439.0, 300.0));
-        assert_eq!(d.texture_pixels_per_point(), 2.0);
-        assert!(texture_side(&d) <= 8192.0);
-    }
-
-    #[test]
-    fn a_pane_wider_than_the_gpu_draws_at_fewer_pixels() {
-        let mut d = drawn(1.0, Vec2::ZERO);
-        d.pane = Vec2::new(5000.0, 1200.0);
-        d.pixels_per_point = 2.0;
-        assert_eq!(d.overdraw().x, 0.0);
-        assert!(d.texture_pixels_per_point() < 2.0);
-        assert_eq!(texture_side(&d), 8192.0);
     }
 }

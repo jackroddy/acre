@@ -1,12 +1,12 @@
 use acre::lang::Span;
 use acre::scene::Point;
 use acre::scene::edit::Siblings;
-use eframe::egui::Pos2;
 
 use crate::handle::{Grip, Target};
 use crate::reorder::moved_index;
+use crate::screen;
 
-/// How far, in screen points, the pointer goes from where it was
+/// How far, in pixels, the pointer goes from where it was
 /// pressed before the press is a drag and not a click.
 const THRESHOLD: f32 = 4.0;
 
@@ -28,9 +28,9 @@ pub struct Drag {
     /// Whether the press only clicks, however far the pointer goes.
     still: bool,
     /// Where the press was, on screen.
-    from: Pos2,
+    from: screen::Point,
     /// Where the pointer is, on screen.
-    to: Pos2,
+    to: screen::Point,
     /// How far the pointer has moved, in canvas pixels, once it has gone
     /// past the threshold.
     by: Option<Point>,
@@ -40,13 +40,13 @@ pub struct Drag {
 #[derive(Debug, PartialEq)]
 pub enum Release {
     /// The pointer stayed within the threshold of where it was pressed.
-    Click(Pos2),
+    Click(screen::Point),
     /// Move `nodes` by `by` canvas pixels.
     Move { nodes: Vec<Span>, by: Point },
     /// Select what lies in the box between two corners on screen.
-    Select(Pos2, Pos2),
+    Select(screen::Point, screen::Point),
     /// Draw a new node from one point on screen to another.
-    Create(Pos2, Pos2),
+    Create(screen::Point, screen::Point),
     /// Drag the handle `grip` on `target` by `by` canvas pixels.
     Grip {
         target: Target,
@@ -63,7 +63,7 @@ pub enum Release {
 }
 
 impl Drag {
-    pub fn new(nodes: Vec<Span>, from: Pos2) -> Self {
+    pub fn new(nodes: Vec<Span>, from: screen::Point) -> Self {
         Drag {
             nodes,
             create: false,
@@ -77,7 +77,7 @@ impl Drag {
     }
 
     /// A press that draws a new node.
-    pub fn create(from: Pos2) -> Self {
+    pub fn create(from: screen::Point) -> Self {
         Drag {
             create: true,
             ..Drag::new(Vec::new(), from)
@@ -85,7 +85,7 @@ impl Drag {
     }
 
     /// A press on the handle `grip` of `target`.
-    pub fn grip(target: Target, grip: Grip, from: Pos2) -> Self {
+    pub fn grip(target: Target, grip: Grip, from: screen::Point) -> Self {
         Drag {
             grip: Some((target, grip)),
             ..Drag::new(Vec::new(), from)
@@ -94,7 +94,7 @@ impl Drag {
 
     /// A press that comes to a click wherever it is let go, and draws
     /// nothing meanwhile.
-    pub fn click(from: Pos2) -> Self {
+    pub fn click(from: screen::Point) -> Self {
         Drag {
             still: true,
             ..Drag::new(Vec::new(), from)
@@ -125,9 +125,9 @@ impl Drag {
         }
     }
 
-    /// Follow the pointer to `to`, at `zoom` screen points per canvas
+    /// Follow the pointer to `to`, at `zoom` pixels on screen per canvas
     /// pixel.
-    pub fn follow(&mut self, to: Pos2, zoom: f32) {
+    pub fn follow(&mut self, to: screen::Point, zoom: f32) {
         self.to = to;
         if self.by.is_none() && to.distance(self.from) <= THRESHOLD {
             return;
@@ -154,14 +154,14 @@ impl Drag {
 
     /// The corners on screen of the selection box, once the pointer has
     /// gone past the threshold on empty canvas.
-    pub fn boxed(&self) -> Option<(Pos2, Pos2)> {
+    pub fn boxed(&self) -> Option<(screen::Point, screen::Point)> {
         let selecting = self.nodes.is_empty() && !self.create && self.grip.is_none() && !self.still;
         (selecting && self.by.is_some()).then_some((self.from, self.to))
     }
 
     /// Where on screen a drag that draws a new node runs from and to,
     /// once the pointer has gone past the threshold.
-    pub fn creating(&self) -> Option<(Pos2, Pos2)> {
+    pub fn creating(&self) -> Option<(screen::Point, screen::Point)> {
         (self.create && self.by.is_some()).then_some((self.from, self.to))
     }
 
@@ -208,7 +208,6 @@ impl Drag {
 mod tests {
     use super::*;
     use acre::scene::edit::Layout;
-    use eframe::egui::pos2;
 
     fn span() -> Span {
         Span { start: 10, end: 20 }
@@ -216,17 +215,20 @@ mod tests {
 
     #[test]
     fn a_press_that_stays_put_is_a_click() {
-        let mut drag = Drag::new(vec![span()], pos2(100.0, 100.0));
-        drag.follow(pos2(103.0, 102.0), 1.0);
+        let mut drag = Drag::new(vec![span()], screen::Point::new(100.0, 100.0));
+        drag.follow(screen::Point::new(103.0, 102.0), 1.0);
         assert_eq!(drag.moving(), None);
-        assert_eq!(drag.release(), Release::Click(pos2(100.0, 100.0)));
+        assert_eq!(
+            drag.release(),
+            Release::Click(screen::Point::new(100.0, 100.0))
+        );
     }
 
     #[test]
     fn a_drag_on_an_object_moves_its_nodes_in_canvas_pixels() {
         let other = Span { start: 30, end: 40 };
-        let mut drag = Drag::new(vec![span(), other], pos2(100.0, 100.0));
-        drag.follow(pos2(120.0, 90.0), 2.0);
+        let mut drag = Drag::new(vec![span(), other], screen::Point::new(100.0, 100.0));
+        drag.follow(screen::Point::new(120.0, 90.0), 2.0);
         let by = Point::new(10.0, -5.0);
         assert_eq!(drag.moving(), Some((&[span(), other][..], by)));
         assert_eq!(drag.boxed(), None);
@@ -241,18 +243,18 @@ mod tests {
 
     #[test]
     fn a_drag_back_inside_the_threshold_still_moves() {
-        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
-        drag.follow(pos2(30.0, 0.0), 1.0);
-        drag.follow(pos2(2.0, 0.0), 1.0);
+        let mut drag = Drag::new(vec![span()], screen::Point::new(0.0, 0.0));
+        drag.follow(screen::Point::new(30.0, 0.0), 1.0);
+        drag.follow(screen::Point::new(2.0, 0.0), 1.0);
         assert_eq!(drag.moving(), Some((&[span()][..], Point::new(2.0, 0.0))));
     }
 
     #[test]
     fn a_placed_drag_lets_go_where_it_was_placed() {
-        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
+        let mut drag = Drag::new(vec![span()], screen::Point::new(0.0, 0.0));
         drag.place(Point::new(9.0, 9.0));
         assert_eq!(drag.moving(), None);
-        drag.follow(pos2(30.0, 0.0), 1.0);
+        drag.follow(screen::Point::new(30.0, 0.0), 1.0);
         drag.place(Point::new(32.5, 0.0));
         assert_eq!(
             drag.release(),
@@ -265,34 +267,52 @@ mod tests {
 
     #[test]
     fn a_drag_on_empty_canvas_draws_a_selection_box() {
-        let mut drag = Drag::new(Vec::new(), pos2(10.0, 10.0));
-        drag.follow(pos2(12.0, 12.0), 1.0);
+        let mut drag = Drag::new(Vec::new(), screen::Point::new(10.0, 10.0));
+        drag.follow(screen::Point::new(12.0, 12.0), 1.0);
         assert_eq!(drag.boxed(), None);
-        drag.follow(pos2(50.0, 5.0), 1.0);
+        drag.follow(screen::Point::new(50.0, 5.0), 1.0);
         assert_eq!(drag.moving(), None);
-        assert_eq!(drag.boxed(), Some((pos2(10.0, 10.0), pos2(50.0, 5.0))));
+        assert_eq!(
+            drag.boxed(),
+            Some((
+                screen::Point::new(10.0, 10.0),
+                screen::Point::new(50.0, 5.0)
+            ))
+        );
         assert_eq!(
             drag.release(),
-            Release::Select(pos2(10.0, 10.0), pos2(50.0, 5.0))
+            Release::Select(
+                screen::Point::new(10.0, 10.0),
+                screen::Point::new(50.0, 5.0)
+            )
         );
     }
 
     #[test]
     fn a_drag_that_creates_neither_selects_nor_moves() {
-        let mut drag = Drag::create(pos2(10.0, 10.0));
-        drag.follow(pos2(12.0, 12.0), 1.0);
+        let mut drag = Drag::create(screen::Point::new(10.0, 10.0));
+        drag.follow(screen::Point::new(12.0, 12.0), 1.0);
         assert_eq!(drag.creating(), None);
-        drag.follow(pos2(60.0, 40.0), 2.0);
+        drag.follow(screen::Point::new(60.0, 40.0), 2.0);
         assert_eq!(drag.boxed(), None);
         assert_eq!(drag.moving(), None);
-        assert_eq!(drag.creating(), Some((pos2(10.0, 10.0), pos2(60.0, 40.0))));
         assert_eq!(
-            drag.release(),
-            Release::Create(pos2(10.0, 10.0), pos2(60.0, 40.0))
+            drag.creating(),
+            Some((
+                screen::Point::new(10.0, 10.0),
+                screen::Point::new(60.0, 40.0)
+            ))
         );
         assert_eq!(
-            Drag::create(pos2(5.0, 5.0)).release(),
-            Release::Click(pos2(5.0, 5.0))
+            drag.release(),
+            Release::Create(
+                screen::Point::new(10.0, 10.0),
+                screen::Point::new(60.0, 40.0)
+            )
+        );
+        assert_eq!(
+            Drag::create(screen::Point::new(5.0, 5.0)).release(),
+            Release::Click(screen::Point::new(5.0, 5.0))
         );
     }
 
@@ -304,8 +324,8 @@ mod tests {
             open: true,
         };
         let grip = Grip::Vertex(1);
-        let mut drag = Drag::grip(target.clone(), grip, pos2(10.0, 10.0));
-        drag.follow(pos2(30.0, 10.0), 2.0);
+        let mut drag = Drag::grip(target.clone(), grip, screen::Point::new(10.0, 10.0));
+        drag.follow(screen::Point::new(30.0, 10.0), 2.0);
         assert_eq!(drag.boxed(), None);
         assert_eq!(drag.moving(), None);
         let by = Point::new(10.0, 0.0);
@@ -323,13 +343,16 @@ mod tests {
 
     #[test]
     fn a_press_that_only_clicks_draws_nothing_and_clicks_where_pressed() {
-        let mut drag = Drag::click(pos2(10.0, 10.0));
-        drag.follow(pos2(80.0, 40.0), 1.0);
+        let mut drag = Drag::click(screen::Point::new(10.0, 10.0));
+        drag.follow(screen::Point::new(80.0, 40.0), 1.0);
         assert_eq!(drag.moving(), None);
         assert_eq!(drag.boxed(), None);
         assert_eq!(drag.creating(), None);
         assert_eq!(drag.gripping(), None);
-        assert_eq!(drag.release(), Release::Click(pos2(10.0, 10.0)));
+        assert_eq!(
+            drag.release(),
+            Release::Click(screen::Point::new(10.0, 10.0))
+        );
     }
 
     #[test]
@@ -339,10 +362,10 @@ mod tests {
             layout: Layout::Down,
             children: vec![a, span(), Span { start: 30, end: 40 }],
         };
-        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
+        let mut drag = Drag::new(vec![span()], screen::Point::new(0.0, 0.0));
         drag.reorder(siblings.clone());
         assert_eq!(drag.reordering(), None);
-        drag.follow(pos2(0.0, 30.0), 1.0);
+        drag.follow(screen::Point::new(0.0, 30.0), 1.0);
         assert_eq!(drag.moving(), None);
         assert_eq!(
             drag.reordering(),
@@ -365,9 +388,9 @@ mod tests {
             layout: Layout::Down,
             children: vec![span(), Span { start: 30, end: 40 }],
         };
-        let mut drag = Drag::new(vec![span()], pos2(0.0, 0.0));
+        let mut drag = Drag::new(vec![span()], screen::Point::new(0.0, 0.0));
         drag.reorder(siblings.clone());
-        drag.follow(pos2(0.0, 30.0), 1.0);
+        drag.follow(screen::Point::new(0.0, 30.0), 1.0);
         drag.aim(2);
         assert_eq!(
             drag.release(),
@@ -379,9 +402,9 @@ mod tests {
         );
 
         let other = Span { start: 30, end: 40 };
-        let mut drag = Drag::new(vec![span(), other], pos2(0.0, 0.0));
+        let mut drag = Drag::new(vec![span(), other], screen::Point::new(0.0, 0.0));
         drag.reorder(siblings);
-        drag.follow(pos2(0.0, 30.0), 1.0);
+        drag.follow(screen::Point::new(0.0, 30.0), 1.0);
         assert!(drag.moving().is_some());
     }
 }

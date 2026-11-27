@@ -14,7 +14,7 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   selects it. No handles show. The creation tools and the arrange buttons
   are disabled. Delete, paste, Duplicate, the arrow-key moves and a
   double-click on text change nothing. The status line then says
-  "locked". The properties panel shows values with its controls
+  "locked". The properties column shows values with its controls
   disabled. Selection, box selection, pan, zoom, Ctrl+C and playback
   still work.
 - `acre-gui --locked` starts the viewer locked.
@@ -28,18 +28,19 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   neovim's command line links the plugin to the viewer's socket. Inside
   decade, neovim opens in ghostty in a pane split beside the viewer. On macOS
   it opens in a new Ghostty window. Elsewhere it opens in the terminal `xdg-
-  terminal-exec` starts. The item is disabled while an editor is linked and
-  for a drawing with no file.
-- Hovering a file under File > Open Recent shows a small render of it
-  at time 0 beside the menu. A spinner shows while the render is built.
-  For a missing file or one with an error, the menu shows the first
-  line of the error instead. acre-gui keeps each render for the session
-  and builds it again when the file changes.
+  terminal-exec` starts. While an editor is linked, or for a drawing with no
+  file, the item opens nothing and the status line says why.
+- File > Open Recent opens a list of the recent files under the menu.
+  Hovering a file shows a small render of it at time 0 beside the list,
+  with "drawing…" while the render is built. For a missing file or one with
+  an error, the list shows the start of the error instead. acre-gui keeps
+  each render for the session and builds it again when the file changes.
 - acre-gui holds several drawings in tabs, in a bar under the menu. A
-  tab shows the file's name, and its full path on hover. Each tab keeps
-  its own selection, zoom and playback, and without `--stdio` watches its
-  own file. File > Open and Open Recent open a file in a new tab, or show
-  its tab when one has it. A tab's × asks before it closes the tab.
+  tab shows the file's name, and the status line shows its full path.
+  Each tab keeps its own selection, zoom and playback, and without
+  `--stdio` watches its own file. File > Open and Open Recent open a
+  file in a new tab, or show its tab when one has it. A tab's × asks
+  before it closes the tab.
   Closing the last tab leaves an empty viewer that says to open a file.
   Switching tabs drops a text field left open in the tab left, without
   writing it.
@@ -51,11 +52,37 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Changed
 
+- acre-gui draws its window with the una UI kit in place of eframe and egui,
+  and runs on Wayland only.
+- File > Open shows una's file picker.
+- The sections and properties panels are columns beside the canvas, where
+  they used to cover its edges.
+- The properties column takes a colour as `#rrggbb` or `#rrggbbaa`, and a
+  number or a dash typed in a field. A field writes its value on Enter or
+  when it loses the keys. Escape puts back the value. The font is a
+  dropdown.
+- The grid's spacing is a field that takes a number from 1 to 1000.
+- The field that edits a node's text holds one line. Typing `\n` in it
+  writes a line break, and Shift+Enter writes the text as Enter does.
+  Escape closes the field and writes nothing.
+- The time bar shades the current section and no longer prints section
+  titles. Hovering a section names it in a tooltip.
+- 100% zoom shows one pixel on screen to a canvas pixel, so on a scaled
+  screen a drawing at 100% looks smaller than before.
+- Space, the arrow keys, Delete and Backspace are commands in una's command
+  palette, which Ctrl+Shift+P opens. The File menu's entries are there too.
+- With `--stdio`, acre-gui ends when stdin closes, even while its window is
+  hidden.
 - Backspace deletes the selection, as Delete does, since the main delete key
   on a Mac keyboard sends Backspace.
 - The File menu is the first button of the toolbar, and the tab bar sits
   under the toolbar. The File menu's own bar is gone. With `--stdio` the
   toolbar has no File menu, as before.
+
+### Removed
+
+- The pointer no longer changes shape over a handle.
+- The colour picker, and the number fields that changed by dragging.
 
 ## [0.2.0] - 2026-11-24
 
