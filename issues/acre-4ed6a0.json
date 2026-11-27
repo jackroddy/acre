@@ -3,7 +3,7 @@
   "title": "acre draws mockups of a program's interface",
   "body": "acre has drawn explanations of code, diagrams and plots. This milestone is about a different kind of figure: a still mockup of a program's interface, drawn so that Jack can judge a look before anyone changes the program. The first case is decade's chrome in two palettes, today's hand-picked colours beside colours read from the Omarchy theme. The figure lives in `figures/decade-palette.acre`.\n\nEach child is something acre lacks for this kind of figure, found while drawing it. The figure is written by hand. When the wish for a generator script comes up, that wish marks a gap, and the gap becomes a child here.\n\nThe skill that guides these figures has a matching reference file for mockups. That file grows with this milestone.",
   "type": "milestone",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-24T23:37:02.04973898Z",
-  "updated_at": "2026-11-25T00:01:01.668519903Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-27T02:57:20.986106127Z",
+  "closed_at": "2026-11-27T02:57:20.986106127Z",
+  "close_reason": "All three children are closed. The note from 2026-11-25 lists what landed: colour blends in 9b6886c, stack places inside a repeat in 8d5c911, and a test guarding the reference's container lists (acre-3c9421).",
+  "resolution": "done",
   "notes": [
     {
       "id": "c23071ff",
@@ -32,6 +32,9 @@
       "commit": "29eef0c",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "e8db7f9",
+      "branch": "dev"
+    }
   }
 }
