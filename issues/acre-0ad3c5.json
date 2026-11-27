@@ -1,0 +1,28 @@
+{
+  "id": "acre-0ad3c5",
+  "title": "acre-gui stays open when decade asks it to close",
+  "body": "Since e8db7f9, acre-gui answers the compositor's close request with its \"Close acre-gui?\" dialog (`ui.close_requested()` in `App::frame`, `app.rs`). Before a decade scratch pane starts a new program, `scratch.open` asks the old one to close. The old viewer then waits on the dialog, and the new one starts only after someone clicks Close or kills the process. The egui viewer closed on the request.\n\n## Open\n\n- Close at once on a request from outside, and keep the dialog for the toolbar's × only. We think acre-gui holds no unsaved state, since every edit goes to the source as it is made, but nobody has checked.\n- Keep the dialog everywhere, and accept the click.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-27T02:52:19.093036264Z",
+  "updated_at": "2026-11-27T02:52:19.093036264Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "e8db7f9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
