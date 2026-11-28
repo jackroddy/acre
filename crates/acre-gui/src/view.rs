@@ -106,6 +106,8 @@ impl Toolbar {
 pub struct Shown {
     /// Where the pane is in the window.
     pub rect: screen::Rect,
+    /// Whether the left button went down on the pane this frame.
+    pub pane_pressed: bool,
     /// The canvas point under the pointer.
     pub hover: Option<Point>,
     /// The canvas point clicked.
@@ -277,6 +279,7 @@ impl View {
                 min: screen::Point::new(signal.rect.x as f32, signal.rect.y as f32),
                 size: self.pane,
             },
+            pane_pressed: signal.pressed,
             hover: None,
             clicked: None,
             double_clicked: None,
@@ -300,7 +303,7 @@ impl View {
         });
         let Some(scene) = scene else {
             self.drag = None;
-            shown.chosen = ui.menu(menu, &entries).map(|i| MENU[i]);
+            shown.chosen = ui.menu(menu, &entries).ran.map(|i| MENU[i]);
             self.clear(surface, pane.size, ui.palette().background);
             return shown;
         };
@@ -343,7 +346,7 @@ impl View {
                 ui.open_menu(menu, at);
             }
         }
-        shown.chosen = ui.menu(menu, &entries).map(|i| MENU[i]);
+        shown.chosen = ui.menu(menu, &entries).ran.map(|i| MENU[i]);
         if signal.double_clicked && bar.tool == Tool::Select {
             match pointer.and_then(|at| node_at(scene, self.to_canvas(at), t)) {
                 Some(node) => shown.double_clicked = Some(node),

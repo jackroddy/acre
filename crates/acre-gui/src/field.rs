@@ -10,8 +10,7 @@ pub struct Field {
     path: Vec<usize>,
     /// The text when the field opened.
     original: String,
-    /// The text in the field, markup included, with each line break
-    /// written as `\n`, since the field holds one line.
+    /// The text in the field, markup included.
     pub text: String,
     /// Whether the field has had the keyboard focus.
     focused: bool,
@@ -31,7 +30,6 @@ impl Field {
             }
         };
         let path = edit::node_path(program, node).ok_or("no node has this span")?;
-        let text = text.replace('\n', "\\n");
         Ok(Field {
             path,
             original: text.clone(),
@@ -68,8 +66,7 @@ impl Field {
             return Ok(Vec::new());
         }
         let node = self.node(program).ok_or("the node edited is gone")?;
-        let text = self.text.replace("\\n", "\n");
-        edit::text_edits(source, node, &text).map_err(|e| {
+        edit::text_edits(source, node, &self.text).map_err(|e| {
             let (line, col) = e.line_col(source);
             format!("cannot edit text: {line}:{col}: {}", e.message)
         })
@@ -163,15 +160,15 @@ mod tests {
     }
 
     #[test]
-    fn a_line_break_shows_as_backslash_n_and_one_typed_starts_a_new_line() {
+    fn a_line_break_opens_as_a_line_break_and_a_typed_backslash_is_kept() {
         let field = open(SRC, Point::new(205.0, 25.0)).unwrap();
-        assert_eq!(field.text, "two\\nlines");
+        assert_eq!(field.text, "two\nlines");
 
         let mut field = open(SRC, Point::new(20.0, 20.0)).unwrap();
-        field.text = "one\\ntwo".into();
+        field.text = "a\\nb".into();
         let program = parse(SRC).unwrap();
         let out = edit::apply(SRC, &field.edits(SRC, &program).unwrap());
-        assert!(out.contains(r#"text "one\ntwo";"#), "{out}");
+        assert!(out.contains(r#"text "a\\nb";"#), "{out}");
     }
 
     #[test]

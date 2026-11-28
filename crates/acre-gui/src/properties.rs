@@ -1,7 +1,9 @@
 use acre::lang::{Span, ValueKind};
 use acre::scene::edit::{self, Origin};
 use acre::scene::schema;
-use una::{Length, Style, Ui};
+use std::ops::RangeInclusive;
+
+use una::{Button, Event, Length, Rgba, Style, Ui};
 
 use crate::app::colored;
 
@@ -21,8 +23,16 @@ pub const KEYS: [&str; 8] = [
 /// The fonts every drawing has.
 const FONTS: [&str; 5] = ["mono", "mono-bold", "sans", "sans-bold", "sans-italic"];
 
-/// The value a widget starts from where the default applies.
+/// The value a colour picker starts from where no one colour applies.
 const GREY: [u8; 4] = [128, 128, 128, 255];
+
+/// The values of `stroke-width` and `text-size` where nothing sets them,
+/// as the scene builds them.
+const STROKE_WIDTH: f64 = 2.0;
+const TEXT_SIZE: f64 = 16.0;
+
+/// The numbers a number box takes.
+const NUMBERS: RangeInclusive<f64> = 0.0..=1000.0;
 
 /// The glyph of the button that takes a node's own value away, from the
 /// icon font.
@@ -72,10 +82,8 @@ pub struct Properties {
     /// goes in the source, for the nodes at `paths`.
     pending: Vec<(&'static str, String)>,
     paths: Vec<Vec<usize>>,
-    /// The text in each entry's field, as typed, in the order of `entries`.
-    texts: Vec<String>,
-    /// The key of the entry whose field had the focus at the last frame.
-    editing: Option<&'static str>,
+    /// Whether the left button was down at the panel's last frame.
+    held: bool,
 }
 
 impl Properties {
@@ -90,7 +98,6 @@ impl Properties {
             Ok(entries) => (entries, None),
             Err(why) => (Vec::new(), Some(why)),
         };
-        self.texts = self.entries.iter().map(field_text).collect();
         self.fonts = fonts;
         self.read_for = Some(key);
     }
@@ -103,6 +110,11 @@ impl Properties {
     /// The first change not yet written for the nodes at `paths`, taken
     /// here. Changes made for other nodes are dropped.
     pub fn take(&mut self, paths: &[Vec<usize>]) -> Option<(&'static str, String)> {
+        // a drag on a number or in a colour picker is written once, on
+        // its release, so the editor gets one edit to undo
+        if self.held {
+            return None;
+        }
         if self.paths != paths {
             self.pending.clear();
             return None;
@@ -111,22 +123,37 @@ impl Properties {
     }
 
     /// Build the panel's rows for the nodes at `paths`, with every
-    /// control disabled when `locked`. True while one of its fields has
-    /// the keys.
-    pub fn ui(&mut self, ui: &mut Ui, paths: &[Vec<usize>], locked: bool) -> bool {
+    /// control disabled when `locked`.
+    pub fn ui(&mut self, ui: &mut Ui, paths: &[Vec<usize>], locked: bool) {
+        let was_held = self.held;
+        for event in ui.events() {
+            if let Event::PointerButton {
+                button: Button::Left,
+                pressed,
+                ..
+            } = event
+            {
+                self.held = *pressed;
+            }
+        }
+
+        // nothing else may ask for the frame that writes what the
+        // release let go
+        if was_held && !self.held && !self.pending.is_empty() {
+            ui.wake_at(ui.now_ms());
+        }
         if let Some(why) = &self.unread {
             ui.label(why.as_str());
-            return false;
+            return;
         }
         if self.entries.is_empty() {
             ui.label("nothing here to change");
-            return false;
+            return;
         }
         let mut changed = Vec::new();
-        let mut editing = None;
         let muted = ui.palette().muted;
         ui.disabled(locked, |ui| {
-            for (entry, text) in self.entries.iter_mut().zip(&mut self.texts) {
+            for entry in &mut self.entries {
                 ui.keyed(entry.key, |ui| {
                     ui.row(|ui| {
                         ui.label(entry.key);
@@ -147,19 +174,15 @@ impl Properties {
                         }
                     });
                     ui.row(|ui| {
-                        let edited = widget(ui, entry, text, &self.fonts, self.editing);
-                        if edited.focused {
-                            editing = Some(entry.key);
-                        }
-                        if let Some(value) = edited.value {
-                            changed.push((entry.key, value));
+                        if let Some(shown) = widget(ui, entry, &self.fonts) {
+                            entry.shown = shown;
+                            changed.push((entry.key, value_text(&entry.shown)));
                         }
                     });
                     ui.space(Length::Px(Style::small(ui.palette()).px(ui, 4)));
                 });
             }
         });
-        self.editing = editing;
         if !changed.is_empty() {
             if self.paths != paths {
                 self.pending.clear();
@@ -172,163 +195,99 @@ impl Properties {
                 }
             }
         }
-        editing.is_some()
     }
 }
 
-/// What the widget of one entry did this frame.
-struct Edited {
-    /// The new value as it goes in the source, when it changed.
-    value: Option<String>,
-    /// Whether its field has the keys.
-    focused: bool,
-}
-
-/// Build the widget that edits `entry`, whose field holds `text`, and
-/// give the new value as it goes in the source when it changed. A field
-/// gives its value on Enter, or once it loses the keys while `editing`
-/// names its entry.
-fn widget(
-    ui: &mut Ui,
-    entry: &mut Entry,
-    text: &mut String,
-    fonts: &[String],
-    editing: Option<&'static str>,
-) -> Edited {
-    let unchanged = Edited {
-        value: None,
-        focused: false,
-    };
-    let set = |entry: &mut Entry, text: &mut String, shown: Shown| {
-        entry.shown = shown;
-        *text = field_text(entry);
-        Edited {
-            value: Some(value_text(&entry.shown)),
-            focused: false,
-        }
-    };
+/// Build the widget that edits `entry`, and give its new value when it
+/// changed.
+fn widget(ui: &mut Ui, entry: &Entry, fonts: &[String]) -> Option<Shown> {
     match entry.key {
-        "fill" | "stroke" | "color" | "text-color" => {
-            let mut none = entry.shown == Shown::NoColor;
-            if entry.takes_none && ui.toggle("none", &mut none).clicked {
-                let shown = if none {
-                    Shown::NoColor
-                } else {
-                    Shown::Color(GREY)
-                };
-                return set(entry, text, shown);
-            }
-            if none {
-                return unchanged;
-            }
-            ui.space(Length::Cells(1));
-            field(ui, entry, text, "#rrggbb", editing)
-        }
-        "stroke-width" | "text-size" => field(ui, entry, text, "a number", editing),
-        "dash" => {
-            if !matches!(entry.shown, Shown::Default | Shown::Mixed) {
-                return field(ui, entry, text, "on off", editing);
-            }
-            if ui.button("add").clicked {
-                return set(entry, text, Shown::Dash([6.0, 4.0]));
-            }
-            unchanged
-        }
-        "font" => {
-            let current = match &entry.shown {
-                Shown::Font(f) => f.clone(),
-                _ => String::new(),
-            };
-            let options: Vec<&str> = (FONTS.iter().copied())
-                .chain(fonts.iter().map(String::as_str))
-                .collect();
-            let shown = options.iter().position(|f| *f == current);
-            let mut chosen = shown.unwrap_or(usize::MAX);
-            ui.dropdown(ui.id("font"), &options, &mut chosen);
-            match options.get(chosen) {
-                Some(font) if Some(chosen) != shown => {
-                    set(entry, text, Shown::Font(font.to_string()))
-                }
-                _ => unchanged,
-            }
-        }
-        _ => unchanged,
-    }
-}
-
-/// Build the one-line field for `entry`, holding `text` and showing
-/// `hint` while empty. It gives its value on Enter, or once it loses the
-/// keys while `editing` names its entry. Escape, or a value the key does
-/// not take, puts back the text of the entry's value.
-fn field(
-    ui: &mut Ui,
-    entry: &mut Entry,
-    text: &mut String,
-    hint: &str,
-    editing: Option<&'static str>,
-) -> Edited {
-    let signal = ui.field(ui.id("value"), text, hint);
-    let focused = signal.signal.focused;
-    let left = editing == Some(entry.key) && !focused;
-    if signal.cancelled {
-        *text = field_text(entry);
-    }
-    let mut edited = Edited {
-        value: None,
-        focused,
-    };
-    if !(signal.submitted || left) || *text == field_text(entry) {
-        return edited;
-    }
-    match parse(entry.key, text) {
-        Some(shown) => {
-            entry.shown = shown;
-            edited.value = Some(value_text(&entry.shown));
-        }
-        None => *text = field_text(entry),
-    }
-    edited
-}
-
-/// The text a field shows for `entry`: its value, or the value its
-/// widget starts from where the default applies.
-fn field_text(entry: &Entry) -> String {
-    match (&entry.shown, entry.key) {
-        (Shown::Color(_) | Shown::Number(_) | Shown::Dash(_), _) => value_text(&entry.shown),
-        (_, "stroke-width") => "2".to_string(),
-        (_, "text-size") => "16".to_string(),
-        (_, "dash") => "6 4".to_string(),
-        (_, "fill" | "stroke" | "color" | "text-color") => value_text(&Shown::Color(GREY)),
-        _ => String::new(),
-    }
-}
-
-/// The value typed for `key` as `text`, or `None` when it is not one the
-/// key takes: a colour as `#rrggbb` or `#rrggbbaa`, a number from 0 to
-/// 1000, or two such numbers for a dash.
-fn parse(key: &str, text: &str) -> Option<Shown> {
-    let number = |word: &str| {
-        let n: f64 = word.parse().ok()?;
-        (0.0..=1000.0).contains(&n).then_some(n)
-    };
-    let text = text.trim();
-    match key {
-        "fill" | "stroke" | "color" | "text-color" => {
-            let hex = text.strip_prefix('#').unwrap_or(text);
-            let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
-            let alpha = match hex.len() {
-                6 => 255,
-                8 => byte(6)?,
-                _ => return None,
-            };
-            Some(Shown::Color([byte(0)?, byte(2)?, byte(4)?, alpha]))
-        }
-        "stroke-width" | "text-size" => number(text).map(Shown::Number),
-        "dash" => match text.split_whitespace().collect::<Vec<_>>()[..] {
-            [on, off] => Some(Shown::Dash([number(on)?, number(off)?])),
-            _ => None,
-        },
+        "fill" | "stroke" | "color" | "text-color" => color(ui, entry),
+        "stroke-width" => number(ui, entry, 0.5),
+        "text-size" => number(ui, entry, 1.0),
+        "dash" => dash(ui, entry),
+        "font" => font(ui, entry, fonts),
         _ => None,
+    }
+}
+
+/// A "none" toggle where every node takes `none`, and a colour picker
+/// unless it is on.
+fn color(ui: &mut Ui, entry: &Entry) -> Option<Shown> {
+    let mut none = entry.shown == Shown::NoColor;
+    if entry.takes_none && ui.toggle("none", &mut none).clicked {
+        return Some(if none {
+            Shown::NoColor
+        } else {
+            Shown::Color(GREY)
+        });
+    }
+    if none {
+        return None;
+    }
+    ui.space(Length::Cells(1));
+    let start = color_of(entry);
+    let mut picked: Rgba = start.map(|c| c as f32 / 255.0);
+    ui.color(ui.id("value"), &mut picked);
+    let picked = picked.map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8);
+    (picked != start).then_some(Shown::Color(picked))
+}
+
+/// A number box that changes by `step`.
+fn number(ui: &mut Ui, entry: &Entry, step: f64) -> Option<Shown> {
+    let start = number_of(entry);
+    let mut value = start;
+    ui.number(ui.id("value"), &mut value, NUMBERS, step);
+    (value != start).then_some(Shown::Number(value))
+}
+
+/// A number box for each of the dash and the gap, or a button that adds
+/// a dash where the nodes have none or differ.
+fn dash(ui: &mut Ui, entry: &Entry) -> Option<Shown> {
+    let Shown::Dash(start) = entry.shown else {
+        return ui.button("add").clicked.then_some(Shown::Dash([6.0, 4.0]));
+    };
+    let mut dash = start;
+    ui.number(ui.id("on"), &mut dash[0], NUMBERS, 0.5);
+    ui.space(Length::Cells(1));
+    ui.number(ui.id("off"), &mut dash[1], NUMBERS, 0.5);
+    (dash != start).then_some(Shown::Dash(dash))
+}
+
+/// A dropdown of the built-in fonts and `fonts`.
+fn font(ui: &mut Ui, entry: &Entry, fonts: &[String]) -> Option<Shown> {
+    let current = match &entry.shown {
+        Shown::Font(f) => f.as_str(),
+        _ => "",
+    };
+    let options: Vec<&str> = (FONTS.iter().copied())
+        .chain(fonts.iter().map(String::as_str))
+        .collect();
+    let shown = options.iter().position(|f| *f == current);
+    let mut chosen = shown.unwrap_or(usize::MAX);
+    ui.dropdown(ui.id("font"), &options, &mut chosen);
+    match options.get(chosen) {
+        Some(font) if Some(chosen) != shown => Some(Shown::Font(font.to_string())),
+        _ => None,
+    }
+}
+
+/// The colour a picker shows for `entry`: its colour, or grey where the
+/// nodes have no one colour.
+fn color_of(entry: &Entry) -> [u8; 4] {
+    match entry.shown {
+        Shown::Color(c) => c,
+        _ => GREY,
+    }
+}
+
+/// The number a box shows for `entry`: its value, or the value the scene
+/// builds where nothing sets it or the nodes differ.
+fn number_of(entry: &Entry) -> f64 {
+    match (&entry.shown, entry.key) {
+        (Shown::Number(n), _) => *n,
+        (_, "text-size") => TEXT_SIZE,
+        _ => STROKE_WIDTH,
     }
 }
 
@@ -542,25 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_value_is_read_as_its_key_takes_it() {
-        assert_eq!(
-            parse("fill", "#ff1000"),
-            Some(Shown::Color([255, 16, 0, 255]))
-        );
-        assert_eq!(
-            parse("stroke", "ff100080"),
-            Some(Shown::Color([255, 16, 0, 128]))
-        );
-        assert_eq!(parse("fill", "#ff10"), None);
-        assert_eq!(parse("fill", "#gg1000"), None);
-        assert_eq!(parse("stroke-width", " 2.5 "), Some(Shown::Number(2.5)));
-        assert_eq!(parse("text-size", "-1"), None);
-        assert_eq!(parse("dash", "6 2.5"), Some(Shown::Dash([6.0, 2.5])));
-        assert_eq!(parse("dash", "6"), None);
-    }
-
-    #[test]
-    fn a_field_starts_from_the_value_or_from_the_default_its_widget_starts_at() {
+    fn a_widget_starts_from_the_value_or_from_what_applies_without_one() {
         let entry = |key, shown| Entry {
             key,
             shown,
@@ -568,13 +509,13 @@ mod tests {
             takes_none: false,
         };
         assert_eq!(
-            field_text(&entry("fill", Shown::Color([1, 2, 3, 255]))),
-            "#010203"
+            color_of(&entry("fill", Shown::Color([1, 2, 3, 4]))),
+            [1, 2, 3, 4]
         );
-        assert_eq!(field_text(&entry("fill", Shown::Mixed)), "#808080");
-        assert_eq!(field_text(&entry("stroke-width", Shown::Default)), "2");
-        assert_eq!(field_text(&entry("text-size", Shown::Default)), "16");
-        assert_eq!(field_text(&entry("dash", Shown::Dash([4.0, 2.0]))), "4 2");
+        assert_eq!(color_of(&entry("fill", Shown::Mixed)), GREY);
+        assert_eq!(number_of(&entry("stroke-width", Shown::Number(3.5))), 3.5);
+        assert_eq!(number_of(&entry("stroke-width", Shown::Default)), 2.0);
+        assert_eq!(number_of(&entry("text-size", Shown::Mixed)), 16.0);
     }
 
     #[test]

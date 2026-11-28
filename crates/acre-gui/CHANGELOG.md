@@ -33,17 +33,19 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   it opens in a new Ghostty window. Elsewhere it opens in the terminal `xdg-
   terminal-exec` starts. While an editor is linked, or for a drawing with no
   file, the item opens nothing and the status line says why.
-- File > Open Recent opens a list of the recent files under the menu.
-  Hovering a file shows a small render of it at time 0 beside the list,
-  with "drawing…" while the render is built. For a missing file or one with
-  an error, the list shows the start of the error instead. acre-gui keeps
-  each render for the session and builds it again when the file changes.
+- The File menu lists the recent files between Open and Edit in neovim.
+  Highlighting a file shows a small render of it at time 0 beside the
+  menu, with "drawing…" while the render is built. For a missing file or
+  one with an error, the preview shows the start of the error instead.
+  acre-gui keeps each render for the session and builds it again when the
+  file changes.
 - acre-gui holds several drawings in tabs, in a bar under the menu. A
   tab shows the file's name, and the status line shows its full path.
+  Hovering a tab shows its full path in a tooltip.
   Each tab keeps its own selection, zoom and playback, and without
-  `--stdio` watches its own file. File > Open and Open Recent open a
-  file in a new tab, or show its tab when one has it. A tab's × asks
-  before it closes the tab.
+  `--stdio` watches its own file. File > Open and a recent file in the
+  File menu open a file in a new tab, or show its tab when one has it. A
+  tab's × asks before it closes the tab.
   Closing the last tab leaves an empty viewer that says to open a file.
   Switching tabs drops a text field left open in the tab left, without
   writing it.
@@ -60,16 +62,23 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - File > Open shows una's file picker.
 - The sections and properties panels are columns beside the canvas, where
   they used to cover its edges.
-- The properties column takes a colour as `#rrggbb` or `#rrggbbaa`, and a
-  number or a dash typed in a field. A field writes its value on Enter or
-  when it loses the keys. Escape puts back the value. The font is a
+- The properties column has una's colour picker for a colour. A
+  colour that is not opaque is written as `#rrggbbaa`. The font is a
   dropdown.
+- A number and each half of a dash in the properties column is a box. A
+  sideways drag, Up, Down or the wheel changes it, and a click on it opens a
+  field to type a number. Where nothing sets the number, or the selected nodes
+  differ, the box starts from the value the scene uses.
 - The grid's spacing is a field that takes a number from 1 to 1000.
-- The field that edits a node's text holds one line. Typing `\n` in it
-  writes a line break, and Shift+Enter writes the text as Enter does.
-  Escape closes the field and writes nothing.
-- The time bar shades the current section and no longer prints section
-  titles. Hovering a section names it in a tooltip.
+- The field that edits a node's text shows four lines and scrolls past
+  them. Enter and Shift+Enter start a new line, and Ctrl+Enter writes the
+  text. Escape closes the field and writes nothing.
+- The time bar shades the current section.
+- The sections column is a tree, and the section playing is its selected
+  row. Up and Down select a section and go to its start. Left and Right
+  fold and unfold a section. A click on another section goes to its
+  start. Enter or a double click goes to the start of the section
+  selected.
 - 100% zoom shows one pixel on screen to a canvas pixel, so on a scaled
   screen a drawing at 100% looks smaller than before.
 - Space, the arrow keys, Delete and Backspace are commands in una's command
@@ -85,7 +94,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ### Removed
 
 - The pointer no longer changes shape over a handle.
-- The colour picker, and the number fields that changed by dragging.
 
 ## [0.2.0] - 2026-11-24
 
