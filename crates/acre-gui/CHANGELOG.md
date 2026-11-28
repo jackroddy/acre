@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-28
+
 ### Added
 
 - The toolbar has a Lock toggle next to Snap and Grid. While it is on,
@@ -333,6 +335,7 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   a refused change acre-gui writes nothing, and the status line gives the
   reason.
 
-[Unreleased]: https://github.com/jackroddy/acre/compare/acre-gui-v0.2.0...HEAD
+[Unreleased]: https://github.com/jackroddy/acre/compare/acre-gui-v0.3.0...HEAD
+[0.3.0]: https://github.com/jackroddy/acre/compare/acre-gui-v0.2.0...acre-gui-v0.3.0
 [0.2.0]: https://github.com/jackroddy/acre/compare/acre-gui-v0.1.0...acre-gui-v0.2.0
 [0.1.0]: https://github.com/jackroddy/acre/releases/tag/acre-gui-v0.1.0

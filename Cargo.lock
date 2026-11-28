@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "acre-gui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "acre",
  "clap",
@@ -1471,7 +1471,9 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "una"
-version = "0.1.0"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8ac8cfc58e7403cb3ba307e360691a9baaf5142b5dcbaceed74976df0dcb920"
 dependencies = [
  "calloop",
  "fontdb",

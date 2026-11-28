@@ -1,6 +1,6 @@
 [package]
 name = "acre-gui"
-version = "0.2.0"
+version = "0.3.0"
 description = "a viewer for acre drawings: the render of a file, or of what an editor sends, updated as it changes"
 readme = "../../README.md"
 edition.workspace = true
@@ -14,4 +14,4 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny-skia = "0.12"
-una = { path = "../../../una" }
+una = "0.2.0"
