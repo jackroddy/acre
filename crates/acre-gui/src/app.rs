@@ -614,7 +614,7 @@ impl App {
 
     /// Build the open field over its node's objects, in the pane at
     /// `pane` in the window, and write its text once it is left by
-    /// Ctrl+Enter, Tab or a click elsewhere. Escape closes it and writes
+    /// Enter, Tab or a click elsewhere. Escape closes it and writes
     /// nothing.
     fn edit_field(&mut self, ui: &mut Ui, pane: crate::screen::Rect) {
         let doc = &mut self.docs[self.active];

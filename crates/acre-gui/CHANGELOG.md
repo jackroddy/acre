@@ -71,8 +71,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   differ, the box starts from the value the scene uses.
 - The grid's spacing is a field that takes a number from 1 to 1000.
 - The field that edits a node's text shows four lines and scrolls past
-  them. Enter and Shift+Enter start a new line, and Ctrl+Enter writes the
-  text. Escape closes the field and writes nothing.
+  them. Enter writes the text, and Shift+Enter starts a new line. Escape
+  closes the field and writes nothing.
 - The time bar shades the current section.
 - The sections column is a tree, and the section playing is its selected
   row. Up and Down select a section and go to its start. Left and Right
