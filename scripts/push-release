@@ -1,0 +1,13 @@
+#!/bin/sh
+# Push a release: main, the annotated tags on it, and the nvim branch, in
+# one atomic push to origin. The nvim branch holds editors/nvim from main
+# at its root, so a plugin manager can install the plugin from it. Nobody
+# commits to nvim by hand. The split gives the same commits from the same
+# history, so each release fast-forwards nvim. A push that would not
+# fast-forward either branch fails, and neither moves.
+
+set -eu
+
+cd "$(dirname "$(dirname "$(readlink -f "$0")")")"
+nvim=$(git subtree split -q --prefix=editors/nvim main)
+git push --atomic --follow-tags origin main "$nvim:refs/heads/nvim"

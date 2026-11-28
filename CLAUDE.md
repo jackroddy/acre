@@ -82,6 +82,10 @@ one.
 `main` carries releases and nothing else. Push to it when cutting a release,
 and leave it alone the rest of the time.
 
+`nvim` holds `editors/nvim/` from `main` at its root, so a plugin manager can
+install the neovim plugin from it. `scripts/push-release` writes it. Never
+commit to it by hand.
+
 ## Releases
 
 Each crate follows [semantic versioning](https://semver.org/spec/v2.0.0.html)
@@ -90,6 +94,9 @@ number. A change moves only the version of the crate it changes.
 
 Tag every release, annotated, as `<crate>-vMAJOR.MINOR.PATCH`, on the commit
 that was published. The one release before the split is tagged `v0.1.0`.
+
+Push a release with `scripts/push-release`, never with a plain `git push`. It
+pushes `main`, its tags and `nvim` together.
 
 ## Formatting
 
