@@ -1756,9 +1756,6 @@ impl App {
     /// Build one frame of the window.
     pub fn frame(&mut self, ui: &mut Ui) {
         self.typing = false;
-        if ui.close_requested() {
-            self.closing = Some(Closing::Window);
-        }
         self.talk();
         let now = ui.now_ms();
         if now >= self.next_check {
