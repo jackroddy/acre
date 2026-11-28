@@ -1,0 +1,28 @@
+{
+  "id": "acre-9e8cad",
+  "title": "The changelog rule in CLAUDE.md does not spell out the Keep a Changelog headings",
+  "body": "`CLAUDE.md` says the changelog follows Keep a Changelog, and it names none of the headings. A reader has to look them up outside the repository, and a bug fix can end up under `### Changed`.\n\n## Proposal\n\n- `CLAUDE.md` names every Keep a Changelog heading, in its order: `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` and `### Security`. It says a bug fix goes under `### Fixed`, never under `### Changed`.\n- An audit of the changelogs of `crates/acre`, `crates/acre-cli` and `crates/acre-gui` moves each bug fix filed under `### Changed` to a `### Fixed` section. It covers every release and `## [Unreleased]`.\n- An entry that holds both a design change and a fix is split. The fix becomes its own entry under `### Fixed`.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-28T02:40:10.659101036Z",
+  "updated_at": "2026-11-28T02:40:10.659101036Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "6723e0f",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
