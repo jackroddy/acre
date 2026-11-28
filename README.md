@@ -3,7 +3,15 @@
 Filetype detection, syntax, settings, and `:AcreView`, which opens the acre
 viewer beside the buffer.
 
-Add this directory to neovim's runtime path, for example with lazy.nvim:
+Install it with lazy.nvim from acre's `nvim` branch, which holds this
+directory at its root:
+
+```lua
+{ "jackroddy/acre", branch = "nvim", config = function() require("acre").setup({}) end }
+```
+
+To run it from a checkout of acre, add this directory to neovim's runtime
+path, for example with lazy.nvim's `dir`:
 
 ```lua
 { dir = "/path/to/acre/editors/nvim", config = function() require("acre").setup({}) end }
