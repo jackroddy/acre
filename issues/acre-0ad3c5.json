@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-28T01:25:28.055953127Z",
   "defer_until": null,
   "created_at": "2026-11-27T02:52:19.093036264Z",
-  "updated_at": "2026-11-28T01:10:28.055953127Z",
+  "updated_at": "2026-11-28T01:11:17.939923092Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "e28f2e04",
+      "at": "2026-11-28T01:11:17.939922382Z",
+      "author": "Jack Roddy/cac6cd1d",
+      "text": "Jack chose to close at once on a request from outside. `App::frame` in `app.rs` no longer calls `ui.close_requested()`, so una closes the window by itself. The toolbar's × and a tab's close mark still ask first. The change is not committed, and nobody has tried it in a decade scratch pane yet.\n\nA viewer closed this way loses only a half-typed text field or a path still being drawn. `App::write` sends every finished edit to the file or to the editor as it is made.",
+      "commit": "e8db7f9",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "e8db7f9",
