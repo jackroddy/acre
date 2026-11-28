@@ -3,20 +3,20 @@
   "title": "acre-gui stays open when decade asks it to close",
   "body": "Since e8db7f9, acre-gui answers the compositor's close request with its \"Close acre-gui?\" dialog (`ui.close_requested()` in `App::frame`, `app.rs`). Before a decade scratch pane starts a new program, `scratch.open` asks the old one to close. The old viewer then waits on the dialog, and the new one starts only after someone clicks Close or kills the process. The egui viewer closed on the request.\n\n## Open\n\n- Close at once on a request from outside, and keep the dialog for the toolbar's × only. We think acre-gui holds no unsaved state, since every edit goes to the source as it is made, but nobody has checked.\n- Keep the dialog everywhere, and accept the click.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/cac6cd1d",
-  "lease_expires": "2026-11-28T01:25:28.055953127Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-27T02:52:19.093036264Z",
-  "updated_at": "2026-11-28T01:24:08.383046819Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-28T03:39:26.313732774Z",
+  "closed_at": "2026-11-28T03:39:26.313732774Z",
+  "close_reason": "a416c58 removed the dialog on a close request from outside, and una's frames for a hidden window (una 2c1fea2, una-a928af) let it act. With acre-gui at 5b72c4e, decade replaced it in a scratch pane at once.",
+  "resolution": "done",
   "notes": [
     {
       "id": "e28f2e04",
@@ -48,6 +48,9 @@
       "commit": "e8db7f9",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "5b72c4e",
+      "branch": "dev"
+    }
   }
 }
