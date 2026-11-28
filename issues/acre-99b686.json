@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-28T03:05:19.992839565Z",
   "defer_until": null,
   "created_at": "2026-11-28T02:37:10.642868493Z",
-  "updated_at": "2026-11-28T02:51:15.142028994Z",
+  "updated_at": "2026-11-28T02:51:46.583740828Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-11-28T02:43:09.584935572Z",
       "author": "Jack Roddy/cac6cd1d",
       "text": "Jack settled the open questions.\n\n- `main` feeds `nvim`, so lazy users get the plugin at a release, in step with acre-gui.\n- No branch protection on `nvim`. The branch is cheap to rewrite, so a stray push gets fixed by hand.\n- The plugin's README gives the lazy line once the branch exists.\n\nThe costs listed are expected: the first workflow in the repo, and a line in the Branches section of `CLAUDE.md`. Once this lands, falx gets an issue that describes how to copy the setup.",
+      "commit": "6723e0f",
+      "branch": "dev"
+    },
+    {
+      "id": "3f0d125a",
+      "at": "2026-11-28T02:51:46.583739858Z",
+      "author": "Jack Roddy/cac6cd1d",
+      "text": "Checked locally at `main` `3759073`. Two runs of `git subtree split --prefix=editors/nvim main` both gave `23eb6f4`, a tree with the plugin's directories at the root. The split of `dev` descends from it, so the next release fast-forwards `nvim`. lazy.nvim installed the split from a local bare repo with `branch = \"nvim\"`. In that install `:AcreView` exists, an `.acre` file gets filetype and syntax `acre`, and `require(\"acre\")` loads.\n\n`scripts/push-release`, the README's lazy line and the `CLAUDE.md` rules are written and not yet committed. Nobody has run the script's push, since the first real run is the next release. Once that push has gone through, falx gets an issue that describes how to copy the setup.",
       "commit": "6723e0f",
       "branch": "dev"
     }
