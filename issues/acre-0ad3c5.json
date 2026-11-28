@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-28T01:25:28.055953127Z",
   "defer_until": null,
   "created_at": "2026-11-27T02:52:19.093036264Z",
-  "updated_at": "2026-11-28T01:11:17.939923092Z",
+  "updated_at": "2026-11-28T01:19:22.182574994Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-11-28T01:11:17.939922382Z",
       "author": "Jack Roddy/cac6cd1d",
       "text": "Jack chose to close at once on a request from outside. `App::frame` in `app.rs` no longer calls `ui.close_requested()`, so una closes the window by itself. The toolbar's × and a tab's close mark still ask first. The change is not committed, and nobody has tried it in a decade scratch pane yet.\n\nA viewer closed this way loses only a half-typed text field or a path still being drawn. `App::write` sends every finished edit to the file or to the editor as it is made.",
+      "commit": "e8db7f9",
+      "branch": "dev"
+    },
+    {
+      "id": "31e9c2e1",
+      "at": "2026-11-28T01:19:22.182574064Z",
+      "author": "Jack Roddy/cac6cd1d",
+      "text": "Tried in a decade scratch pane with a debug build at `e8db7f9` plus the change. The dialog no longer shows, but the viewer still does not close. One replacement went through after some seconds. On the next, the old viewer was still running 30 seconds later and needed `kill -9`.\n\ndecade asks with an xdg toplevel close (`toplevel.send_close()` in decade's `compositor.rs`). una turns that into `Event::CloseRequested`, and closes the window only at the end of a built frame (`Ui::finish` in una's `ui.rs`). `App::run` in una's `app.rs` builds a frame only when `Window::frame_due` holds, which needs `!self.waiting`, so a window still waiting on a frame callback never builds one. We think decade stops sending frame callbacks to a window it has asked to close, which leaves una waiting forever. Nobody has confirmed this. The egui viewer closed because winit delivers a close request without waiting on a frame. The fix would go in una: act on a close request without waiting for a frame callback.",
       "commit": "e8db7f9",
       "branch": "dev"
     }
