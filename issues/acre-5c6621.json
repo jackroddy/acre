@@ -3,26 +3,29 @@
   "title": "The node text field edits more than one line",
   "body": "`Field` in `field.rs` edits a node's text in a one-line una field, since una has no multi-line entry yet (una-d1d8cd). `Field::open` shows a line break as the two characters `\\n`, and writing the field turns `\\n` back into a line break. A literal backslash followed by `n` cannot be typed. Shift+Enter writes the text as Enter does, and Escape closes the field without writing.\n\n## Proposal\n\nOnce una has multi-line entry, the field moves to it. Shift+Enter starts a new line again, as the viewer's keys in `CLAUDE.md` say, and the `\\n` stand-in goes.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/cac6cd1d",
-  "lease_expires": "2026-11-28T03:32:17.46721627Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-27T02:52:19.115278647Z",
-  "updated_at": "2026-11-28T03:17:17.46721627Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-28T03:39:26.302621498Z",
+  "closed_at": "2026-11-28T03:39:26.302621498Z",
+  "close_reason": "Landed in 5b72c4e. The node text field is una's multi-line box: Enter starts a line, Ctrl+Enter writes, and the `\\n` stand-in is gone.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "e8db7f9",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "5b72c4e",
+      "branch": "dev"
+    }
   }
 }
