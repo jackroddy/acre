@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-27T02:52:19.104244645Z",
-  "updated_at": "2026-11-27T02:52:19.104244645Z",
+  "updated_at": "2026-11-28T01:33:03.592294339Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "19232a57",
+      "at": "2026-11-28T01:33:03.592293759Z",
+      "author": "Jack Roddy/cac6cd1d",
+      "text": "The cause is in decade, filed as decade-e0689c. acre-gui started by decade's `scratch.open` has `SigBlk: 0x4002` in `/proc/<pid>/status`, so SIGINT and SIGTERM are blocked and never delivered. decade blocks both for its calloop signal sources, and its children inherit the mask. Neither acre nor una installs a signal handler or sets a mask. acre-gui could unblock both at startup, but that would hide decade's bug, so this waits on decade-e0689c.",
+      "commit": "6723e0f",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "e8db7f9",
