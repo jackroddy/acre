@@ -106,8 +106,6 @@ impl Toolbar {
 pub struct Shown {
     /// Where the pane is in the window.
     pub rect: screen::Rect,
-    /// Whether the left button went down on the pane this frame.
-    pub pane_pressed: bool,
     /// The canvas point under the pointer.
     pub hover: Option<Point>,
     /// The canvas point clicked.
@@ -279,7 +277,6 @@ impl View {
                 min: screen::Point::new(signal.rect.x as f32, signal.rect.y as f32),
                 size: self.pane,
             },
-            pane_pressed: signal.pressed,
             hover: None,
             clicked: None,
             double_clicked: None,

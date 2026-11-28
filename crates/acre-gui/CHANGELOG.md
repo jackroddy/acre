@@ -83,6 +83,13 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   screen a drawing at 100% looks smaller than before.
 - Space, the arrow keys, Delete and Backspace are commands in una's command
   palette, which Ctrl+Shift+P opens. The File menu's entries are there too.
+  A chord set for a command's id under `[keys]` in una's settings replaces
+  the command's key. The ids are:
+  - `file.open`, `file.edit_in_neovim` and `file.quit`
+  - `playback.play_pause`, `playback.step_back` and `playback.step_forward`
+  - `selection.move_left`, `selection.move_right`, `selection.move_up` and
+    `selection.move_down`
+  - `selection.delete` and `selection.delete_backspace`
 - With `--stdio`, acre-gui ends when stdin closes, even while its window is
   hidden.
 - Backspace deletes the selection, as Delete does, since the main delete key

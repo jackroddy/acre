@@ -8,8 +8,8 @@ use acre::lang;
 use acre::scene;
 use acre::scene::edit::{self, NewNode, TextEdit};
 use una::{
-    Align, Answer, Choice, Event, Flow, Id, Key, Layer, Length, Look, MenuEntry, PickFile,
-    PickMode, Picked, Rgba, Spec, Style, Surface, TreeRow, TreeSignal, Ui,
+    Align, Answer, Choice, Event, Flow, Key, Layer, Length, Look, MenuEntry, PickFile, PickMode,
+    Picked, Rgba, Spec, Style, Surface, TreeRow, TreeSignal, Ui,
 };
 
 use crate::anchor;
@@ -55,17 +55,17 @@ const FIELD_LINES: i32 = 4;
 const CLOSE_ICON: char = '\u{f0156}';
 
 /// The arrow keys' commands with a selection, and how far each moves it.
-const MOVES: [(&str, &str, f64, f64); 4] = [
-    ("Move left", "left", -1.0, 0.0),
-    ("Move right", "right", 1.0, 0.0),
-    ("Move up", "up", 0.0, -1.0),
-    ("Move down", "down", 0.0, 1.0),
+const MOVES: [(&str, &str, &str, f64, f64); 4] = [
+    ("selection.move_left", "Move left", "left", -1.0, 0.0),
+    ("selection.move_right", "Move right", "right", 1.0, 0.0),
+    ("selection.move_up", "Move up", "up", 0.0, -1.0),
+    ("selection.move_down", "Move down", "down", 0.0, 1.0),
 ];
 
 /// The arrow keys' commands with no selection, and the frames each steps.
-const STEPS: [(&str, &str, i64); 2] = [
-    ("Step back a frame", "left", -1),
-    ("Step forward a frame", "right", 1),
+const STEPS: [(&str, &str, &str, i64); 2] = [
+    ("playback.step_back", "Step back a frame", "left", -1),
+    ("playback.step_forward", "Step forward a frame", "right", 1),
 ];
 
 /// The entries of the File menu.
@@ -123,8 +123,6 @@ pub struct App {
     file_menu_open: bool,
     /// The canvas point under the pointer.
     hover: Option<scene::Point>,
-    /// Whether the left button went down on the canvas this frame.
-    canvas_pressed: bool,
     /// The latest message that is not a source error.
     notice: Option<String>,
     title: String,
@@ -158,7 +156,6 @@ impl App {
             picking: false,
             file_menu_open: false,
             hover: None,
-            canvas_pressed: false,
             notice: None,
             title: String::new(),
         };
@@ -808,13 +805,13 @@ impl App {
         if self.stdio() {
             return;
         }
-        if ui.command("Open…", None) {
+        if ui.command("file.open", "Open…", None) {
             self.picking = true;
         }
-        if ui.command("Edit in neovim", None) {
+        if ui.command("file.edit_in_neovim", "Edit in neovim", None) {
             self.edit_in_neovim();
         }
-        if ui.command("Quit", None) {
+        if ui.command("file.quit", "Quit", None) {
             ui.close();
         }
     }
@@ -1075,16 +1072,16 @@ impl App {
 
     fn commands(&mut self, ui: &mut Ui) {
         let now = Instant::now();
-        if ui.command("Play or pause", Some("space")) {
+        if ui.command("playback.play_pause", "Play or pause", Some("space")) {
             let playback = &mut self.doc_mut().playback;
             if playback.duration() > 0.0 {
                 playback.toggle(now);
             }
         }
         if self.doc().selection.spans().is_empty() {
-            for (title, chord, frames) in STEPS {
+            for (id, title, chord, frames) in STEPS {
                 let doc = self.doc_mut();
-                if ui.command(title, Some(chord))
+                if ui.command(id, title, Some(chord))
                     && let Some(fps) = doc.scene.as_ref().map(|s| s.canvas.fps)
                     && doc.playback.duration() > 0.0
                 {
@@ -1092,16 +1089,20 @@ impl App {
                 }
             }
         } else {
-            for (title, chord, dx, dy) in MOVES {
-                if ui.command(title, Some(chord)) && !self.refuse_locked() {
+            for (id, title, chord, dx, dy) in MOVES {
+                if ui.command(id, title, Some(chord)) && !self.refuse_locked() {
                     self.nudge.press(dx, dy);
                 }
             }
         }
 
         // both declared every frame, so neither hides the other's chord
-        let delete = ui.command("Delete", Some("delete"));
-        let backspace = ui.command("Delete with Backspace", Some("backspace"));
+        let delete = ui.command("selection.delete", "Delete", Some("delete"));
+        let backspace = ui.command(
+            "selection.delete_backspace",
+            "Delete with Backspace",
+            Some("backspace"),
+        );
         if delete || backspace {
             self.delete();
         }
@@ -1680,7 +1681,6 @@ impl App {
                 ..Spec::default()
             });
             self.hover = None;
-            self.canvas_pressed = false;
             return;
         }
         doc.view.target = match (&doc.program, &doc.scene) {
@@ -1707,7 +1707,6 @@ impl App {
             doc.selection.spans(),
         );
         self.hover = shown.hover;
-        self.canvas_pressed = shown.pane_pressed;
         if let Some(point) = shown.clicked {
             self.click(point);
         }
@@ -1808,11 +1807,6 @@ impl App {
         self.pick(ui);
         self.confirm_close(ui);
 
-        // after the build, since the colour picker hands focus back
-        // to its swatch when a press outside closes it
-        if self.canvas_pressed {
-            ui.focus(Id::NONE);
-        }
         if self.doc().playback.playing() {
             ui.wake_at(ui.now_ms() + PLAYING);
         }
