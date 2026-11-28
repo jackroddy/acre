@@ -13,7 +13,7 @@
   "lease_expires": "2026-11-28T03:05:19.992839565Z",
   "defer_until": null,
   "created_at": "2026-11-28T02:37:10.642868493Z",
-  "updated_at": "2026-11-28T02:51:46.583740828Z",
+  "updated_at": "2026-11-28T03:10:39.392949783Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -32,6 +32,14 @@
       "author": "Jack Roddy/cac6cd1d",
       "text": "Checked locally at `main` `3759073`. Two runs of `git subtree split --prefix=editors/nvim main` both gave `23eb6f4`, a tree with the plugin's directories at the root. The split of `dev` descends from it, so the next release fast-forwards `nvim`. lazy.nvim installed the split from a local bare repo with `branch = \"nvim\"`. In that install `:AcreView` exists, an `.acre` file gets filetype and syntax `acre`, and `require(\"acre\")` loads.\n\n`scripts/push-release`, the README's lazy line and the `CLAUDE.md` rules are written and not yet committed. Nobody has run the script's push, since the first real run is the next release. Once that push has gone through, falx gets an issue that describes how to copy the setup.",
       "commit": "6723e0f",
+      "branch": "dev"
+    },
+    {
+      "id": "411c2486",
+      "at": "2026-11-28T03:10:39.392949033Z",
+      "author": "Jack Roddy/cac6cd1d",
+      "text": "Committed as 7f45a89. The first push and the lazy test wait on an acre release. `main` holds the plugin from before the socket link, and the acre-gui Jack runs from `dev` calls `require(\"acre\").connect`, which that plugin lacks. `dev` cannot be released until una is published, since acre-gui depends on una by path. After that release, run `scripts/push-release`, switch the acre entry in Jack's `plugins.lua` from `dir` to `{ \"jackroddy/acre\", branch = \"nvim\" }`, check the plugin works, then file the falx issue.",
+      "commit": "7f45a89",
       "branch": "dev"
     }
   ],
