@@ -1,0 +1,28 @@
+{
+  "id": "acre-af9ed9",
+  "title": "acre-gui opens several files at launch",
+  "body": "`acre-gui` took one optional `file` and opened the last drawing when none was given. Opening more meant File > Open after launch.\n\n## Proposal\n\n`Cli::files` in `main.rs` is a `Vec<PathBuf>`, and `App::new` opens each one in its own tab, in order, so the last one named is shown. When none are named, `App::new` opens the first file in `Recent` as before. Each file shown clears the status line, so `App::new` holds back the first failure and shows it once every file is open.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-28T01:16:09.819522947Z",
+  "updated_at": "2026-11-28T01:16:09.819522947Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "e8db7f9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
