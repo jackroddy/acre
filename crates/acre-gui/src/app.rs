@@ -140,11 +140,11 @@ pub struct App {
 }
 
 impl App {
-    /// A viewer of `file`, or of the last file in `recent`. With `link`,
-    /// a viewer of what an editor at its other end sends, and with a
-    /// link over stdin and stdout, of that alone. With `locked`, it
-    /// refuses edits until the toolbar unlocks it.
-    pub fn new(file: Option<PathBuf>, recent: Recent, link: Option<Link>, locked: bool) -> Self {
+    /// A viewer of `files` in tabs, or of the last file in `recent`.
+    /// With `link`, a viewer of what an editor at its other end sends,
+    /// and with a link over stdin and stdout, of that alone. With
+    /// `locked`, it refuses edits until the toolbar unlocks it.
+    pub fn new(mut files: Vec<PathBuf>, recent: Recent, link: Option<Link>, locked: bool) -> Self {
         let bar = Toolbar::new();
         let spacing = number_text(bar.spacing);
         let mut app = App {
@@ -175,10 +175,17 @@ impl App {
         };
         app.bar.locked = locked;
         if !app.stdio() {
-            let file = file.or_else(|| app.recent.files.first().filter(|f| f.exists()).cloned());
-            if let Some(file) = file {
-                app.open(&file);
+            if files.is_empty() {
+                files.extend(app.recent.files.first().filter(|f| f.exists()).cloned());
             }
+            // each file shown clears the status line, so the
+            // first failure waits until all are open
+            let mut failed = None;
+            for file in &files {
+                app.open(file);
+                failed = failed.or(app.notice.take());
+            }
+            app.notice = failed;
         }
         app
     }
@@ -1870,10 +1877,31 @@ mod tests {
     }
 
     #[test]
+    fn each_file_named_opens_in_a_tab_with_the_last_shown_and_a_failure_named() {
+        let dir = std::env::temp_dir().join(format!("acre-gui-test-tabs-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let [a, missing, b] = ["a.acre", "missing.acre", "b.acre"].map(|f| dir.join(f));
+        fs::write(&a, "canvas { size 40 40; }\n").unwrap();
+        fs::write(&b, "canvas { size 40 40; }\n").unwrap();
+
+        let app = App::new(
+            vec![a.clone(), missing, b.clone()],
+            Recent::default(),
+            None,
+            false,
+        );
+        fs::remove_dir_all(&dir).unwrap();
+        let open: Vec<_> = app.docs.iter().filter_map(|d| d.path.clone()).collect();
+        assert_eq!(open, [a, b.clone()]);
+        assert_eq!(app.doc().path.as_ref(), Some(&b));
+        assert!(app.notice.unwrap().contains("missing.acre"));
+    }
+
+    #[test]
     fn an_editor_on_the_socket_gets_answers_and_leaves_the_viewer_running() {
         let path = std::env::temp_dir().join(format!("acre-gui-test-{}.sock", std::process::id()));
         let link = Link::listen(Arc::new(|| {}), path.clone()).unwrap();
-        let mut app = App::new(None, Recent::default(), Some(link), false);
+        let mut app = App::new(Vec::new(), Recent::default(), Some(link), false);
         assert!(app.editor().is_none());
 
         let stream = UnixStream::connect(&path).unwrap();

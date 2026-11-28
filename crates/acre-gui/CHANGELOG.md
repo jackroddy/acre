@@ -18,6 +18,9 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   disabled. Selection, box selection, pan, zoom, Ctrl+C and playback
   still work.
 - `acre-gui --locked` starts the viewer locked.
+- `acre-gui` takes several files, as in `acre-gui a.acre b.acre`, and
+  opens each in its own tab. The last one named is shown. When a file
+  cannot be opened, the status line names the first one that failed.
 - Without `--stdio`, acre-gui listens for an editor on a Unix socket at
   `$XDG_RUNTIME_DIR/acre/<pid>.sock`. Without `XDG_RUNTIME_DIR`, the
   socket goes in `acre-$USER` in the temporary folder. An editor that

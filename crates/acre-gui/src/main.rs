@@ -39,7 +39,7 @@ use crate::link::{Link, Wake};
 #[command(name = "acre-gui", about = "a viewer for acre drawings")]
 struct Cli {
     /// Render the source an editor sends as JSON lines on stdin, and answer on stdout
-    #[arg(long, conflicts_with = "file")]
+    #[arg(long, conflicts_with = "files")]
     stdio: bool,
 
     /// Start with every edit to the source refused until the toolbar's
@@ -47,9 +47,10 @@ struct Cli {
     #[arg(long)]
     locked: bool,
 
-    /// The drawing to show [default: the last one opened]
+    /// The drawings to show, one tab each, with the last in front
+    /// [default: the last one opened]
     #[arg(value_name = "file")]
-    file: Option<PathBuf>,
+    files: Vec<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok()
     };
     let recent = recent::Recent::load();
-    let mut app = app::App::new(cli.file, recent, link, cli.locked);
+    let mut app = app::App::new(cli.files, recent, link, cli.locked);
     window.run(|ui| app.frame(ui));
     Ok(())
 }
